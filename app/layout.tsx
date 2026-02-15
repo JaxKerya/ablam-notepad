@@ -9,7 +9,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Ablam NotePad",
-  description: "Ablam için minik dijital bir defter.",
+  description: "Ablam için dijital bir defter.",
 };
 
 export default function RootLayout({
