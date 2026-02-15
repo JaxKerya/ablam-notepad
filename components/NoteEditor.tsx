@@ -81,6 +81,9 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
       attributes: {
         class:
           "prose prose-invert max-w-none px-6 py-4 min-h-[60vh] outline-none text-gray-200 leading-relaxed",
+        spellcheck: "false",
+        autocorrect: "off",
+        autocapitalize: "off",
       },
     },
     onUpdate: ({ editor }) => {
