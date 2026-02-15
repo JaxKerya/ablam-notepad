@@ -6,14 +6,14 @@ import StarterKit from "@tiptap/starter-kit";
 import UnderlineExtension from "@tiptap/extension-underline";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import { Share2, Check, FilePlus, CloudUpload, CheckCircle2 } from "lucide-react";
+import { Share2, Check, Home, RefreshCw, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { addToNoteHistory } from "@/lib/note-history";
 import Toolbar from "./Toolbar";
 import type { JSONContent } from "@tiptap/react";
 import Link from "next/link";
 
-type SaveStatus = "idle" | "saving" | "saved";
+type SyncStatus = "synced" | "syncing";
 
 interface NoteEditorProps {
   noteId: string;
@@ -22,11 +22,10 @@ interface NoteEditorProps {
 
 export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRemoteUpdateRef = useRef(false);
   const isSavingRef = useRef(false);
   const [copied, setCopied] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("synced");
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -49,21 +48,13 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
   const saveContent = useCallback(
     async (content: JSONContent) => {
       isSavingRef.current = true;
-      setSaveStatus("saving");
+      setSyncStatus("syncing");
       await supabase
         .from("notes")
         .update({ content })
         .eq("id", noteId);
       isSavingRef.current = false;
-      setSaveStatus("saved");
-
-      // Clear any existing "saved" timeout
-      if (savedTimeoutRef.current) {
-        clearTimeout(savedTimeoutRef.current);
-      }
-      savedTimeoutRef.current = setTimeout(() => {
-        setSaveStatus("idle");
-      }, 2000);
+      setSyncStatus("synced");
     },
     [noteId]
   );
@@ -92,7 +83,7 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
         return;
       }
 
-      setSaveStatus("saving");
+      setSyncStatus("syncing");
 
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
@@ -141,38 +132,15 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
     addToNoteHistory(noteId);
   }, [noteId]);
 
-  // Cleanup timeouts on unmount
+  // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
     };
   }, []);
 
   return (
     <div className="mx-auto w-full max-w-3xl">
-      {/* Save Status - Fixed top right */}
-      <div
-        className={`fixed right-5 top-5 z-50 flex items-center gap-1.5 rounded-lg bg-[#1e2318] px-3 py-1.5 text-xs shadow-lg ring-1 ring-[#8B9D5A]/15 transition-all duration-300 ${
-          saveStatus === "idle"
-            ? "pointer-events-none translate-y-1 opacity-0"
-            : "opacity-100"
-        }`}
-      >
-        {saveStatus === "saving" && (
-          <>
-            <CloudUpload size={13} className="animate-pulse text-[#8B9D5A]" />
-            <span className="text-gray-400">Kaydediliyor...</span>
-          </>
-        )}
-        {saveStatus === "saved" && (
-          <>
-            <CheckCircle2 size={13} className="text-[#8B9D5A]" />
-            <span className="text-gray-400">Kaydedildi</span>
-          </>
-        )}
-      </div>
-
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex w-28 items-center">
@@ -180,8 +148,8 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
             href="/"
             className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/10 hover:text-gray-200"
           >
-            <FilePlus size={14} />
-            <span>Yeni Not</span>
+            <Home size={14} />
+            <span>Ana Sayfa</span>
           </Link>
         </div>
 
@@ -212,7 +180,7 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
 
       {/* Editor Card */}
       <div className="overflow-hidden rounded-xl bg-[#1e2318] shadow-2xl shadow-black/40 ring-1 ring-[#8B9D5A]/10">
-        <Toolbar editor={editor} />
+        <Toolbar editor={editor} syncStatus={syncStatus} />
         <EditorContent editor={editor} />
       </div>
     </div>

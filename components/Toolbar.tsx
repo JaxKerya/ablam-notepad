@@ -11,10 +11,13 @@ import {
   CheckSquare,
   Undo2,
   Redo2,
+  RefreshCw,
+  CheckCircle2,
 } from "lucide-react";
 
 interface ToolbarProps {
   editor: Editor | null;
+  syncStatus: "synced" | "syncing";
 }
 
 interface ToolbarButtonProps {
@@ -73,7 +76,36 @@ function Separator() {
   return <div className="mx-1 h-5 w-px bg-[#8B9D5A]/15" />;
 }
 
-export default function Toolbar({ editor }: ToolbarProps) {
+function SyncIndicator({ status }: { status: "synced" | "syncing" }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const isSyncing = status === "syncing";
+
+  return (
+    <div
+      className="relative ml-auto"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      <div className="rounded-md p-2">
+        {isSyncing ? (
+          <RefreshCw size={16} className="animate-spin text-[#8B9D5A]" />
+        ) : (
+          <CheckCircle2 size={16} className="text-[#8B9D5A]/70" />
+        )}
+      </div>
+
+      {showTooltip && (
+        <div className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 whitespace-nowrap rounded-md bg-[#2a2f22] px-2.5 py-1.5 text-xs shadow-lg ring-1 ring-[#8B9D5A]/15">
+          <span className="text-gray-300">
+            {isSyncing ? "Kaydediliyor..." : "Kaydedildi"}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Toolbar({ editor, syncStatus }: ToolbarProps) {
   if (!editor) return null;
 
   return (
@@ -140,6 +172,9 @@ export default function Toolbar({ editor }: ToolbarProps) {
         onClick={() => editor.chain().focus().toggleTaskList().run()}
         isActive={editor.isActive("taskList")}
       />
+
+      {/* Sync status - right side */}
+      <SyncIndicator status={syncStatus} />
     </div>
   );
 }
