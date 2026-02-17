@@ -55,6 +55,12 @@ CREATE POLICY "Allow public insert"
 
 CREATE POLICY "Allow public update by id"
   ON notes FOR UPDATE USING (true);
+
+CREATE POLICY "Allow public delete by id"
+  ON notes FOR DELETE USING (true);
+
+-- Required for Supabase Realtime to send full row data on UPDATE
+ALTER TABLE notes REPLICA IDENTITY FULL;
 ```
 
 ### 3. Enable Realtime

@@ -24,7 +24,7 @@ export default async function NotePage({ params }: NotePageProps) {
   // Unexpected database error (not "row not found")
   if (fetchError && fetchError.code !== "PGRST116") {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#12140e] text-gray-400">
+      <main className="flex min-h-screen items-center justify-center bg-[var(--background)] text-gray-500">
         <p>Veritabanı hatası. Lütfen daha sonra tekrar deneyin.</p>
       </main>
     );
@@ -38,7 +38,7 @@ export default async function NotePage({ params }: NotePageProps) {
 
     if (error) {
       return (
-        <main className="flex min-h-screen items-center justify-center bg-[#12140e] text-gray-400">
+        <main className="flex min-h-screen items-center justify-center bg-[var(--background)] text-gray-500">
           <p>Not oluşturulamadı. Lütfen Supabase yapılandırmanızı kontrol edin.</p>
         </main>
       );
@@ -48,7 +48,15 @@ export default async function NotePage({ params }: NotePageProps) {
   const content = existing?.content ?? DEFAULT_CONTENT;
 
   return (
-    <main className="flex min-h-screen items-start justify-center bg-[#12140e] px-4 pt-16 pb-12 sm:pt-24">
+    <main className="relative flex min-h-screen items-start justify-center bg-[var(--background)] px-4 pt-12 pb-12 sm:pt-20">
+      {/* Background glow */}
+      <div
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 50% 40% at 50% 30%, rgba(139,157,90,0.04) 0%, rgba(139,157,90,0.012) 50%, transparent 75%)",
+        }}
+      />
       <NoteEditor noteId={noteId} initialContent={content} />
     </main>
   );

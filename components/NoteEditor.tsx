@@ -21,7 +21,7 @@ interface NoteEditorProps {
 
 export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedJSONRef = useRef<string>("");
+  const recentSavesRef = useRef<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("synced");
 
@@ -55,7 +55,7 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
     editorProps: {
       attributes: {
         class:
-          "prose prose-invert max-w-none px-6 py-4 min-h-[60vh] outline-none text-gray-200 leading-relaxed",
+          "prose prose-invert max-w-none px-6 py-5 min-h-[60vh] outline-none text-gray-300 leading-relaxed text-[15px]",
         spellcheck: "false",
         autocorrect: "off",
         autocapitalize: "off",
@@ -71,13 +71,13 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
         const json = editor.getJSON();
         const jsonStr = JSON.stringify(json);
 
-        if (jsonStr === lastSavedJSONRef.current) {
+        if (recentSavesRef.current.has(jsonStr)) {
           setSyncStatus("synced");
           return;
         }
 
         try {
-          lastSavedJSONRef.current = jsonStr;
+          recentSavesRef.current.add(jsonStr);
           const { error } = await supabase
             .from("notes")
             .update({ content: json })
@@ -85,11 +85,13 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
 
           if (error) {
             console.error("Kaydetme hatası:", error.message);
-            lastSavedJSONRef.current = "";
+            recentSavesRef.current.delete(jsonStr);
+          } else {
+            setTimeout(() => recentSavesRef.current.delete(jsonStr), 5000);
           }
         } catch (err) {
           console.error("Kaydetme hatası:", err);
-          lastSavedJSONRef.current = "";
+          recentSavesRef.current.delete(jsonStr);
         }
         setSyncStatus("synced");
       }, 500);
@@ -98,7 +100,7 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
 
   // Store initial content hash
   useEffect(() => {
-    lastSavedJSONRef.current = JSON.stringify(initialContent);
+    recentSavesRef.current.add(JSON.stringify(initialContent));
   }, [initialContent]);
 
   // Real-time subscription
@@ -122,7 +124,7 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
           const incomingJSON = JSON.stringify(newContent);
 
           // Skip if this is our own save echoing back
-          if (incomingJSON === lastSavedJSONRef.current) return;
+          if (recentSavesRef.current.has(incomingJSON)) return;
 
           // Skip if editor already has this content
           const currentJSON = JSON.stringify(editor.getJSON());
@@ -132,7 +134,8 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
           const { from, to } = editor.state.selection;
 
           // Apply remote content
-          lastSavedJSONRef.current = incomingJSON;
+          recentSavesRef.current.add(incomingJSON);
+          setTimeout(() => recentSavesRef.current.delete(incomingJSON), 5000);
           editor.commands.setContent(newContent, { emitUpdate: false });
 
           // Restore cursor position (clamp to new doc length)
@@ -157,47 +160,56 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
   }, []);
 
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className="animate-fade-in-scale mx-auto w-full max-w-3xl">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex w-28 items-center">
-          <Link
-            href="/"
-            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/10 hover:text-gray-200"
-          >
-            <Home size={14} />
-            <span>Ana Sayfa</span>
-          </Link>
-        </div>
+      <div className="mb-5 flex items-center justify-between">
+        <Link
+          href="/"
+          className="flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-xs font-medium text-gray-500 transition-all duration-200 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
+        >
+          <Home size={13} />
+          <span>Ana Sayfa</span>
+        </Link>
 
-        <h1 className="text-center text-sm font-medium uppercase tracking-[0.25em] text-gray-500">
+        <Link
+          href="/"
+          className="text-sm font-semibold tracking-wide text-[var(--accent-light)] transition-opacity duration-200 hover:opacity-80"
+        >
           Ablam NotePad
-        </h1>
+        </Link>
 
-        <div className="flex w-28 justify-end">
-          <button
-            type="button"
-            onClick={handleShare}
-            className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/10 hover:text-gray-200"
-          >
-            {copied ? (
-              <>
-                <Check size={14} />
-                <span>Kopyalandı</span>
-              </>
-            ) : (
-              <>
-                <Share2 size={14} />
-                <span>Paylaş</span>
-              </>
-            )}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleShare}
+          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
+            copied
+              ? "border-[var(--accent)]/20 bg-[var(--accent)]/10 text-[var(--accent-light)]"
+              : "border-transparent text-gray-500 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
+          }`}
+        >
+          {copied ? (
+            <>
+              <Check size={13} />
+              <span>Kopyalandı</span>
+            </>
+          ) : (
+            <>
+              <Share2 size={13} />
+              <span>Paylaş</span>
+            </>
+          )}
+        </button>
       </div>
 
       {/* Editor Card */}
-      <div className="overflow-hidden rounded-xl bg-[#1e2318] shadow-2xl shadow-black/40 ring-1 ring-[#8B9D5A]/10">
-        <Toolbar editor={editor} syncStatus={syncStatus} />
+      <div
+        className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-2xl shadow-black/30"
+        style={{
+          boxShadow:
+            "0 0 60px -12px rgba(139,157,90,0.08), 0 0 30px -8px rgba(139,157,90,0.05), 0 25px 50px -12px rgba(0,0,0,0.4)",
+        }}
+      >
+        <Toolbar editor={editor} syncStatus={syncStatus} noteId={noteId} />
         <EditorContent editor={editor} />
       </div>
     </div>
