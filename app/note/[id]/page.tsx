@@ -15,13 +15,22 @@ export default async function NotePage({ params }: NotePageProps) {
   const supabase = createServerSupabaseClient();
 
   // Try to fetch the existing note
-  const { data: existing } = await supabase
+  const { data: existing, error: fetchError } = await supabase
     .from("notes")
     .select("id, content")
     .eq("id", noteId)
     .single();
 
-  // If it doesn't exist, create it on the fly
+  // Unexpected database error (not "row not found")
+  if (fetchError && fetchError.code !== "PGRST116") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#12140e] text-gray-400">
+        <p>Veritabanı hatası. Lütfen daha sonra tekrar deneyin.</p>
+      </main>
+    );
+  }
+
+  // If it doesn't exist, create it
   if (!existing) {
     const { error } = await supabase
       .from("notes")

@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import UnderlineExtension from "@tiptap/extension-underline";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import { Share2, Check, Home, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Share2, Check, Home } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
-import { addToNoteHistory } from "@/lib/note-history";
 import Toolbar from "./Toolbar";
 import type { JSONContent } from "@tiptap/react";
 import Link from "next/link";
@@ -22,8 +21,7 @@ interface NoteEditorProps {
 
 export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isRemoteUpdateRef = useRef(false);
-  const isSavingRef = useRef(false);
+  const lastSavedJSONRef = useRef<string>("");
   const [copied, setCopied] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("synced");
 
@@ -45,20 +43,6 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
     }
   };
 
-  const saveContent = useCallback(
-    async (content: JSONContent) => {
-      isSavingRef.current = true;
-      setSyncStatus("syncing");
-      await supabase
-        .from("notes")
-        .update({ content })
-        .eq("id", noteId);
-      isSavingRef.current = false;
-      setSyncStatus("synced");
-    },
-    [noteId]
-  );
-
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -78,24 +62,49 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
       },
     },
     onUpdate: ({ editor }) => {
-      if (isRemoteUpdateRef.current) {
-        isRemoteUpdateRef.current = false;
-        return;
-      }
-
       setSyncStatus("syncing");
 
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
-      saveTimeoutRef.current = setTimeout(() => {
-        saveContent(editor.getJSON());
+      saveTimeoutRef.current = setTimeout(async () => {
+        const json = editor.getJSON();
+        const jsonStr = JSON.stringify(json);
+
+        if (jsonStr === lastSavedJSONRef.current) {
+          setSyncStatus("synced");
+          return;
+        }
+
+        try {
+          lastSavedJSONRef.current = jsonStr;
+          const { error } = await supabase
+            .from("notes")
+            .update({ content: json })
+            .eq("id", noteId);
+
+          if (error) {
+            console.error("Kaydetme hatası:", error.message);
+            lastSavedJSONRef.current = "";
+          }
+        } catch (err) {
+          console.error("Kaydetme hatası:", err);
+          lastSavedJSONRef.current = "";
+        }
+        setSyncStatus("synced");
       }, 500);
     },
   });
 
+  // Store initial content hash
+  useEffect(() => {
+    lastSavedJSONRef.current = JSON.stringify(initialContent);
+  }, [initialContent]);
+
   // Real-time subscription
   useEffect(() => {
+    if (!editor) return;
+
     const channel = supabase
       .channel(`note-${noteId}`)
       .on(
@@ -107,17 +116,30 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
           filter: `id=eq.${noteId}`,
         },
         (payload) => {
-          if (isSavingRef.current) return;
-
           const newContent = payload.new.content as JSONContent;
-          if (!editor || !newContent) return;
+          if (!newContent) return;
 
-          const currentJSON = JSON.stringify(editor.getJSON());
           const incomingJSON = JSON.stringify(newContent);
+
+          // Skip if this is our own save echoing back
+          if (incomingJSON === lastSavedJSONRef.current) return;
+
+          // Skip if editor already has this content
+          const currentJSON = JSON.stringify(editor.getJSON());
           if (currentJSON === incomingJSON) return;
 
-          isRemoteUpdateRef.current = true;
+          // Store cursor position
+          const { from, to } = editor.state.selection;
+
+          // Apply remote content
+          lastSavedJSONRef.current = incomingJSON;
           editor.commands.setContent(newContent, { emitUpdate: false });
+
+          // Restore cursor position (clamp to new doc length)
+          const maxPos = editor.state.doc.content.size;
+          const safeFrom = Math.min(from, maxPos);
+          const safeTo = Math.min(to, maxPos);
+          editor.commands.setTextSelection({ from: safeFrom, to: safeTo });
         }
       )
       .subscribe();
@@ -126,11 +148,6 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
       supabase.removeChannel(channel);
     };
   }, [noteId, editor]);
-
-  // Save to local history on mount
-  useEffect(() => {
-    addToNoteHistory(noteId);
-  }, [noteId]);
 
   // Cleanup timeout on unmount
   useEffect(() => {

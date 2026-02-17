@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { FileText, Trash2, FileStack, ChevronRight, X } from "lucide-react";
+import { FileText, Trash2, FileStack, X } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 
 interface NoteItem {
@@ -36,10 +36,14 @@ export default function Home() {
   const router = useRouter();
 
   const fetchNotes = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("notes")
       .select("id, updated_at")
       .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error("Notlar yüklenemedi:", error.message);
+    }
     setNotes(data ?? []);
     setLoading(false);
   }, []);
@@ -66,10 +70,16 @@ export default function Home() {
 
   const handleDelete = useCallback(
     async (id: string) => {
-      await supabase.from("notes").delete().eq("id", id);
-      setNotes((prev) => prev.filter((n) => n.id !== id));
+      const prev = notes;
+      setNotes((current) => current.filter((n) => n.id !== id));
+
+      const { error } = await supabase.from("notes").delete().eq("id", id);
+      if (error) {
+        console.error("Not silinemedi:", error.message);
+        setNotes(prev);
+      }
     },
-    []
+    [notes]
   );
 
   const hasNotes = notes.length > 0;

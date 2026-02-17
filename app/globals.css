@@ -40,7 +40,7 @@ body {
 
 .tiptap strong {
   font-weight: 700;
-  color: #ffffff;
+  color: #fff;
 }
 
 .tiptap em {
@@ -135,6 +135,11 @@ body {
 }
 
 /* Scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 157, 90, 0.2) transparent;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }
