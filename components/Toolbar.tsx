@@ -13,11 +13,12 @@ import {
   Redo2,
   RefreshCw,
   CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 
 interface ToolbarProps {
   editor: Editor | null;
-  syncStatus: "synced" | "syncing";
+  syncStatus: "synced" | "syncing" | "error";
   noteId: string;
 }
 
@@ -89,31 +90,44 @@ function NoteBadge({
   syncStatus,
 }: {
   noteId: string;
-  syncStatus: "synced" | "syncing";
+  syncStatus: "synced" | "syncing" | "error";
 }) {
   const [showTooltip, setShowTooltip] = useState(false);
-  const isSyncing = syncStatus === "syncing";
+
+  const syncIcon = {
+    syncing: <RefreshCw size={15} className="animate-spin text-[var(--accent)]" />,
+    synced: <CheckCircle2 size={15} className="text-[var(--accent)]/50 transition-colors" />,
+    error: <AlertCircle size={15} className="text-red-400 animate-pulse" />,
+  }[syncStatus];
+
+  const tooltipText = {
+    syncing: "Kaydediliyor...",
+    synced: "Kaydedildi",
+    error: "Kaydetme başarısız!",
+  }[syncStatus];
 
   return (
     <div
-      className="relative ml-auto flex items-center gap-1.5 rounded-lg bg-white/[0.03] px-2.5 py-1.5"
+      className={`relative ml-auto flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition-colors ${
+        syncStatus === "error" ? "bg-red-500/[0.06]" : "bg-white/[0.03]"
+      }`}
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
-      {isSyncing ? (
-        <RefreshCw size={15} className="animate-spin text-[var(--accent)]" />
-      ) : (
-        <CheckCircle2 size={15} className="text-[var(--accent)]/50 transition-colors" />
-      )}
-      <span className="max-w-[110px] truncate text-xs text-gray-400 sm:max-w-[170px]">
+      {syncIcon}
+      <span className={`max-w-[110px] truncate text-xs sm:max-w-[170px] ${
+        syncStatus === "error" ? "text-red-400/80" : "text-gray-400"
+      }`}>
         {noteId}
       </span>
 
       {showTooltip && (
-        <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs shadow-xl shadow-black/20">
-          <span className="text-gray-300">
-            {isSyncing ? "Kaydediliyor..." : "Kaydedildi"}
-          </span>
+        <div className={`pointer-events-none absolute right-0 top-full z-50 mt-2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs shadow-xl shadow-black/20 ${
+          syncStatus === "error"
+            ? "border-red-500/15 bg-red-950/80 text-red-300"
+            : "border-[var(--border)] bg-[var(--surface)] text-gray-300"
+        }`}>
+          {tooltipText}
         </div>
       )}
     </div>
@@ -124,7 +138,7 @@ export default function Toolbar({ editor, syncStatus, noteId }: ToolbarProps) {
   if (!editor) return null;
 
   return (
-    <div className="flex items-center gap-0.5 border-b border-white/[0.04] px-3 py-2">
+    <div className="flex items-center gap-0.5 overflow-x-auto border-b border-white/[0.04] px-3 py-2 sm:overflow-x-visible scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {/* Undo / Redo */}
       <ToolbarButton
         label="Geri Al"

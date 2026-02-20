@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import UnderlineExtension from "@tiptap/extension-underline";
 import TaskList from "@tiptap/extension-task-list";
@@ -9,10 +9,25 @@ import TaskItem from "@tiptap/extension-task-item";
 import { Share2, Check, Home } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import Toolbar from "./Toolbar";
-import type { JSONContent } from "@tiptap/react";
+import type { JSONContent, Editor } from "@tiptap/react";
 import Link from "next/link";
 
-type SyncStatus = "synced" | "syncing";
+type SyncStatus = "synced" | "syncing" | "error";
+
+function CharCount({ editor }: { editor: Editor }) {
+  const text = useEditorState({
+    editor,
+    selector: (ctx) => ctx.editor.state.doc.textContent,
+  });
+
+  const chars = useMemo(() => (text || "").length, [text]);
+
+  return (
+    <div className="flex items-center justify-end border-t border-white/[0.04] px-4 py-2 text-[11px] tabular-nums text-gray-600">
+      <span>{chars} karakter</span>
+    </div>
+  );
+}
 
 interface NoteEditorProps {
   noteId: string;
@@ -21,9 +36,45 @@ interface NoteEditorProps {
 
 export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recentSavesRef = useRef<Set<string>>(new Set());
+  const pendingSaveRef = useRef<{ json: JSONContent; jsonStr: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("synced");
+
+  const attemptSave = async (json: JSONContent, jsonStr: string, retries = 0) => {
+    try {
+      recentSavesRef.current.add(jsonStr);
+      const { error } = await supabase
+        .from("notes")
+        .update({ content: json })
+        .eq("id", noteId);
+
+      if (error) {
+        recentSavesRef.current.delete(jsonStr);
+        throw new Error(error.message);
+      }
+
+      pendingSaveRef.current = null;
+      setTimeout(() => recentSavesRef.current.delete(jsonStr), 5000);
+      setSyncStatus("synced");
+    } catch (err) {
+      console.error("Kaydetme hatası:", err);
+      recentSavesRef.current.delete(jsonStr);
+      pendingSaveRef.current = { json, jsonStr };
+
+      if (retries < 3) {
+        setSyncStatus("syncing");
+        const delay = Math.pow(2, retries) * 1000;
+        retryTimeoutRef.current = setTimeout(
+          () => attemptSave(json, jsonStr, retries + 1),
+          delay
+        );
+      } else {
+        setSyncStatus("error");
+      }
+    }
+  };
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -64,10 +115,10 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
     onUpdate: ({ editor }) => {
       setSyncStatus("syncing");
 
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      saveTimeoutRef.current = setTimeout(async () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+
+      saveTimeoutRef.current = setTimeout(() => {
         const json = editor.getJSON();
         const jsonStr = JSON.stringify(json);
 
@@ -76,24 +127,7 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
           return;
         }
 
-        try {
-          recentSavesRef.current.add(jsonStr);
-          const { error } = await supabase
-            .from("notes")
-            .update({ content: json })
-            .eq("id", noteId);
-
-          if (error) {
-            console.error("Kaydetme hatası:", error.message);
-            recentSavesRef.current.delete(jsonStr);
-          } else {
-            setTimeout(() => recentSavesRef.current.delete(jsonStr), 5000);
-          }
-        } catch (err) {
-          console.error("Kaydetme hatası:", err);
-          recentSavesRef.current.delete(jsonStr);
-        }
-        setSyncStatus("synced");
+        attemptSave(json, jsonStr);
       }, 500);
     },
   });
@@ -152,10 +186,11 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
     };
   }, [noteId, editor]);
 
-  // Cleanup timeout on unmount
+  // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
     };
   }, []);
 
@@ -211,6 +246,8 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
       >
         <Toolbar editor={editor} syncStatus={syncStatus} noteId={noteId} />
         <EditorContent editor={editor} />
+        {/* Word/character counter */}
+        {editor && <CharCount editor={editor} />}
       </div>
     </div>
   );

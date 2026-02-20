@@ -40,6 +40,7 @@ export default function Home() {
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const router = useRouter();
 
   const fetchNotes = useCallback(async () => {
@@ -165,7 +166,7 @@ export default function Home() {
 
               <button
                 type="button"
-                onClick={() => handleDelete(item.id)}
+                onClick={() => setDeleteConfirm(item.id)}
                 className="flex-shrink-0 rounded-md p-1.5 text-gray-700 opacity-0 transition-all duration-150 hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
                 aria-label="Notu sil"
               >
@@ -229,6 +230,52 @@ export default function Home() {
           <span>Mevcut notları görüntüle</span>
         </button>
       </div>
+
+      {/* Delete confirmation popup */}
+      {deleteConfirm && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setDeleteConfirm(null)}
+        >
+          <div
+            className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-2xl shadow-black/40"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10">
+                <Trash2 size={16} className="text-red-400" />
+              </div>
+              <h3 className="text-sm font-semibold text-gray-200">
+                Notu Sil
+              </h3>
+            </div>
+
+            <p className="mb-5 mt-3 text-[13px] leading-relaxed text-gray-500">
+              <span className="font-medium text-gray-400">{deleteConfirm}</span> notunu silmek istediğine emin misin? Bu işlem geri alınamaz.
+            </p>
+
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleDelete(deleteConfirm);
+                  setDeleteConfirm(null);
+                }}
+                className="flex-1 rounded-xl bg-red-500/15 px-4 py-2.5 text-xs font-medium text-red-400 transition-all hover:bg-red-500/25"
+              >
+                Evet, Sil
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
