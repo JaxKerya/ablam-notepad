@@ -9,6 +9,7 @@ import TaskItem from "@tiptap/extension-task-item";
 import LinkExtension from "@tiptap/extension-link";
 import ImageExtension from "@tiptap/extension-image";
 import { Share2, Check, Home } from "lucide-react";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase-browser";
 import Toolbar from "./Toolbar";
 import PasswordSetup from "./PasswordSetup";
@@ -235,9 +236,9 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
       <div className="mb-5 flex items-center justify-between">
         <Link
           href="/"
-          className="pl-2 text-[15px] font-semibold tracking-wide text-[var(--accent-light)] transition-opacity duration-200 hover:opacity-80"
+          className="pl-2 transition-opacity duration-200 hover:opacity-80"
         >
-          Ablam NotePad
+          <Image src="/ablam.png" alt="Ablam Notepad" width={140} height={32} className="h-5 w-auto" />
         </Link>
 
         <div className="flex items-center gap-1.5">

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   FileText,
   Trash2,
@@ -240,9 +241,7 @@ export default function Home() {
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 pb-12">
         {/* Title area */}
         <div className="animate-fade-in mb-12 flex flex-col items-center">
-          <h1 className="mb-2 text-lg font-semibold tracking-wide text-[var(--accent-light)]">
-            Ablam NotePad
-          </h1>
+          <Image src="/ablam.png" alt="Ablam Notepad" width={180} height={40} className="mb-2 h-6 w-auto" />
           <p className="max-w-xs text-center text-[13px] leading-relaxed text-gray-600">
             Ablam yeni bir not oluşturmak veya mevcut bir notu açmak için ismini girebilirsin.
           </p>
