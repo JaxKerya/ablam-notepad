@@ -63,6 +63,33 @@ CREATE POLICY "Allow public delete by id"
 ALTER TABLE notes REPLICA IDENTITY FULL;
 ```
 
+### 2b. Run Migration SQL (New Features)
+
+If you already have an existing `notes` table, run this migration:
+
+```sql
+-- Pin support
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS pinned BOOLEAN DEFAULT false;
+
+-- Password protection
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS password_hash TEXT DEFAULT NULL;
+```
+
+### 2c. Setup Supabase Storage (for Image Upload)
+
+1. Go to **Storage** in your Supabase Dashboard
+2. Create a new bucket called **`note-images`**
+3. Set the bucket to **Public**
+4. Add an RLS policy to allow uploads:
+
+```sql
+CREATE POLICY "Allow public upload" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'note-images');
+
+CREATE POLICY "Allow public read" ON storage.objects
+  FOR SELECT USING (bucket_id = 'note-images');
+```
+
 ### 3. Enable Realtime
 
 In your Supabase dashboard:
@@ -113,18 +140,23 @@ Share the URL (e.g. `http://localhost:3000/note/my-shopping-list`) with anyone �
 ablam-notepad/
 ├── app/
 │   ├── layout.tsx            # Root layout, dark theme, Inter font
-│   ├── page.tsx              # Landing page with custom note name input
+│   ├── page.tsx              # Landing page with note input + sidebar (pin support)
 │   ├── not-found.tsx         # 404 page
 │   ├── globals.css           # Global styles + TipTap editor styles
 │   └── note/
 │       └── [id]/
-│           └── page.tsx      # Note editor page
+│           ├── page.tsx      # Note editor page (password gate)
+│           └── NotePageClient.tsx  # Client wrapper for locked notes
 ├── components/
 │   ├── NoteEditor.tsx        # TipTap editor with auto-save & real-time sync
-│   └── Toolbar.tsx           # Formatting toolbar (Bold, Italic, Underline, Lists)
+│   ├── Toolbar.tsx           # Formatting toolbar (Headings, Bold, Italic, Links, Images...)
+│   ├── PasswordGate.tsx      # Password entry screen for locked notes
+│   └── PasswordSetup.tsx     # Set/remove password UI
 ├── lib/
 │   ├── supabase-browser.ts   # Browser Supabase client
-│   └── supabase-server.ts    # Server Supabase client
+│   ├── supabase-server.ts    # Server Supabase client
+│   ├── crypto.ts             # SHA-256 password hashing
+│   └── upload.ts             # Supabase Storage image upload
 ├── .env.local.example        # Environment variables template
 └── README.md
 ```
@@ -135,5 +167,9 @@ ablam-notepad/
 - **Real-time sync**: Multiple users see changes instantly via Supabase Realtime
 - **Custom note names**: Choose your own URL slug (e.g. `/note/my-list`)
 - **Link-based access**: No accounts needed — just share the URL
-- **Rich text**: Bold, Italic, Underline, Bullet Lists, Numbered Lists
+- **Rich text**: Bold, Italic, Underline, Headings (H1-H3), Bullet Lists, Numbered Lists, Task Lists
+- **Hyperlinks**: Add clickable links to text with a URL popup
+- **Image upload**: Upload images via Supabase Storage with drag-and-drop support
+- **Pin notes**: Pin important notes to the top of the sidebar
+- **Password protection**: Lock notes with a password (SHA-256 hashed)
 - **Dark theme**: Clean, modern, distraction-free UI

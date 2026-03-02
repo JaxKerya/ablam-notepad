@@ -10,12 +10,15 @@ import {
   ArrowRight,
   Layers,
   PenLine,
+  Pin,
+  PinOff,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 
 interface NoteItem {
   id: string;
   updated_at: string;
+  pinned: boolean;
 }
 
 function timeAgo(dateStr: string): string {
@@ -46,13 +49,16 @@ export default function Home() {
   const fetchNotes = useCallback(async () => {
     const { data, error } = await supabase
       .from("notes")
-      .select("id, updated_at")
+      .select("id, updated_at, pinned")
+      .order("pinned", { ascending: false })
       .order("updated_at", { ascending: false });
 
     if (error) {
       console.error("Notlar yüklenemedi:", error.message);
     }
-    setNotes(data ?? []);
+    setNotes(
+      (data ?? []).map((n) => ({ ...n, pinned: n.pinned ?? false }))
+    );
     setLoading(false);
   }, []);
 
@@ -90,6 +96,42 @@ export default function Home() {
     [notes]
   );
 
+  const handleTogglePin = useCallback(
+    async (id: string, currentPinned: boolean) => {
+      // Optimistic update
+      setNotes((current) => {
+        const updated = current.map((n) =>
+          n.id === id ? { ...n, pinned: !currentPinned } : n
+        );
+        // Sort: pinned first, then by updated_at
+        return updated.sort((a, b) => {
+          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+          return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+        });
+      });
+
+      const { error } = await supabase
+        .from("notes")
+        .update({ pinned: !currentPinned })
+        .eq("id", id);
+
+      if (error) {
+        console.error("Pin güncellenemedi:", error.message);
+        // Revert
+        setNotes((current) => {
+          const reverted = current.map((n) =>
+            n.id === id ? { ...n, pinned: currentPinned } : n
+          );
+          return reverted.sort((a, b) => {
+            if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+            return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+          });
+        });
+      }
+    },
+    []
+  );
+
   return (
     <main className="relative flex min-h-screen bg-[var(--background)]">
       {/* Background glow — radial gradient to avoid banding */}
@@ -111,9 +153,8 @@ export default function Home() {
 
       {/* Sidebar */}
       <aside
-        className={`glass-strong fixed left-0 top-0 z-50 flex h-screen w-72 flex-col border-r border-[var(--border)] p-5 shadow-2xl shadow-black/30 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`glass-strong fixed left-0 top-0 z-50 flex h-screen w-72 flex-col border-r border-[var(--border)] p-5 shadow-2xl shadow-black/30 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         <div className="mb-5 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-500">
@@ -147,22 +188,40 @@ export default function Home() {
           {notes.map((item) => (
             <div
               key={item.id}
-              className="group flex items-center gap-2.5 rounded-lg px-3 py-2.5 transition-all duration-200 hover:translate-x-1 hover:bg-[var(--accent)]/[0.06]"
+              className={`group flex items-center gap-2.5 rounded-lg px-3 py-2.5 transition-all duration-200 hover:translate-x-1 hover:bg-[var(--accent)]/[0.06] ${item.pinned ? "border-l-2 border-[var(--accent)]/30" : ""
+                }`}
             >
               <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-[var(--accent)]/[0.07]">
-                <FileText size={13} className="text-[var(--accent)]/60" />
+                {item.pinned ? (
+                  <Pin size={13} className="text-[var(--accent)]" />
+                ) : (
+                  <FileText size={13} className="text-[var(--accent)]/60" />
+                )}
               </div>
 
               <Link
                 href={`/note/${item.id}`}
-                className="flex-1 truncate text-[13px] text-gray-400 transition-colors hover:text-gray-200"
+                className="flex-1 min-w-0 flex flex-col transition-colors hover:text-gray-200"
               >
-                {item.id}
+                <span className="truncate text-[13px] text-gray-400 group-hover:text-gray-200 transition-colors">
+                  {item.id}
+                </span>
+                <span className="text-[10px] tabular-nums text-gray-700">
+                  {timeAgo(item.updated_at)}
+                </span>
               </Link>
 
-              <span className="flex-shrink-0 text-[10px] tabular-nums text-gray-700">
-                {timeAgo(item.updated_at)}
-              </span>
+              <button
+                type="button"
+                onClick={() => handleTogglePin(item.id, item.pinned)}
+                className={`flex-shrink-0 rounded-md p-1.5 transition-all duration-150 ${item.pinned
+                  ? "text-[var(--accent)] hover:bg-[var(--accent)]/10 hover:text-[var(--accent-light)]"
+                  : "text-gray-700 opacity-0 hover:bg-[var(--accent)]/10 hover:text-[var(--accent)] group-hover:opacity-100"
+                  }`}
+                aria-label={item.pinned ? "Sabitlemeyi kaldır" : "Sabitle"}
+              >
+                {item.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+              </button>
 
               <button
                 type="button"

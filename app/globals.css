@@ -153,6 +153,62 @@ body::before {
   text-decoration-color: rgba(139, 157, 90, 0.4);
 }
 
+/* Heading styles */
+.tiptap h1 {
+  font-size: 1.75em;
+  font-weight: 700;
+  color: #fff;
+  margin: 0.8em 0 0.4em;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.tiptap h2 {
+  font-size: 1.35em;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.92);
+  margin: 0.7em 0 0.35em;
+  line-height: 1.25;
+}
+
+.tiptap h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0.6em 0 0.3em;
+  line-height: 1.3;
+}
+
+/* Link styles */
+.tiptap a.tiptap-link {
+  color: var(--accent-light);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(139, 157, 90, 0.3);
+  transition: text-decoration-color 0.2s ease, color 0.2s ease;
+  cursor: pointer;
+}
+
+.tiptap a.tiptap-link:hover {
+  color: #c8da8e;
+  text-decoration-color: rgba(139, 157, 90, 0.6);
+}
+
+/* Image styles */
+.tiptap img.tiptap-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  margin: 1em 0;
+  border: 1px solid rgba(139, 157, 90, 0.1);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.tiptap img.tiptap-image:hover {
+  border-color: rgba(139, 157, 90, 0.25);
+  box-shadow: 0 0 20px rgba(139, 157, 90, 0.08);
+}
+
 .tiptap p.is-editor-empty:first-child::before {
   content: "Yazmaya başlayın...";
   float: left;

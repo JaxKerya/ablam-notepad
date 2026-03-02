@@ -6,11 +6,31 @@ import StarterKit from "@tiptap/starter-kit";
 import UnderlineExtension from "@tiptap/extension-underline";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+import LinkExtension from "@tiptap/extension-link";
+import ImageExtension from "@tiptap/extension-image";
 import { Share2, Check, Home } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import Toolbar from "./Toolbar";
+import PasswordSetup from "./PasswordSetup";
 import type { JSONContent, Editor } from "@tiptap/react";
 import Link from "next/link";
+
+// Image extension with resizable width attribute
+const CustomImage = ImageExtension.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: "100%",
+        parseHTML: (element: HTMLElement) =>
+          element.style.width || element.getAttribute("width") || "100%",
+        renderHTML: (attributes: Record<string, string>) => ({
+          style: `width: ${attributes.width}`,
+        }),
+      },
+    };
+  },
+});
 
 type SyncStatus = "synced" | "syncing" | "error";
 
@@ -32,15 +52,17 @@ function CharCount({ editor }: { editor: Editor }) {
 interface NoteEditorProps {
   noteId: string;
   initialContent: JSONContent;
+  hasPassword: boolean;
 }
 
-export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) {
+export default function NoteEditor({ noteId, initialContent, hasPassword: initialHasPassword }: NoteEditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recentSavesRef = useRef<Set<string>>(new Set());
   const pendingSaveRef = useRef<{ json: JSONContent; jsonStr: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("synced");
+  const [hasPassword, setHasPassword] = useState(initialHasPassword);
 
   const attemptSave = async (json: JSONContent, jsonStr: string, retries = 0) => {
     try {
@@ -101,6 +123,19 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
       UnderlineExtension,
       TaskList,
       TaskItem.configure({ nested: true }),
+      LinkExtension.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: "tiptap-link",
+          rel: "noopener noreferrer",
+          target: "_blank",
+        },
+      }),
+      CustomImage.configure({
+        HTMLAttributes: {
+          class: "tiptap-image",
+        },
+      }),
     ],
     content: initialContent,
     editorProps: {
@@ -197,10 +232,10 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
   return (
     <div className="animate-fade-in-scale mx-auto w-full max-w-3xl">
       {/* Header */}
-      <div className="mb-5 flex items-center justify-between">
+      <div className="relative mb-5 flex items-center justify-between">
         <Link
           href="/"
-          className="flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-xs font-medium text-gray-500 transition-all duration-200 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
+          className="relative z-10 flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-xs font-medium text-gray-500 transition-all duration-200 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
         >
           <Home size={13} />
           <span>Ana Sayfa</span>
@@ -208,32 +243,38 @@ export default function NoteEditor({ noteId, initialContent }: NoteEditorProps) 
 
         <Link
           href="/"
-          className="text-sm font-semibold tracking-wide text-[var(--accent-light)] transition-opacity duration-200 hover:opacity-80"
+          className="absolute inset-0 flex items-center justify-center text-sm font-semibold tracking-wide text-[var(--accent-light)] transition-opacity duration-200 hover:opacity-80"
         >
           Ablam NotePad
         </Link>
 
-        <button
-          type="button"
-          onClick={handleShare}
-          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
-            copied
+        <div className="relative z-10 flex items-center gap-2">
+          <PasswordSetup
+            noteId={noteId}
+            hasPassword={hasPassword}
+            onPasswordChange={setHasPassword}
+          />
+          <button
+            type="button"
+            onClick={handleShare}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${copied
               ? "border-[var(--accent)]/20 bg-[var(--accent)]/10 text-[var(--accent-light)]"
               : "border-transparent text-gray-500 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
-          }`}
-        >
-          {copied ? (
-            <>
-              <Check size={13} />
-              <span>Kopyalandı</span>
-            </>
-          ) : (
-            <>
-              <Share2 size={13} />
-              <span>Paylaş</span>
-            </>
-          )}
-        </button>
+              }`}
+          >
+            {copied ? (
+              <>
+                <Check size={13} />
+                <span>Kopyalandı</span>
+              </>
+            ) : (
+              <>
+                <Share2 size={13} />
+                <span>Paylaş</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Editor Card */}

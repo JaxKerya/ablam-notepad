@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import NoteEditor from "@/components/NoteEditor";
+import NotePageClient from "./NotePageClient";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export default async function NotePage({ params }: NotePageProps) {
   // Try to fetch the existing note
   const { data: existing, error: fetchError } = await supabase
     .from("notes")
-    .select("id, content")
+    .select("id, content, password_hash")
     .eq("id", noteId)
     .single();
 
@@ -45,6 +46,7 @@ export default async function NotePage({ params }: NotePageProps) {
     }
   }
 
+  const hasPassword = !!existing?.password_hash;
   const content = existing?.content ?? DEFAULT_CONTENT;
 
   return (
@@ -57,7 +59,11 @@ export default async function NotePage({ params }: NotePageProps) {
             "radial-gradient(ellipse 50% 40% at 50% 30%, rgba(139,157,90,0.04) 0%, rgba(139,157,90,0.012) 50%, transparent 75%)",
         }}
       />
-      <NoteEditor noteId={noteId} initialContent={content} />
+      {hasPassword ? (
+        <NotePageClient noteId={noteId} />
+      ) : (
+        <NoteEditor noteId={noteId} initialContent={content} hasPassword={false} />
+      )}
     </main>
   );
 }
