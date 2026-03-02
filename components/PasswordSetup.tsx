@@ -82,7 +82,7 @@ export default function PasswordSetup({
                     }`}
             >
                 {hasPassword ? <Lock size={13} /> : <Unlock size={13} />}
-                <span>{hasPassword ? "Şifreli" : "Şifre Ekle"}</span>
+                <span className="hidden sm:inline">{hasPassword ? "Şifreli" : "Şifre Ekle"}</span>
             </button>
 
             {open &&

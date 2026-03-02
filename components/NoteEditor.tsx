@@ -232,23 +232,22 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
   return (
     <div className="animate-fade-in-scale mx-auto w-full max-w-3xl">
       {/* Header */}
-      <div className="relative mb-5 flex items-center justify-between">
+      <div className="mb-5 flex items-center justify-between">
         <Link
           href="/"
-          className="relative z-10 flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-xs font-medium text-gray-500 transition-all duration-200 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
-        >
-          <Home size={13} />
-          <span>Ana Sayfa</span>
-        </Link>
-
-        <Link
-          href="/"
-          className="absolute inset-0 flex items-center justify-center text-sm font-semibold tracking-wide text-[var(--accent-light)] transition-opacity duration-200 hover:opacity-80"
+          className="pl-2 text-[15px] font-semibold tracking-wide text-[var(--accent-light)] transition-opacity duration-200 hover:opacity-80"
         >
           Ablam NotePad
         </Link>
 
-        <div className="relative z-10 flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1.5 text-xs font-medium text-gray-500 transition-all duration-200 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
+          >
+            <Home size={13} />
+            <span className="hidden sm:inline">Ana Sayfa</span>
+          </Link>
           <PasswordSetup
             noteId={noteId}
             hasPassword={hasPassword}
@@ -257,7 +256,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
           <button
             type="button"
             onClick={handleShare}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${copied
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${copied
               ? "border-[var(--accent)]/20 bg-[var(--accent)]/10 text-[var(--accent-light)]"
               : "border-transparent text-gray-500 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
               }`}
@@ -265,12 +264,12 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
             {copied ? (
               <>
                 <Check size={13} />
-                <span>Kopyalandı</span>
+                <span className="hidden sm:inline">Kopyalandı</span>
               </>
             ) : (
               <>
                 <Share2 size={13} />
-                <span>Paylaş</span>
+                <span className="hidden sm:inline">Paylaş</span>
               </>
             )}
           </button>

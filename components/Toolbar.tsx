@@ -90,7 +90,7 @@ function ToolbarButton({
 }
 
 function Separator() {
-  return <div className="mx-1.5 h-5 w-px bg-white/[0.06]" />;
+  return <div className="mx-1.5 h-5 w-px flex-shrink-0 bg-white/[0.06]" />;
 }
 
 function NoteBadge({
@@ -224,6 +224,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
   const [uploading, setUploading] = useState(false);
   const [imageSizeOpen, setImageSizeOpen] = useState(false);
   const [headingOpen, setHeadingOpen] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reactive editor state — ensures toolbar re-renders on selection/format changes
@@ -298,12 +299,18 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
 
         <Separator />
 
-        {/* Block type dropdown */}
-        <div className="relative">
+        {/* Block type dropdown trigger */}
+        <div>
           <button
             type="button"
-            onClick={() => setHeadingOpen(!headingOpen)}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-400 transition-all duration-150 hover:bg-white/[0.04] hover:text-gray-200"
+            onClick={(e) => {
+              if (headingOpen) { setHeadingOpen(false); return; }
+              const rect = e.currentTarget.getBoundingClientRect();
+              setDropdownPos({ top: rect.bottom + 6, left: rect.left });
+              setImageSizeOpen(false);
+              setHeadingOpen(true);
+            }}
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-400 transition-all duration-150 hover:bg-white/[0.04] hover:text-gray-200"
           >
             {es.isH1 ? <Heading1 size={14} className="text-[var(--accent-light)]" /> :
               es.isH2 ? <Heading2 size={14} className="text-[var(--accent-light)]" /> :
@@ -316,33 +323,6 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
               <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
             </svg>
           </button>
-
-          {headingOpen && (
-            <div className="absolute left-0 top-full z-50 mt-1.5 w-36 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-elevated)] py-1 shadow-xl shadow-black/30">
-              {[
-                { label: "Paragraf", icon: <Pilcrow size={14} />, active: !es.isH1 && !es.isH2 && !es.isH3, action: () => editor.chain().focus().setParagraph().run() },
-                { label: "Başlık 1", icon: <Heading1 size={14} />, active: es.isH1, action: () => editor.chain().focus().toggleHeading({ level: 1 }).run() },
-                { label: "Başlık 2", icon: <Heading2 size={14} />, active: es.isH2, action: () => editor.chain().focus().toggleHeading({ level: 2 }).run() },
-                { label: "Başlık 3", icon: <Heading3 size={14} />, active: es.isH3, action: () => editor.chain().focus().toggleHeading({ level: 3 }).run() },
-              ].map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  onClick={() => {
-                    item.action();
-                    setHeadingOpen(false);
-                  }}
-                  className={`flex w-full items-center gap-2.5 px-3 py-2 text-xs transition-all duration-100 ${item.active
-                    ? "bg-[var(--accent)]/10 text-[var(--accent-light)]"
-                    : "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200"
-                    }`}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         <Separator />
@@ -418,14 +398,20 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
           className="hidden"
         />
 
-        {/* Image resize dropdown — shown when an image is selected */}
+        {/* Image resize dropdown trigger — shown when an image is selected */}
         {es.isImage && (
           <>
             <Separator />
-            <div className="relative">
+            <div>
               <button
                 type="button"
-                onClick={() => setImageSizeOpen(!imageSizeOpen)}
+                onClick={(e) => {
+                  if (imageSizeOpen) { setImageSizeOpen(false); return; }
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setDropdownPos({ top: rect.bottom + 6, left: rect.left });
+                  setHeadingOpen(false);
+                  setImageSizeOpen(true);
+                }}
                 className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-[var(--accent-light)] transition-all duration-150 hover:bg-white/[0.04]"
               >
                 <span>{es.imageWidth}</span>
@@ -433,32 +419,6 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
                   <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
                 </svg>
               </button>
-
-              {imageSizeOpen && (
-                <div className="absolute left-0 top-full z-50 mt-1.5 w-28 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-elevated)] py-1 shadow-xl shadow-black/30">
-                  {IMAGE_SIZES.map((opt) => (
-                    <button
-                      key={opt.width}
-                      type="button"
-                      onClick={() => {
-                        editor
-                          .chain()
-                          .focus()
-                          .updateAttributes("image", { width: opt.width })
-                          .run();
-                        setImageSizeOpen(false);
-                      }}
-                      className={`flex w-full items-center justify-between px-3 py-1.5 text-xs transition-all duration-100 ${es.imageWidth === opt.width
-                        ? "bg-[var(--accent)]/10 text-[var(--accent-light)]"
-                        : "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200"
-                        }`}
-                    >
-                      <span>{opt.label}</span>
-                      <span className="text-[10px] tabular-nums text-gray-600">{opt.width}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </>
         )}
@@ -466,6 +426,79 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
         {/* Note badge */}
         <NoteBadge noteId={noteId} syncStatus={syncStatus} />
       </div>
+
+      {/* Heading dropdown — portaled to body */}
+      {headingOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[55]" onClick={() => setHeadingOpen(false)}>
+            <div
+              className="fixed w-36 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-elevated)] py-1 shadow-xl shadow-black/30"
+              style={{ top: dropdownPos.top, left: dropdownPos.left }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {[
+                { label: "Paragraf", icon: <Pilcrow size={14} />, active: !es.isH1 && !es.isH2 && !es.isH3, action: () => editor.chain().focus().setParagraph().run() },
+                { label: "Başlık 1", icon: <Heading1 size={14} />, active: es.isH1, action: () => editor.chain().focus().toggleHeading({ level: 1 }).run() },
+                { label: "Başlık 2", icon: <Heading2 size={14} />, active: es.isH2, action: () => editor.chain().focus().toggleHeading({ level: 2 }).run() },
+                { label: "Başlık 3", icon: <Heading3 size={14} />, active: es.isH3, action: () => editor.chain().focus().toggleHeading({ level: 3 }).run() },
+              ].map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    item.action();
+                    setHeadingOpen(false);
+                  }}
+                  className={`flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2 text-xs transition-all duration-100 ${item.active
+                    ? "bg-[var(--accent)]/10 text-[var(--accent-light)]"
+                    : "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200"
+                    }`}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Image size dropdown — portaled to body */}
+      {imageSizeOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[55]" onClick={() => setImageSizeOpen(false)}>
+            <div
+              className="fixed w-28 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-elevated)] py-1 shadow-xl shadow-black/30"
+              style={{ top: dropdownPos.top, left: dropdownPos.left }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {IMAGE_SIZES.map((opt) => (
+                <button
+                  key={opt.width}
+                  type="button"
+                  onClick={() => {
+                    editor
+                      .chain()
+                      .focus()
+                      .updateAttributes("image", { width: opt.width })
+                      .run();
+                    setImageSizeOpen(false);
+                  }}
+                  className={`flex w-full items-center justify-between px-3 py-1.5 text-xs transition-all duration-100 ${es.imageWidth === opt.width
+                    ? "bg-[var(--accent)]/10 text-[var(--accent-light)]"
+                    : "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200"
+                    }`}
+                >
+                  <span>{opt.label}</span>
+                  <span className="text-[10px] tabular-nums text-gray-600">{opt.width}</span>
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* Link popup — portaled to body to escape transform/overflow */}
       {linkPopupOpen &&
