@@ -7,9 +7,11 @@ import type { JSONContent } from "@tiptap/react";
 
 interface NotePageClientProps {
     noteId: string;
+    passwordHint: string | null;
+    noteIcon: string | null;
 }
 
-export default function NotePageClient({ noteId }: NotePageClientProps) {
+export default function NotePageClient({ noteId, passwordHint, noteIcon }: NotePageClientProps) {
     const [unlocked, setUnlocked] = useState(false);
     const [content, setContent] = useState<JSONContent | null>(null);
 
@@ -19,8 +21,8 @@ export default function NotePageClient({ noteId }: NotePageClientProps) {
     };
 
     if (unlocked && content) {
-        return <NoteEditor noteId={noteId} initialContent={content} hasPassword={true} />;
+        return <NoteEditor noteId={noteId} initialContent={content} hasPassword={true} initialIcon={noteIcon} />;
     }
 
-    return <PasswordGate noteId={noteId} onUnlock={handleUnlock} />;
+    return <PasswordGate noteId={noteId} passwordHint={passwordHint} onUnlock={handleUnlock} />;
 }

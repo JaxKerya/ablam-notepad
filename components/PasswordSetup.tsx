@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Lock, Unlock, Eye, EyeOff } from "lucide-react";
-import { hashPassword } from "@/lib/crypto";
+import { Lock, Unlock, Eye, EyeOff, KeyRound } from "lucide-react";
+import { hashPassword, verifyPassword } from "@/lib/crypto";
 import { supabase } from "@/lib/supabase-browser";
 
 interface PasswordSetupProps {
@@ -12,17 +12,34 @@ interface PasswordSetupProps {
     onPasswordChange: (hasPassword: boolean) => void;
 }
 
+type ModalMode = "menu" | "set" | "change-verify" | "change-new" | "remove";
+
 export default function PasswordSetup({
     noteId,
     hasPassword,
     onPasswordChange,
 }: PasswordSetupProps) {
     const [open, setOpen] = useState(false);
+    const [mode, setMode] = useState<ModalMode>("menu");
+    const [currentPassword, setCurrentPassword] = useState("");
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
+    const [hint, setHint] = useState("");
     const [showPw, setShowPw] = useState(false);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+
+    const resetState = () => {
+        setOpen(false);
+        setMode("menu");
+        setCurrentPassword("");
+        setPassword("");
+        setConfirm("");
+        setHint("");
+        setShowPw(false);
+        setError("");
+        setLoading(false);
+    };
 
     const handleSetPassword = async () => {
         setError("");
@@ -39,7 +56,7 @@ export default function PasswordSetup({
         const hash = await hashPassword(password);
         const { error: dbError } = await supabase
             .from("notes")
-            .update({ password_hash: hash })
+            .update({ password_hash: hash, password_hint: hint.trim() || null })
             .eq("id", noteId);
 
         setLoading(false);
@@ -49,16 +66,47 @@ export default function PasswordSetup({
         }
 
         onPasswordChange(true);
-        setPassword("");
-        setConfirm("");
-        setOpen(false);
+        resetState();
+    };
+
+    const handleVerifyCurrentPassword = async () => {
+        setError("");
+        if (!currentPassword.trim()) {
+            setError("Mevcut şifreyi girin.");
+            return;
+        }
+
+        setLoading(true);
+        const { data, error: dbError } = await supabase
+            .from("notes")
+            .select("password_hash")
+            .eq("id", noteId)
+            .single();
+
+        if (dbError || !data) {
+            setLoading(false);
+            setError("Not bulunamadı.");
+            return;
+        }
+
+        const isValid = await verifyPassword(currentPassword, data.password_hash);
+        setLoading(false);
+
+        if (!isValid) {
+            setError("Mevcut şifre yanlış.");
+            return;
+        }
+
+        setCurrentPassword("");
+        setError("");
+        setMode("change-new");
     };
 
     const handleRemovePassword = async () => {
         setLoading(true);
         const { error: dbError } = await supabase
             .from("notes")
-            .update({ password_hash: null })
+            .update({ password_hash: null, password_hint: null })
             .eq("id", noteId);
 
         setLoading(false);
@@ -68,14 +116,194 @@ export default function PasswordSetup({
         }
 
         onPasswordChange(false);
-        setOpen(false);
+        resetState();
+    };
+
+    const openModal = () => {
+        setOpen(true);
+        setMode(hasPassword ? "menu" : "set");
+    };
+
+    const renderContent = () => {
+        // Set password (no existing password)
+        if (mode === "set" || mode === "change-new") {
+            return (
+                <>
+                    <div className="mb-4 flex items-center gap-2.5">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10">
+                            {mode === "change-new" ? (
+                                <KeyRound size={16} className="text-[var(--accent)]" />
+                            ) : (
+                                <Lock size={16} className="text-[var(--accent)]" />
+                            )}
+                        </div>
+                        <h3 className="text-sm font-semibold text-gray-200">
+                            {mode === "change-new" ? "Yeni Şifre Belirle" : "Şifre Belirle"}
+                        </h3>
+                    </div>
+                    <div className="space-y-3">
+                        <div className="relative">
+                            <input
+                                type={showPw ? "text" : "password"}
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="Şifre"
+                                className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 pl-3 pr-10 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPw(!showPw)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
+                            >
+                                {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                        </div>
+                        <input
+                            type={showPw ? "text" : "password"}
+                            value={confirm}
+                            onChange={(e) => setConfirm(e.target.value)}
+                            placeholder="Şifre Tekrar"
+                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                        />
+                        <input
+                            type="text"
+                            value={hint}
+                            onChange={(e) => setHint(e.target.value)}
+                            placeholder="İpucu (isteğe bağlı)"
+                            maxLength={100}
+                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                        />
+                    </div>
+                    {error && (
+                        <p className="mt-2 text-xs text-red-400">{error}</p>
+                    )}
+                    <div className="mt-4 flex gap-2.5">
+                        <button
+                            type="button"
+                            onClick={resetState}
+                            className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                        >
+                            Vazgeç
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleSetPassword}
+                            disabled={loading}
+                            className="flex-1 rounded-xl bg-[var(--accent)]/15 px-4 py-2.5 text-xs font-medium text-[var(--accent-light)] transition-all hover:bg-[var(--accent)]/25 disabled:opacity-50"
+                        >
+                            {loading ? "Kaydediliyor..." : "Şifrele"}
+                        </button>
+                    </div>
+                </>
+            );
+        }
+
+        // Verify current password before changing
+        if (mode === "change-verify") {
+            return (
+                <>
+                    <div className="mb-4 flex items-center gap-2.5">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10">
+                            <KeyRound size={16} className="text-[var(--accent)]" />
+                        </div>
+                        <h3 className="text-sm font-semibold text-gray-200">
+                            Şifreyi Değiştir
+                        </h3>
+                    </div>
+                    <p className="mb-3 text-[13px] leading-relaxed text-gray-500">
+                        Devam etmek için mevcut şifrenizi girin.
+                    </p>
+                    <div className="relative">
+                        <input
+                            type={showPw ? "text" : "password"}
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            placeholder="Mevcut Şifre"
+                            autoFocus
+                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 pl-3 pr-10 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowPw(!showPw)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
+                        >
+                            {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                    </div>
+                    {error && (
+                        <p className="mt-2 text-xs text-red-400">{error}</p>
+                    )}
+                    <div className="mt-4 flex gap-2.5">
+                        <button
+                            type="button"
+                            onClick={resetState}
+                            className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                        >
+                            Vazgeç
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleVerifyCurrentPassword}
+                            disabled={loading}
+                            className="flex-1 rounded-xl bg-[var(--accent)]/15 px-4 py-2.5 text-xs font-medium text-[var(--accent-light)] transition-all hover:bg-[var(--accent)]/25 disabled:opacity-50"
+                        >
+                            {loading ? "Doğrulanıyor..." : "Devam Et"}
+                        </button>
+                    </div>
+                </>
+            );
+        }
+
+        // Menu: Change or Remove
+        return (
+            <>
+                <div className="mb-4 flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10">
+                        <Lock size={16} className="text-[var(--accent)]" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-gray-200">
+                        Şifre Yönetimi
+                    </h3>
+                </div>
+                <p className="mb-4 text-[13px] leading-relaxed text-gray-500">
+                    Bu not şifre ile korunuyor.
+                </p>
+                {error && (
+                    <p className="mb-3 text-xs text-red-400">{error}</p>
+                )}
+                <div className="flex flex-col gap-2.5">
+                    <button
+                        type="button"
+                        onClick={() => { setError(""); setMode("change-verify"); }}
+                        className="w-full rounded-xl bg-[var(--accent)]/15 px-4 py-2.5 text-xs font-medium text-[var(--accent-light)] transition-all hover:bg-[var(--accent)]/25"
+                    >
+                        Şifreyi Değiştir
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleRemovePassword}
+                        disabled={loading}
+                        className="w-full rounded-xl bg-red-500/15 px-4 py-2.5 text-xs font-medium text-red-400 transition-all hover:bg-red-500/25 disabled:opacity-50"
+                    >
+                        {loading ? "Kaldırılıyor..." : "Şifreyi Kaldır"}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={resetState}
+                        className="w-full rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                    >
+                        Vazgeç
+                    </button>
+                </div>
+            </>
+        );
     };
 
     return (
         <>
             <button
                 type="button"
-                onClick={() => setOpen(true)}
+                onClick={openModal}
                 className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${hasPassword
                     ? "border-[var(--accent)]/20 bg-[var(--accent)]/10 text-[var(--accent-light)]"
                     : "border-transparent text-gray-500 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
@@ -90,114 +318,13 @@ export default function PasswordSetup({
                 createPortal(
                     <div
                         className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-                        onClick={() => {
-                            setOpen(false);
-                            setError("");
-                            setPassword("");
-                            setConfirm("");
-                        }}
+                        onClick={resetState}
                     >
                         <div
                             className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-2xl shadow-black/40"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="mb-4 flex items-center gap-2.5">
-                                <div
-                                    className={`flex h-9 w-9 items-center justify-center rounded-xl ${hasPassword
-                                        ? "bg-[var(--accent)]/10"
-                                        : "bg-[var(--accent)]/10"
-                                        }`}
-                                >
-                                    <Lock size={16} className="text-[var(--accent)]" />
-                                </div>
-                                <h3 className="text-sm font-semibold text-gray-200">
-                                    {hasPassword ? "Şifre Yönetimi" : "Şifre Belirle"}
-                                </h3>
-                            </div>
-
-                            {!hasPassword ? (
-                                <>
-                                    <div className="space-y-3">
-                                        <div className="relative">
-                                            <input
-                                                type={showPw ? "text" : "password"}
-                                                value={password}
-                                                onChange={(e) => setPassword(e.target.value)}
-                                                placeholder="Şifre"
-                                                className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 pl-3 pr-10 text-sm text-gray-200 placeholder-gray-600 transition-all"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowPw(!showPw)}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
-                                            >
-                                                {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                                            </button>
-                                        </div>
-                                        <input
-                                            type={showPw ? "text" : "password"}
-                                            value={confirm}
-                                            onChange={(e) => setConfirm(e.target.value)}
-                                            placeholder="Şifre Tekrar"
-                                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 text-sm text-gray-200 placeholder-gray-600 transition-all"
-                                        />
-                                    </div>
-                                    {error && (
-                                        <p className="mt-2 text-xs text-red-400">{error}</p>
-                                    )}
-                                    <div className="mt-4 flex gap-2.5">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setOpen(false);
-                                                setError("");
-                                                setPassword("");
-                                                setConfirm("");
-                                            }}
-                                            className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
-                                        >
-                                            Vazgeç
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={handleSetPassword}
-                                            disabled={loading}
-                                            className="flex-1 rounded-xl bg-[var(--accent)]/15 px-4 py-2.5 text-xs font-medium text-[var(--accent-light)] transition-all hover:bg-[var(--accent)]/25 disabled:opacity-50"
-                                        >
-                                            {loading ? "Kaydediliyor..." : "Şifrele"}
-                                        </button>
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <p className="mb-4 text-[13px] leading-relaxed text-gray-500">
-                                        Bu not şifre ile korunuyor. Şifreyi kaldırmak ister misiniz?
-                                    </p>
-                                    {error && (
-                                        <p className="mb-3 text-xs text-red-400">{error}</p>
-                                    )}
-                                    <div className="flex gap-2.5">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setOpen(false);
-                                                setError("");
-                                            }}
-                                            className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
-                                        >
-                                            Vazgeç
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={handleRemovePassword}
-                                            disabled={loading}
-                                            className="flex-1 rounded-xl bg-red-500/15 px-4 py-2.5 text-xs font-medium text-red-400 transition-all hover:bg-red-500/25 disabled:opacity-50"
-                                        >
-                                            {loading ? "Kaldırılıyor..." : "Şifreyi Kaldır"}
-                                        </button>
-                                    </div>
-                                </>
-                            )}
+                            {renderContent()}
                         </div>
                     </div>,
                     document.body

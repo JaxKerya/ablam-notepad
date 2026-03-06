@@ -1,17 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, Eye, EyeOff } from "lucide-react";
+import { Lock, Eye, EyeOff, Lightbulb } from "lucide-react";
 import { verifyPassword } from "@/lib/crypto";
 import { supabase } from "@/lib/supabase-browser";
 import type { JSONContent } from "@tiptap/react";
 
 interface PasswordGateProps {
     noteId: string;
+    passwordHint: string | null;
     onUnlock: (content: JSONContent) => void;
 }
 
-export default function PasswordGate({ noteId, onUnlock }: PasswordGateProps) {
+export default function PasswordGate({ noteId, passwordHint, onUnlock }: PasswordGateProps) {
     const [password, setPassword] = useState("");
     const [showPw, setShowPw] = useState(false);
     const [error, setError] = useState("");
@@ -30,7 +31,7 @@ export default function PasswordGate({ noteId, onUnlock }: PasswordGateProps) {
             // Fetch hash from DB
             const { data, error: dbError } = await supabase
                 .from("notes")
-                .select("password_hash, content")
+                .select("password_hash, content, password_hint")
                 .eq("id", noteId)
                 .single();
 
@@ -80,6 +81,11 @@ export default function PasswordGate({ noteId, onUnlock }: PasswordGateProps) {
                     <p className="text-center text-[13px] leading-relaxed text-gray-500">
                         Bu notu görüntülemek için şifre girmeniz gerekiyor.
                     </p>
+                    {passwordHint && (
+                        <p className="mt-1 flex items-center justify-center gap-1.5 text-center text-[12px] leading-relaxed text-[var(--accent-light)]/70">
+                            <Lightbulb size={13} className="shrink-0" /> İpucu: {passwordHint}
+                        </p>
+                    )}
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-3">

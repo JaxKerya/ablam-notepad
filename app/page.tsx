@@ -13,13 +13,22 @@ import {
   PenLine,
   Pin,
   PinOff,
+  Lock,
+  Eye,
+  EyeOff,
+  Search,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
+import { verifyPassword } from "@/lib/crypto";
+import { DynamicIcon } from "@/components/IconPicker";
+import { useToast } from "@/components/Toast";
 
 interface NoteItem {
   id: string;
   updated_at: string;
   pinned: boolean;
+  has_password: boolean;
+  icon: string | null;
 }
 
 function timeAgo(dateStr: string): string {
@@ -45,12 +54,26 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleteShowPw, setDeleteShowPw] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [sidebarSearch, setSidebarSearch] = useState("");
   const router = useRouter();
+  const { addToast } = useToast();
+
+  const resetDeleteState = () => {
+    setDeleteConfirm(null);
+    setDeletePassword("");
+    setDeleteError("");
+    setDeleteShowPw(false);
+    setDeleteLoading(false);
+  };
 
   const fetchNotes = useCallback(async () => {
     const { data, error } = await supabase
       .from("notes")
-      .select("id, updated_at, pinned")
+      .select("id, updated_at, pinned, password_hash, icon")
       .order("pinned", { ascending: false })
       .order("updated_at", { ascending: false });
 
@@ -58,7 +81,7 @@ export default function Home() {
       console.error("Notlar yüklenemedi:", error.message);
     }
     setNotes(
-      (data ?? []).map((n) => ({ ...n, pinned: n.pinned ?? false }))
+      (data ?? []).map((n) => ({ ...n, pinned: n.pinned ?? false, has_password: !!n.password_hash, icon: n.icon ?? null }))
     );
     setLoading(false);
   }, []);
@@ -92,9 +115,12 @@ export default function Home() {
       if (error) {
         console.error("Not silinemedi:", error.message);
         setNotes(prev);
+        addToast("Not silinemedi.", "error");
+      } else {
+        addToast(`"${id}" silindi.`, "delete");
       }
     },
-    [notes]
+    [notes, addToast]
   );
 
   const handleTogglePin = useCallback(
@@ -128,9 +154,12 @@ export default function Home() {
             return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
           });
         });
+        addToast("Pin güncellenemedi.", "error");
+      } else {
+        addToast(!currentPinned ? "Not sabitlendi." : "Sabitleme kaldırıldı.", "success");
       }
     },
-    []
+    [addToast]
   );
 
   return (
@@ -154,17 +183,23 @@ export default function Home() {
 
       {/* Sidebar */}
       <aside
-        className={`glass-strong fixed left-0 top-0 z-50 flex h-screen w-72 flex-col border-r border-[var(--border)] p-5 shadow-2xl shadow-black/30 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        className={`glass-strong fixed left-0 top-0 z-50 flex h-screen w-72 flex-col border-r border-[var(--border)] shadow-2xl shadow-black/40 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
       >
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-500">
-            <Layers size={13} className="text-[var(--accent)]/60" />
-            Tüm Notlar
-            <span className="rounded-full bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--accent)]">
-              {notes.length}
-            </span>
-          </h2>
+        {/* Subtle top glow */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-[var(--accent)]/[0.03] to-transparent" />
+
+        {/* Header */}
+        <div className="relative flex items-center justify-between px-5 pt-5 pb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)]/10">
+              <Layers size={13} className="text-[var(--accent)]" />
+            </div>
+            <div>
+              <h2 className="text-[13px] font-semibold text-gray-300">Tüm Notlar</h2>
+              <p className="text-[10px] text-gray-600">{notes.length} not</p>
+            </div>
+          </div>
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
@@ -174,66 +209,100 @@ export default function Home() {
           </button>
         </div>
 
-        <div className="-mx-1 flex-1 overflow-y-auto">
+        <div className="mx-5 h-px bg-gradient-to-r from-transparent via-[var(--border)] to-transparent" />
+
+        {/* Search */}
+        <div className="px-4 pt-3">
+          <div className="relative">
+            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" />
+            <input
+              type="text"
+              value={sidebarSearch}
+              onChange={(e) => setSidebarSearch(e.target.value.replace(/\s+/g, "-"))}
+              placeholder="Notlarda ara…"
+              className="w-full rounded-lg border border-[var(--border)] bg-white/[0.02] py-1.5 pl-8 pr-3 text-xs text-gray-300 placeholder-gray-600 transition-all focus:border-[var(--accent)]/30 focus:bg-white/[0.04] focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Notes list */}
+        <div className="flex-1 overflow-y-auto px-3 pt-2 pb-5">
           {loading && (
             <div className="flex items-center justify-center py-10 text-xs text-gray-600">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--accent)]/20 border-t-[var(--accent)]/60" />
             </div>
           )}
           {!loading && notes.length === 0 && (
-            <div className="flex flex-col items-center justify-center gap-2 py-12 text-xs text-gray-600">
-              <FileText size={20} className="text-gray-700" />
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs text-gray-600">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.03]">
+                <FileText size={18} className="text-gray-700" />
+              </div>
               <span>Henüz not yok.</span>
             </div>
           )}
-          {notes.map((item) => (
-            <div
-              key={item.id}
-              className={`group flex items-center gap-2.5 rounded-lg px-3 py-2.5 transition-all duration-200 hover:translate-x-1 hover:bg-[var(--accent)]/[0.06] ${item.pinned ? "border-l-2 border-[var(--accent)]/30" : ""
-                }`}
-            >
-              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-[var(--accent)]/[0.07]">
-                {item.pinned ? (
-                  <Pin size={13} className="text-[var(--accent)]" />
-                ) : (
-                  <FileText size={13} className="text-[var(--accent)]/60" />
-                )}
-              </div>
+          <div className="flex flex-col gap-0.5">
+            {notes
+              .filter((item) => !sidebarSearch.trim() || item.id.toLowerCase().includes(sidebarSearch.toLowerCase()))
+              .map((item) => (
+                <div
+                  key={item.id}
+                  className={`group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all duration-200 hover:bg-[var(--accent)]/[0.05] ${item.pinned ? "bg-[var(--accent)]/[0.03]" : ""
+                    }`}
+                >
+                  {/* Pinned indicator */}
+                  {item.pinned && (
+                    <div className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-[var(--accent)]/40" />
+                  )}
 
-              <Link
-                href={`/note/${item.id}`}
-                className="flex-1 min-w-0 flex flex-col transition-colors hover:text-gray-200"
-              >
-                <span className="truncate text-[13px] text-gray-400 group-hover:text-gray-200 transition-colors">
-                  {item.id}
-                </span>
-                <span className="text-[10px] tabular-nums text-gray-700">
-                  {timeAgo(item.updated_at)}
-                </span>
-              </Link>
+                  <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors duration-200 ${item.pinned ? "bg-[var(--accent)]/10" : "bg-white/[0.03] group-hover:bg-[var(--accent)]/[0.07]"
+                    }`}>
+                    {item.pinned ? (
+                      <Pin size={15} className="text-[var(--accent)]" />
+                    ) : item.icon ? (
+                      <DynamicIcon name={item.icon} size={15} className="text-[var(--accent)]/60" />
+                    ) : (
+                      <FileText size={15} className="text-[var(--accent)]/60 group-hover:text-[var(--accent)]" />
+                    )}
+                  </div>
 
-              <button
-                type="button"
-                onClick={() => handleTogglePin(item.id, item.pinned)}
-                className={`flex-shrink-0 rounded-md p-1.5 transition-all duration-150 ${item.pinned
-                  ? "text-[var(--accent)] hover:bg-[var(--accent)]/10 hover:text-[var(--accent-light)]"
-                  : "text-gray-700 opacity-0 hover:bg-[var(--accent)]/10 hover:text-[var(--accent)] group-hover:opacity-100"
-                  }`}
-                aria-label={item.pinned ? "Sabitlemeyi kaldır" : "Sabitle"}
-              >
-                {item.pinned ? <PinOff size={12} /> : <Pin size={12} />}
-              </button>
+                  <Link
+                    href={`/note/${item.id}`}
+                    className="flex-1 min-w-0 flex flex-col transition-colors hover:text-gray-200"
+                  >
+                    <span className="truncate text-[13px] text-gray-400 group-hover:text-gray-200 transition-colors flex items-center gap-1.5">
+                      {item.id}
+                      {item.has_password && <Lock size={10} className="shrink-0 text-[var(--accent)]/40" />}
+                    </span>
+                    <span className="text-[10px] tabular-nums text-gray-700 group-hover:text-gray-600">
+                      {timeAgo(item.updated_at)}
+                    </span>
+                  </Link>
 
-              <button
-                type="button"
-                onClick={() => setDeleteConfirm(item.id)}
-                className="flex-shrink-0 rounded-md p-1.5 text-gray-700 opacity-0 transition-all duration-150 hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
-                aria-label="Notu sil"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleTogglePin(item.id, item.pinned)}
+                      className={`flex-shrink-0 rounded-md p-1.5 transition-all duration-150 ${item.pinned
+                        ? "text-[var(--accent)] hover:bg-[var(--accent)]/10 hover:text-[var(--accent-light)]"
+                        : "text-gray-700 opacity-0 hover:bg-[var(--accent)]/10 hover:text-[var(--accent)] group-hover:opacity-100"
+                        }`}
+                      aria-label={item.pinned ? "Sabitlemeyi kaldır" : "Sabitle"}
+                    >
+                      {item.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDeleteConfirm(item.id)}
+                      className="flex-shrink-0 rounded-md p-1.5 text-gray-700 opacity-0 transition-all duration-150 hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
+                      aria-label="Notu sil"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
         </div>
       </aside>
 
@@ -241,7 +310,7 @@ export default function Home() {
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 pb-12">
         {/* Title area */}
         <div className="animate-fade-in mb-12 flex flex-col items-center">
-          <Image src="/ablam.png" alt="Ablam Notepad" width={180} height={40} className="mb-2 h-6 w-auto" />
+          <Image src="/ablam.png" alt="Ablam Notepad" width={180} height={40} className="mb-3 h-6.5 w-auto" />
           <p className="max-w-xs text-center text-[13px] leading-relaxed text-gray-600">
             Ablam yeni bir not oluşturmak veya mevcut bir notu açmak için ismini girebilirsin.
           </p>
@@ -293,7 +362,7 @@ export default function Home() {
       {deleteConfirm && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setDeleteConfirm(null)}
+          onClick={resetDeleteState}
         >
           <div
             className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-2xl shadow-black/40"
@@ -308,27 +377,77 @@ export default function Home() {
               </h3>
             </div>
 
-            <p className="mb-5 mt-3 text-[13px] leading-relaxed text-gray-500">
+            <p className="mb-4 mt-3 text-[13px] leading-relaxed text-gray-500">
               <span className="font-medium text-gray-400">{deleteConfirm}</span> notunu silmek istediğine emin misin? Bu işlem geri alınamaz.
             </p>
+
+            {notes.find((n) => n.id === deleteConfirm)?.has_password && (
+              <div className="mb-4">
+                <div className="relative">
+                  <input
+                    type={deleteShowPw ? "text" : "password"}
+                    value={deletePassword}
+                    onChange={(e) => { setDeletePassword(e.target.value); setDeleteError(""); }}
+                    placeholder="Not şifresini girin"
+                    autoFocus
+                    className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 pl-3 pr-10 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setDeleteShowPw(!deleteShowPw)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
+                  >
+                    {deleteShowPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                {deleteError && (
+                  <p className="mt-2 text-xs text-red-400">{deleteError}</p>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-2.5">
               <button
                 type="button"
-                onClick={() => setDeleteConfirm(null)}
+                onClick={resetDeleteState}
                 className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
               >
                 Vazgeç
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  handleDelete(deleteConfirm);
-                  setDeleteConfirm(null);
+                disabled={deleteLoading}
+                onClick={async () => {
+                  const note = notes.find((n) => n.id === deleteConfirm);
+                  if (note?.has_password) {
+                    if (!deletePassword.trim()) {
+                      setDeleteError("Şifreyi girin.");
+                      return;
+                    }
+                    setDeleteLoading(true);
+                    const { data } = await supabase
+                      .from("notes")
+                      .select("password_hash")
+                      .eq("id", deleteConfirm)
+                      .single();
+                    if (!data) {
+                      setDeleteError("Not bulunamadı.");
+                      setDeleteLoading(false);
+                      return;
+                    }
+                    const valid = await verifyPassword(deletePassword, data.password_hash);
+                    if (!valid) {
+                      setDeleteError("Şifre yanlış.");
+                      setDeleteLoading(false);
+                      return;
+                    }
+                  }
+                  handleDelete(deleteConfirm!);
+                  resetDeleteState();
                 }}
-                className="flex-1 rounded-xl bg-red-500/15 px-4 py-2.5 text-xs font-medium text-red-400 transition-all hover:bg-red-500/25"
+                className="flex-1 rounded-xl bg-red-500/15 px-4 py-2.5 text-xs font-medium text-red-400 transition-all hover:bg-red-500/25 disabled:opacity-50"
               >
-                Evet, Sil
+                {deleteLoading ? "Doğrulanıyor..." : "Evet, Sil"}
               </button>
             </div>
           </div>

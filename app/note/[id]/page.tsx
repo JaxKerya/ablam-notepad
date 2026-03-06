@@ -18,7 +18,7 @@ export default async function NotePage({ params }: NotePageProps) {
   // Try to fetch the existing note
   const { data: existing, error: fetchError } = await supabase
     .from("notes")
-    .select("id, content, password_hash")
+    .select("id, content, password_hash, password_hint, icon")
     .eq("id", noteId)
     .single();
 
@@ -60,9 +60,9 @@ export default async function NotePage({ params }: NotePageProps) {
         }}
       />
       {hasPassword ? (
-        <NotePageClient noteId={noteId} />
+        <NotePageClient noteId={noteId} passwordHint={existing?.password_hint ?? null} noteIcon={existing?.icon ?? null} />
       ) : (
-        <NoteEditor noteId={noteId} initialContent={content} hasPassword={false} />
+        <NoteEditor noteId={noteId} initialContent={content} hasPassword={false} initialIcon={existing?.icon ?? null} />
       )}
     </main>
   );

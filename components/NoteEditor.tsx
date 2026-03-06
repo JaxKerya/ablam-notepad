@@ -8,11 +8,12 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import LinkExtension from "@tiptap/extension-link";
 import ImageExtension from "@tiptap/extension-image";
-import { Share2, Check, Home } from "lucide-react";
+import { Share2, Check, Home, FileText } from "lucide-react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase-browser";
 import Toolbar from "./Toolbar";
 import PasswordSetup from "./PasswordSetup";
+import IconPicker, { DynamicIcon } from "./IconPicker";
 import type { JSONContent, Editor } from "@tiptap/react";
 import Link from "next/link";
 
@@ -54,9 +55,10 @@ interface NoteEditorProps {
   noteId: string;
   initialContent: JSONContent;
   hasPassword: boolean;
+  initialIcon?: string | null;
 }
 
-export default function NoteEditor({ noteId, initialContent, hasPassword: initialHasPassword }: NoteEditorProps) {
+export default function NoteEditor({ noteId, initialContent, hasPassword: initialHasPassword, initialIcon }: NoteEditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recentSavesRef = useRef<Set<string>>(new Set());
@@ -64,6 +66,13 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
   const [copied, setCopied] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("synced");
   const [hasPassword, setHasPassword] = useState(initialHasPassword);
+  const [noteIcon, setNoteIcon] = useState<string | null>(initialIcon ?? null);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+
+  const handleIconSelect = async (iconName: string) => {
+    setNoteIcon(iconName);
+    await supabase.from("notes").update({ icon: iconName }).eq("id", noteId);
+  };
 
   const attemptSave = async (json: JSONContent, jsonStr: string, retries = 0) => {
     try {
@@ -274,6 +283,18 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
               </>
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => setIconPickerOpen(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-gray-500 transition-all duration-200 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
+            title="İkon değiştir"
+          >
+            {noteIcon ? (
+              <DynamicIcon name={noteIcon} size={15} />
+            ) : (
+              <FileText size={15} />
+            )}
+          </button>
         </div>
       </div>
 
@@ -290,6 +311,14 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
         {/* Word/character counter */}
         {editor && <CharCount editor={editor} />}
       </div>
+
+      {iconPickerOpen && (
+        <IconPicker
+          currentIcon={noteIcon}
+          onSelect={handleIconSelect}
+          onClose={() => setIconPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }
