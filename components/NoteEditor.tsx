@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import UnderlineExtension from "@tiptap/extension-underline";
@@ -11,6 +11,7 @@ import ImageExtension from "@tiptap/extension-image";
 import { Share2, Check, Home, FileText } from "lucide-react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase-browser";
+import { uploadImage } from "@/lib/upload";
 import Toolbar from "./Toolbar";
 import PasswordSetup from "./PasswordSetup";
 import IconPicker, { DynamicIcon } from "./IconPicker";
@@ -34,7 +35,7 @@ const CustomImage = ImageExtension.extend({
   },
 });
 
-type SyncStatus = "synced" | "syncing" | "error";
+type SyncStatus = "synced" | "syncing" | "error" | "offline";
 
 function CharCount({ editor }: { editor: Editor }) {
   const text = useEditorState({
@@ -63,6 +64,8 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recentSavesRef = useRef<Set<string>>(new Set());
   const pendingSaveRef = useRef<{ json: JSONContent; jsonStr: string } | null>(null);
+  const isSavingRef = useRef(false);
+  const lastSaveTimestampRef = useRef(0);
   const [copied, setCopied] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("synced");
   const [hasPassword, setHasPassword] = useState(initialHasPassword);
@@ -74,8 +77,17 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
     await supabase.from("notes").update({ icon: iconName }).eq("id", noteId);
   };
 
-  const attemptSave = async (json: JSONContent, jsonStr: string, retries = 0) => {
+  const attemptSave = useCallback(async (json: JSONContent, jsonStr: string, retries = 0) => {
+    // Don't attempt save if offline — store as pending
+    if (!navigator.onLine) {
+      pendingSaveRef.current = { json, jsonStr };
+      setSyncStatus("offline");
+      return;
+    }
+
     try {
+      isSavingRef.current = true;
+      lastSaveTimestampRef.current = Date.now();
       recentSavesRef.current.add(jsonStr);
       const { error } = await supabase
         .from("notes")
@@ -90,8 +102,11 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
       pendingSaveRef.current = null;
       setTimeout(() => recentSavesRef.current.delete(jsonStr), 5000);
       setSyncStatus("synced");
+      // Keep isSaving flag up long enough for the echo to arrive and be ignored
+      setTimeout(() => { isSavingRef.current = false; }, 2000);
     } catch (err) {
       console.error("Kaydetme hatası:", err);
+      isSavingRef.current = false;
       recentSavesRef.current.delete(jsonStr);
       pendingSaveRef.current = { json, jsonStr };
 
@@ -106,7 +121,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
         setSyncStatus("error");
       }
     }
-  };
+  }, [noteId]);
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -156,6 +171,45 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
         autocorrect: "off",
         autocapitalize: "off",
       },
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved || !event.dataTransfer?.files.length) return false;
+        const file = Array.from(event.dataTransfer.files).find((f) =>
+          f.type.startsWith("image/")
+        );
+        if (!file) return false;
+        event.preventDefault();
+        const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+        uploadImage(file, noteId)
+          .then((url) => {
+            const node = view.state.schema.nodes.image.create({ src: url });
+            if (pos != null) {
+              const tr = view.state.tr.insert(pos, node);
+              view.dispatch(tr);
+            } else {
+              view.dispatch(view.state.tr.replaceSelectionWith(node));
+            }
+          })
+          .catch((err) => console.error("Görsel yükleme hatası:", err));
+        return true;
+      },
+      handlePaste: (view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        const imageItem = Array.from(items).find((item) =>
+          item.type.startsWith("image/")
+        );
+        if (!imageItem) return false;
+        const file = imageItem.getAsFile();
+        if (!file) return false;
+        event.preventDefault();
+        uploadImage(file, noteId)
+          .then((url) => {
+            const node = view.state.schema.nodes.image.create({ src: url });
+            view.dispatch(view.state.tr.replaceSelectionWith(node));
+          })
+          .catch((err) => console.error("Görsel yapıştırma hatası:", err));
+        return true;
+      },
     },
     onUpdate: ({ editor }) => {
       setSyncStatus("syncing");
@@ -173,7 +227,8 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
         }
 
         attemptSave(json, jsonStr);
-      }, 500);
+        saveTimeoutRef.current = null;
+      }, 800);
     },
   });
 
@@ -199,6 +254,13 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
         (payload) => {
           const newContent = payload.new.content as JSONContent;
           if (!newContent) return;
+
+          // Skip if we are actively saving or just saved recently (echo suppression)
+          if (isSavingRef.current) return;
+          if (Date.now() - lastSaveTimestampRef.current < 2000) return;
+
+          // Skip if there is a pending local save (user is still typing)
+          if (saveTimeoutRef.current) return;
 
           const incomingJSON = JSON.stringify(newContent);
 
@@ -230,6 +292,54 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
       supabase.removeChannel(channel);
     };
   }, [noteId, editor]);
+
+  // Online/offline detection — auto-retry pending saves on reconnect
+  useEffect(() => {
+    const goOffline = () => setSyncStatus("offline");
+    const goOnline = () => {
+      if (pendingSaveRef.current) {
+        const { json, jsonStr } = pendingSaveRef.current;
+        setSyncStatus("syncing");
+        attemptSave(json, jsonStr);
+      } else {
+        setSyncStatus("synced");
+      }
+    };
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    if (!navigator.onLine) setSyncStatus("offline");
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, [attemptSave]);
+
+  // Visibility API — flush pending save when tab hidden, retry when visible
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        // Flush pending debounced save immediately before tab goes to background
+        if (saveTimeoutRef.current && editor) {
+          clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+          const json = editor.getJSON();
+          const jsonStr = JSON.stringify(json);
+          if (!recentSavesRef.current.has(jsonStr)) {
+            attemptSave(json, jsonStr);
+          }
+        }
+      } else {
+        // Tab came back — retry any pending save
+        if (pendingSaveRef.current) {
+          const { json, jsonStr } = pendingSaveRef.current;
+          setSyncStatus("syncing");
+          attemptSave(json, jsonStr);
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [editor, attemptSave]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -300,7 +410,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
 
       {/* Editor Card */}
       <div
-        className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-2xl shadow-black/30"
+        className="relative rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-2xl shadow-black/30"
         style={{
           boxShadow:
             "0 0 60px -12px rgba(139,157,90,0.08), 0 0 30px -8px rgba(139,157,90,0.05), 0 25px 50px -12px rgba(0,0,0,0.4)",

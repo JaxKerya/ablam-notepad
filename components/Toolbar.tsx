@@ -24,12 +24,13 @@ import {
   Link2,
   Unlink,
   ImagePlus,
+  WifiOff,
 } from "lucide-react";
 import { uploadImage } from "@/lib/upload";
 
 interface ToolbarProps {
   editor: Editor | null;
-  syncStatus: "synced" | "syncing" | "error";
+  syncStatus: "synced" | "syncing" | "error" | "offline";
   noteId: string;
 }
 
@@ -98,7 +99,7 @@ function NoteBadge({
   syncStatus,
 }: {
   noteId: string;
-  syncStatus: "synced" | "syncing" | "error";
+  syncStatus: "synced" | "syncing" | "error" | "offline";
 }) {
   const [showTooltip, setShowTooltip] = useState(false);
 
@@ -106,23 +107,25 @@ function NoteBadge({
     syncing: <RefreshCw size={15} className="animate-spin text-[var(--accent)]" />,
     synced: <CheckCircle2 size={15} className="text-[var(--accent)]/50 transition-colors" />,
     error: <AlertCircle size={15} className="text-red-400 animate-pulse" />,
+    offline: <WifiOff size={15} className="text-amber-400/70 animate-pulse" />,
   }[syncStatus];
 
   const tooltipText = {
     syncing: "Kaydediliyor...",
     synced: "Kaydedildi",
     error: "Kaydetme başarısız!",
+    offline: "Çevrimdışı — bağlantı bekleniyor",
   }[syncStatus];
 
   return (
     <div
-      className={`relative ml-auto flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition-colors ${syncStatus === "error" ? "bg-red-500/[0.06]" : "bg-white/[0.03]"
+      className={`relative ml-auto flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition-colors ${syncStatus === "error" ? "bg-red-500/[0.06]" : syncStatus === "offline" ? "bg-amber-500/[0.06]" : "bg-white/[0.03]"
         }`}
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
       {syncIcon}
-      <span className={`max-w-[110px] truncate text-xs sm:max-w-[170px] ${syncStatus === "error" ? "text-red-400/80" : "text-gray-400"
+      <span className={`max-w-[110px] truncate text-xs sm:max-w-[170px] ${syncStatus === "error" ? "text-red-400/80" : syncStatus === "offline" ? "text-amber-400/80" : "text-gray-400"
         }`}>
         {noteId}
       </span>
@@ -130,7 +133,9 @@ function NoteBadge({
       {showTooltip && (
         <div className={`pointer-events-none absolute right-0 top-full z-50 mt-2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs shadow-xl shadow-black/20 ${syncStatus === "error"
           ? "border-red-500/15 bg-red-950/80 text-red-300"
-          : "border-[var(--border)] bg-[var(--surface)] text-gray-300"
+          : syncStatus === "offline"
+            ? "border-amber-500/15 bg-amber-950/80 text-amber-300"
+            : "border-[var(--border)] bg-[var(--surface)] text-gray-300"
           }`}>
           {tooltipText}
         </div>
