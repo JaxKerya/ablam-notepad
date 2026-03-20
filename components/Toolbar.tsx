@@ -377,7 +377,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
         />
         <ToolbarButton
           label="Üstü Çizili"
-          shortcut="Ctrl+Shift+X"
+          shortcut="Ctrl+Shift+S"
           icon={<Strikethrough size={15} />}
           onClick={() => editor.chain().focus().toggleStrike().run()}
           isActive={es.isStrike}

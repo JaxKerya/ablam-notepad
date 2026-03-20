@@ -274,6 +274,15 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
       }),
       HighlightExtension.configure({
         multicolor: true,
+      }).extend({
+        addKeyboardShortcuts() {
+          return {
+            "Mod-Shift-h": () =>
+              this.editor.commands.toggleHighlight({
+                color: "rgba(139, 157, 90, 0.30)",
+              }),
+          };
+        },
       }),
     ],
     content: initialContent,
@@ -495,7 +504,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
         <div className="flex items-center gap-1">
           <Link
             href="/"
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 transition-all duration-200 hover:bg-white/[0.04] hover:text-gray-300"
+            className="flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-xs font-medium text-gray-500 transition-all duration-200 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
           >
             <Home size={13} />
             <span className="hidden sm:inline">Ana Sayfa</span>
@@ -503,9 +512,9 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
           <button
             type="button"
             onClick={handleShare}
-            className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-all duration-200 ${copied
-              ? "bg-[var(--accent)]/10 text-[var(--accent-light)]"
-              : "text-gray-500 hover:bg-white/[0.04] hover:text-gray-300"
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${copied
+              ? "border-[var(--accent)]/20 bg-[var(--accent)]/10 text-[var(--accent-light)]"
+              : "border-transparent text-gray-500 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
               }`}
           >
             {copied ? (
