@@ -1,14 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0f120b;
-  --foreground: #e0e4d9;
-  --accent: #8B9D5A;
-  --accent-light: #b5c87a;
-  --surface: #161a11;
-  --surface-elevated: #1c2115;
-  --border: rgba(139, 157, 90, 0.1);
-  --border-hover: rgba(139, 157, 90, 0.2);
+  --background: #5C735D;
+  --foreground: #f0f2ed;
+  --accent: #d4e4a5;
+  --accent-light: #e8f5c0;
+  --surface: rgba(0, 0, 0, 0.15);
+  --surface-elevated: rgba(0, 0, 0, 0.30);
+  --surface-popup: #3d4f3e;
+  --border: rgba(255, 255, 255, 0.12);
+  --border-hover: rgba(255, 255, 255, 0.22);
 }
 
 body {
@@ -32,26 +33,26 @@ body::before {
 
 /* Glass morphism utility */
 .glass {
-  background: rgba(22, 26, 17, 0.7);
+  background: rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
 
 .glass-strong {
-  background: rgba(22, 26, 17, 0.85);
+  background: rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
 }
 
 /* Glow effect for accent elements */
 .glow-sm {
-  box-shadow: 0 0 15px -3px rgba(139, 157, 90, 0.15),
-    0 0 6px -2px rgba(139, 157, 90, 0.1);
+  box-shadow: 0 0 15px -3px rgba(212, 228, 165, 0.2),
+    0 0 6px -2px rgba(212, 228, 165, 0.12);
 }
 
 .glow-md {
-  box-shadow: 0 0 30px -5px rgba(139, 157, 90, 0.2),
-    0 0 10px -3px rgba(139, 157, 90, 0.12);
+  box-shadow: 0 0 30px -5px rgba(212, 228, 165, 0.25),
+    0 0 10px -3px rgba(212, 228, 165, 0.15);
 }
 
 /* Shimmer animation for title */
@@ -155,7 +156,7 @@ body::before {
 .tiptap u {
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: rgba(139, 157, 90, 0.4);
+  text-decoration-color: rgba(212, 228, 165, 0.5);
 }
 
 /* Heading styles */
@@ -186,17 +187,17 @@ body::before {
 
 /* Link styles */
 .tiptap a.tiptap-link {
-  color: var(--accent-light);
+  color: #e8f5c0;
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: rgba(139, 157, 90, 0.3);
+  text-decoration-color: rgba(232, 245, 192, 0.35);
   transition: text-decoration-color 0.2s ease, color 0.2s ease;
   cursor: pointer;
 }
 
 .tiptap a.tiptap-link:hover {
-  color: #c8da8e;
-  text-decoration-color: rgba(139, 157, 90, 0.6);
+  color: #f0fad0;
+  text-decoration-color: rgba(232, 245, 192, 0.6);
 }
 
 /* Image styles */
@@ -205,19 +206,19 @@ body::before {
   height: auto;
   border-radius: 12px;
   margin: 1em 0;
-  border: 1px solid rgba(139, 157, 90, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   transition: box-shadow 0.3s ease, border-color 0.3s ease;
 }
 
 .tiptap img.tiptap-image:hover {
-  border-color: rgba(139, 157, 90, 0.25);
-  box-shadow: 0 0 20px rgba(139, 157, 90, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
 }
 
 .tiptap p.is-editor-empty:first-child::before {
   content: "Yazmaya başlayın...";
   float: left;
-  color: #3d4435;
+  color: rgba(255, 255, 255, 0.3);
   pointer-events: none;
   height: 0;
   font-style: italic;
@@ -226,8 +227,8 @@ body::before {
 /* Strikethrough */
 .tiptap s {
   text-decoration: line-through;
-  text-decoration-color: rgba(255, 255, 255, 0.3);
-  color: rgba(224, 228, 217, 0.5);
+  text-decoration-color: rgba(255, 255, 255, 0.4);
+  color: rgba(240, 242, 237, 0.5);
 }
 
 /* Highlight — multicolor uses inline background-color */
@@ -239,8 +240,8 @@ body::before {
 
 /* Inline Code */
 .tiptap code {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 5px;
   padding: 1px 5px;
   font-family: "JetBrains Mono", "Fira Code", monospace;
@@ -250,18 +251,18 @@ body::before {
 
 /* Blockquote */
 .tiptap blockquote {
-  border-left: 3px solid rgba(139, 157, 90, 0.4);
-  background: rgba(139, 157, 90, 0.04);
+  border-left: 3px solid rgba(212, 228, 165, 0.5);
+  background: rgba(0, 0, 0, 0.08);
   padding: 0.5em 1em;
   margin: 0.75em 0;
   border-radius: 0 8px 8px 0;
-  color: rgba(224, 228, 217, 0.8);
+  color: rgba(240, 242, 237, 0.85);
 }
 
 /* Horizontal Rule */
 .tiptap hr {
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
   margin: 1.5em 0;
 }
 
@@ -284,7 +285,7 @@ body::before {
 }
 
 .tiptap ul[data-type="taskList"] li:hover {
-  background: rgba(139, 157, 90, 0.04);
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .tiptap ul[data-type="taskList"] li>label {
@@ -301,7 +302,7 @@ body::before {
   -webkit-appearance: none;
   width: 18px;
   height: 18px;
-  border: 1.5px solid #3a3f32;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
   border-radius: 5px;
   background: transparent;
   cursor: pointer;
@@ -312,14 +313,14 @@ body::before {
 
 .tiptap ul[data-type="taskList"] li>label input[type="checkbox"]:hover {
   border-color: var(--accent);
-  background: rgba(139, 157, 90, 0.08);
-  box-shadow: 0 0 0 3px rgba(139, 157, 90, 0.06);
+  background: rgba(212, 228, 165, 0.12);
+  box-shadow: 0 0 0 3px rgba(212, 228, 165, 0.08);
 }
 
 .tiptap ul[data-type="taskList"] li>label input[type="checkbox"]:checked {
   background: var(--accent);
   border-color: var(--accent);
-  box-shadow: 0 0 8px rgba(139, 157, 90, 0.25);
+  box-shadow: 0 0 8px rgba(212, 228, 165, 0.3);
 }
 
 .tiptap ul[data-type="taskList"] li>label input[type="checkbox"]:checked::after {
@@ -345,13 +346,13 @@ body::before {
 
 .tiptap ul[data-type="taskList"] li[data-checked="true"]>div>p {
   text-decoration: line-through;
-  color: #3d4435;
+  color: rgba(255, 255, 255, 0.3);
 }
 
 /* Scrollbar styling */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(139, 157, 90, 0.15) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 ::-webkit-scrollbar {
@@ -363,17 +364,17 @@ body::before {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(139, 157, 90, 0.15);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 157, 90, 0.3);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* Selection */
 ::selection {
-  background: rgba(139, 157, 90, 0.3);
+  background: rgba(212, 228, 165, 0.35);
 }
 
 /* Focus ring utility */
@@ -383,7 +384,42 @@ body::before {
 
 .focus-ring:focus {
   outline: none;
-  border-color: rgba(139, 157, 90, 0.35);
-  box-shadow: 0 0 0 3px rgba(139, 157, 90, 0.1),
-    0 0 15px rgba(139, 157, 90, 0.05);
+  border-color: rgba(212, 228, 165, 0.4);
+  box-shadow: 0 0 0 3px rgba(212, 228, 165, 0.12),
+    0 0 15px rgba(212, 228, 165, 0.06);
+}
+
+/* Animated backdrop overlay */
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-backdrop-blur {
+  animation: overlay-fade-in 300ms ease-out forwards;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Floating bokeh particle animation */
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(60px, -50px) scale(1.1); }
+  50% { transform: translate(-40px, 30px) scale(0.9); }
+  75% { transform: translate(30px, 60px) scale(1.05); }
+}
+
+@keyframes float-reverse {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-50px, 40px) scale(0.95); }
+  50% { transform: translate(70px, -30px) scale(1.1); }
+  75% { transform: translate(-30px, -60px) scale(1.02); }
+}
+
+.animate-float {
+  animation: float 25s ease-in-out infinite;
+}
+
+.animate-float-reverse {
+  animation: float-reverse 25s ease-in-out infinite;
 }

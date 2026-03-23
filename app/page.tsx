@@ -9,6 +9,7 @@ import {
   Trash2,
   X,
   ArrowRight,
+  CornerDownLeft,
   Layers,
   PenLine,
   Pin,
@@ -17,6 +18,7 @@ import {
   Eye,
   EyeOff,
   Search,
+  Heart,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { verifyPassword } from "@/lib/crypto";
@@ -89,6 +91,20 @@ export default function Home() {
   useEffect(() => {
     fetchNotes();
   }, [fetchNotes]);
+
+  // "/" shortcut to open sidebar
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "/" && !sidebarOpen) {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        e.preventDefault();
+        setSidebarOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [sidebarOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,12 +180,16 @@ export default function Home() {
 
   return (
     <main className="relative flex min-h-screen bg-[var(--background)]">
-      {/* Background glow — radial gradient to avoid banding */}
+      {/* Background depth — multi-layered gradients */}
       <div
         className="pointer-events-none fixed inset-0 z-0"
         style={{
-          background:
-            "radial-gradient(ellipse 60% 50% at 50% 40%, rgba(139,157,90,0.04) 0%, rgba(139,157,90,0.015) 40%, transparent 70%)",
+          background: [
+            "radial-gradient(ellipse 80% 60% at 50% 35%, rgba(212,228,165,0.08) 0%, transparent 60%)",
+            "radial-gradient(circle at 15% 85%, rgba(212,228,165,0.04) 0%, transparent 40%)",
+            "radial-gradient(circle at 85% 15%, rgba(255,255,255,0.03) 0%, transparent 35%)",
+            "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 100%)",
+          ].join(", "),
         }}
       />
 
@@ -196,14 +216,14 @@ export default function Home() {
               <Layers size={13} className="text-[var(--accent)]" />
             </div>
             <div>
-              <h2 className="text-[13px] font-semibold text-gray-300">Tüm Notlar</h2>
-              <p className="text-[10px] text-gray-600">{notes.length} not</p>
+              <h2 className="text-[13px] font-semibold text-white/85">Tüm Notlar</h2>
+              <p className="text-[10px] text-white/30">{notes.length} not</p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
-            className="rounded-lg p-1.5 text-gray-600 transition-all hover:bg-white/5 hover:text-gray-300"
+            className="rounded-lg p-1.5 text-white/30 transition-all hover:bg-white/5 hover:text-white/85"
           >
             <X size={15} />
           </button>
@@ -214,13 +234,13 @@ export default function Home() {
         {/* Search */}
         <div className="px-4 pt-3">
           <div className="relative">
-            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" />
+            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30" />
             <input
               type="text"
               value={sidebarSearch}
               onChange={(e) => setSidebarSearch(e.target.value.replace(/\s+/g, "-"))}
               placeholder="Notlarda ara…"
-              className="w-full rounded-lg border border-[var(--border)] bg-white/[0.02] py-1.5 pl-8 pr-3 text-xs text-gray-300 placeholder-gray-600 transition-all focus:border-[var(--accent)]/30 focus:bg-white/[0.04] focus:outline-none"
+              className="w-full rounded-lg border border-[var(--border)] bg-white/[0.02] py-1.5 pl-8 pr-3 text-xs text-white/85 placeholder-white/30 transition-all focus:border-[var(--accent)]/30 focus:bg-white/[0.08] focus:outline-none"
             />
           </div>
         </div>
@@ -228,14 +248,14 @@ export default function Home() {
         {/* Notes list */}
         <div className="flex-1 overflow-y-auto px-3 pt-2 pb-5">
           {loading && (
-            <div className="flex items-center justify-center py-10 text-xs text-gray-600">
+            <div className="flex items-center justify-center py-10 text-xs text-white/30">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--accent)]/20 border-t-[var(--accent)]/60" />
             </div>
           )}
           {!loading && notes.length === 0 && (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs text-gray-600">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.03]">
-                <FileText size={18} className="text-gray-700" />
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs text-white/30">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06]">
+                <FileText size={18} className="text-white/20" />
               </div>
               <span>Henüz not yok.</span>
             </div>
@@ -254,7 +274,7 @@ export default function Home() {
                     <div className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-[var(--accent)]/40" />
                   )}
 
-                  <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors duration-200 ${item.pinned ? "bg-[var(--accent)]/10" : "bg-white/[0.03] group-hover:bg-[var(--accent)]/[0.07]"
+                  <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors duration-200 ${item.pinned ? "bg-[var(--accent)]/10" : "bg-white/[0.06] group-hover:bg-[var(--accent)]/[0.07]"
                     }`}>
                     {item.pinned ? (
                       <Pin size={15} className="text-[var(--accent)]" />
@@ -267,13 +287,13 @@ export default function Home() {
 
                   <Link
                     href={`/note/${item.id}`}
-                    className="flex-1 min-w-0 flex flex-col transition-colors hover:text-gray-200"
+                    className="flex-1 min-w-0 flex flex-col transition-colors hover:text-white/95"
                   >
-                    <span className="truncate text-[13px] text-gray-400 group-hover:text-gray-200 transition-colors flex items-center gap-1.5">
+                    <span className="truncate text-[13px] text-white/70 group-hover:text-white/95 transition-colors flex items-center gap-1.5">
                       {item.id}
                       {item.has_password && <Lock size={10} className="shrink-0 text-[var(--accent)]/40" />}
                     </span>
-                    <span className="text-[10px] tabular-nums text-gray-700 group-hover:text-gray-600">
+                    <span className="text-[10px] tabular-nums text-white/20 group-hover:text-white/30">
                       {timeAgo(item.updated_at)}
                     </span>
                   </Link>
@@ -284,7 +304,7 @@ export default function Home() {
                       onClick={() => handleTogglePin(item.id, item.pinned)}
                       className={`flex-shrink-0 rounded-md p-1.5 transition-all duration-150 ${item.pinned
                         ? "text-[var(--accent)] hover:bg-[var(--accent)]/10 hover:text-[var(--accent-light)]"
-                        : "text-gray-700 opacity-0 hover:bg-[var(--accent)]/10 hover:text-[var(--accent)] group-hover:opacity-100"
+                        : "text-white/20 opacity-0 hover:bg-[var(--accent)]/10 hover:text-[var(--accent)] group-hover:opacity-100"
                         }`}
                       aria-label={item.pinned ? "Sabitlemeyi kaldır" : "Sabitle"}
                     >
@@ -294,7 +314,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => setDeleteConfirm(item.id)}
-                      className="flex-shrink-0 rounded-md p-1.5 text-gray-700 opacity-0 transition-all duration-150 hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
+                      className="flex-shrink-0 rounded-md p-1.5 text-white/20 opacity-0 transition-all duration-150 hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
                       aria-label="Notu sil"
                     >
                       <Trash2 size={12} />
@@ -307,78 +327,84 @@ export default function Home() {
       </aside>
 
       {/* Center content */}
-      <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 pb-12">
-        {/* Title area */}
-        <div className="animate-fade-in mb-12 flex flex-col items-center">
-          <Image src="/ablam.png" alt="Ablam Notepad" width={180} height={40} className="mb-3 h-6.5 w-auto" />
-          <p className="max-w-xs text-center text-[13px] leading-relaxed text-gray-600">
+      <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 pb-20">
+        {/* Title area — stagger 0ms */}
+        <div className="animate-fade-in mb-10 flex flex-col items-center" style={{ animationDelay: "0ms" }}>
+          <Image src="/ablam-1.webp" alt="Ablam Notepad" width={180} height={40} className="mb-3 h-6.5 w-auto" />
+          <p className="max-w-xs text-center text-[13px] leading-relaxed text-white/35">
             Ablam yeni bir not oluşturmak veya mevcut bir notu açmak için ismini girebilirsin.
           </p>
         </div>
 
-        {/* Form */}
+        {/* Form — stagger 80ms */}
         <form
           onSubmit={handleSubmit}
           className="animate-slide-up flex w-full max-w-sm flex-col gap-3"
-          style={{ animationDelay: "100ms" }}
+          style={{ animationDelay: "80ms" }}
         >
           <div className="group relative">
-            <PenLine size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-600 transition-colors group-focus-within:text-[var(--accent)]/70" />
+            <PenLine size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30 transition-colors duration-300 group-focus-within:text-[var(--accent)]" />
             <input
               type="text"
               value={noteId}
               onChange={(e) => setNoteId(e.target.value)}
               placeholder="örn. ablam da ablam"
               autoFocus
-              className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface-elevated)] py-3 pl-10 pr-4 text-sm text-gray-200 placeholder-gray-500 transition-all"
+              className="w-full rounded-xl border border-white/[0.08] bg-black/[0.15] py-3 pl-10 pr-4 text-sm text-white/95 placeholder-white/25 shadow-inner shadow-black/10 outline-none transition-all duration-300 focus:border-[var(--accent)]/40 focus:shadow-[0_0_20px_rgba(212,228,165,0.08)] focus:ring-1 focus:ring-[var(--accent)]/20"
             />
           </div>
           <button
             type="submit"
             disabled={!noteId.trim()}
-            className="group flex items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3 text-sm font-medium text-white shadow-lg shadow-[var(--accent)]/10 transition-all hover:bg-[#9AAD69] hover:shadow-[var(--accent)]/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none"
+            className="relative overflow-hidden rounded-xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--background)] shadow-lg shadow-[var(--accent)]/15 transition-all duration-200 hover:brightness-110 hover:shadow-[var(--accent)]/25 active:scale-[0.97] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
           >
-            <span>Notu Aç</span>
-            <ArrowRight
-              size={15}
-              className="transition-transform group-hover:translate-x-0.5"
-            />
+            Notu Aç
           </button>
+          <p className={`flex items-center justify-center gap-1.5 text-[11px] text-white/20 transition-opacity duration-300 ${noteId.trim() ? "opacity-100" : "opacity-0"}`}>
+            <CornerDownLeft size={10} />
+            <span>Enter ile devam et</span>
+          </p>
         </form>
 
-        {/* Notes link */}
+        {/* Notes link — stagger 160ms */}
         <button
           type="button"
           onClick={() => setSidebarOpen(true)}
-          className="animate-slide-up mt-8 flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-gray-600 transition-all duration-200 hover:bg-white/[0.03] hover:text-gray-400"
-          style={{ animationDelay: "200ms" }}
+          className="animate-slide-up mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-white/30 transition-all duration-200 hover:bg-white/[0.06] hover:text-white/60"
+          style={{ animationDelay: "160ms" }}
         >
           <Layers size={14} />
           <span>Mevcut notları görüntüle</span>
+          <kbd className="ml-1 rounded border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-white/25">/</kbd>
         </button>
+      </div>
+
+      {/* Footer */}
+      <div className="absolute inset-x-0 bottom-0 z-10 flex justify-center pb-5">
+        <span className="animate-fade-in flex items-center gap-1.5 text-[11px] tracking-wide text-white/20" style={{ animationDelay: "300ms" }}><Heart size={11} className="text-[var(--accent)]/40" fill="currentColor" /> Abla sevgisi ile yapılmıştır <Heart size={11} className="text-[var(--accent)]/40" fill="currentColor" /></span>
       </div>
 
       {/* Delete confirmation popup */}
       {deleteConfirm && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 animate-backdrop-blur"
           onClick={resetDeleteState}
         >
           <div
-            className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-2xl shadow-black/40"
+            className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-popup)] p-6 shadow-2xl shadow-black/40"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-1 flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10">
                 <Trash2 size={16} className="text-red-400" />
               </div>
-              <h3 className="text-sm font-semibold text-gray-200">
+              <h3 className="text-sm font-semibold text-white/95">
                 Notu Sil
               </h3>
             </div>
 
-            <p className="mb-4 mt-3 text-[13px] leading-relaxed text-gray-500">
-              <span className="font-medium text-gray-400">{deleteConfirm}</span> notunu silmek istediğine emin misin? Bu işlem geri alınamaz.
+            <p className="mb-4 mt-3 text-[13px] leading-relaxed text-white/50">
+              <span className="font-medium text-white/70">{deleteConfirm}</span> notunu silmek istediğine emin misin? Bu işlem geri alınamaz.
             </p>
 
             {notes.find((n) => n.id === deleteConfirm)?.has_password && (
@@ -390,12 +416,12 @@ export default function Home() {
                     onChange={(e) => { setDeletePassword(e.target.value); setDeleteError(""); }}
                     placeholder="Not şifresini girin"
                     autoFocus
-                    className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 pl-3 pr-10 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                    className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 pl-3 pr-10 text-sm text-white/95 placeholder-white/30 transition-all"
                   />
                   <button
                     type="button"
                     onClick={() => setDeleteShowPw(!deleteShowPw)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70"
                   >
                     {deleteShowPw ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
@@ -410,7 +436,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={resetDeleteState}
-                className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.06] px-4 py-2.5 text-xs font-medium text-white/70 transition-all hover:bg-white/[0.06] hover:text-white/85"
               >
                 Vazgeç
               </button>

@@ -10,7 +10,7 @@ import TaskItem from "@tiptap/extension-task-item";
 import LinkExtension from "@tiptap/extension-link";
 import ImageExtension from "@tiptap/extension-image";
 import HighlightExtension from "@tiptap/extension-highlight";
-import { Share2, Check, Home, FileText, Pencil, MoreHorizontal, ChevronRight, Trash2, RefreshCw, CheckCircle2, AlertCircle, WifiOff } from "lucide-react";
+import { Share2, Check, Home, FileText, Pencil, MoreHorizontal, ChevronRight, Trash2, RefreshCw, CheckCircle2, AlertCircle, WifiOff, Download } from "lucide-react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase-browser";
 import { uploadImage } from "@/lib/upload";
@@ -68,7 +68,7 @@ function CharCount({ editor, syncStatus }: { editor: Editor; syncStatus: SyncSta
   const config = syncConfig[syncStatus];
 
   return (
-    <div className="flex items-center justify-between border-t border-white/[0.04] px-4 py-2 text-[11px] tabular-nums text-gray-600">
+    <div className="flex items-center justify-between border-t border-white/[0.04] px-4 py-2 text-[11px] tabular-nums text-white/30">
       <div
         className="relative flex items-center"
         onMouseEnter={() => setShowSyncTip(true)}
@@ -76,12 +76,12 @@ function CharCount({ editor, syncStatus }: { editor: Editor; syncStatus: SyncSta
       >
         {config.icon}
         {showSyncTip && (
-          <div className="pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-[11px] text-gray-300 shadow-xl shadow-black/20">
+          <div className="pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-[11px] text-white/85 shadow-xl shadow-black/20">
             {config.text}
           </div>
         )}
       </div>
-      <span>{chars} karakter · {words} kelime</span>
+      <span className="transition-all duration-300">{chars} karakter · {words} kelime</span>
     </div>
   );
 }
@@ -110,6 +110,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
   const [renameLoading, setRenameLoading] = useState(false);
   const [renameError, setRenameError] = useState("");
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [moreMenuPos, setMoreMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -279,7 +280,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
           return {
             "Mod-Shift-h": () =>
               this.editor.commands.toggleHighlight({
-                color: "rgba(139, 157, 90, 0.30)",
+                color: "rgba(212, 228, 165, 0.30)",
               }),
           };
         },
@@ -289,7 +290,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
     editorProps: {
       attributes: {
         class:
-          "prose prose-invert max-w-none px-6 py-5 min-h-[60vh] outline-none text-gray-300 leading-relaxed text-[15px]",
+          "prose prose-invert max-w-none px-6 py-5 min-h-[60vh] outline-none text-white/85 leading-relaxed text-[15px]",
         spellcheck: "false",
         autocorrect: "off",
         autocapitalize: "off",
@@ -472,17 +473,14 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
     };
   }, []);
 
-  // Close more menu when clicking outside
+
+
+  // Close more menu on scroll
   useEffect(() => {
-    if (!moreMenuOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
-        setMoreMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [moreMenuOpen]);
+    const close = () => setMoreMenuOpen(false);
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, []);
 
   return (
     <div className="animate-fade-in-scale mx-auto w-full max-w-[52rem]">
@@ -493,10 +491,10 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
             href="/"
             className="flex-shrink-0 transition-opacity duration-200 hover:opacity-80"
           >
-            <Image src="/ablam.png" alt="Ablam Notepad" width={140} height={32} className="h-5 w-auto" />
+            <Image src="/ablam-1.webp" alt="Ablam Notepad" width={140} height={32} className="h-5 w-auto" />
           </Link>
-          <ChevronRight size={12} className="hidden flex-shrink-0 text-gray-700 sm:block" />
-          <span className="hidden truncate text-xs text-gray-400 sm:inline sm:max-w-[200px]" title={noteId}>
+          <ChevronRight size={12} className="hidden flex-shrink-0 text-white/40 sm:block" />
+          <span className="hidden truncate text-xs text-white/70 sm:inline sm:max-w-[200px]" title={noteId}>
             {noteId}
           </span>
         </div>
@@ -504,7 +502,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
         <div className="flex items-center gap-1">
           <Link
             href="/"
-            className="flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-xs font-medium text-gray-500 transition-all duration-200 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
+            className="flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-xs font-medium text-white/50 transition-all duration-200 hover:border-[var(--border)] hover:bg-white/[0.10] hover:text-white/85"
           >
             <Home size={13} />
             <span className="hidden sm:inline">Ana Sayfa</span>
@@ -514,7 +512,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
             onClick={handleShare}
             className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${copied
               ? "border-[var(--accent)]/20 bg-[var(--accent)]/10 text-[var(--accent-light)]"
-              : "border-transparent text-gray-500 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
+              : "border-transparent text-white/50 hover:border-[var(--border)] hover:bg-white/[0.10] hover:text-white/85"
               }`}
           >
             {copied ? (
@@ -544,21 +542,33 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
           <div className="relative" ref={moreMenuRef}>
             <button
               type="button"
-              onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+              onClick={(e) => {
+                if (!moreMenuOpen) {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setMoreMenuPos({ top: rect.bottom + 6, left: rect.right });
+                }
+                setMoreMenuOpen(!moreMenuOpen);
+              }}
               className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-200 ${moreMenuOpen
-                ? "bg-white/[0.08] text-gray-300"
-                : "text-gray-500 hover:bg-white/[0.04] hover:text-gray-300"
+                ? "bg-white/[0.08] text-white/85"
+                : "text-white/50 hover:bg-white/[0.08] hover:text-white/85"
                 }`}
             >
               <MoreHorizontal size={15} />
             </button>
 
-            {moreMenuOpen && (
-              <div className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-elevated)] py-1 shadow-xl shadow-black/30">
+            {moreMenuOpen && typeof window !== "undefined" &&
+              createPortal(
+                <div className="fixed inset-0 z-[55]" onClick={() => setMoreMenuOpen(false)}>
+                  <div
+                    className="fixed w-44 overflow-hidden rounded-xl border border-[var(--border)] bg-black/25 backdrop-blur-xl py-1 shadow-xl shadow-black/30"
+                    style={{ top: moreMenuPos.top, left: moreMenuPos.left, transform: "translateX(-100%)" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                 <button
                   type="button"
                   onClick={() => { setMoreMenuOpen(false); setNewName(noteId); setRenameError(""); setRenameOpen(true); }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-gray-400 transition-all duration-100 hover:bg-white/[0.04] hover:text-gray-200"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-white/70 transition-all duration-100 hover:bg-white/[0.08] hover:text-white/95"
                 >
                   <Pencil size={13} />
                   <span>Yeniden Adlandır</span>
@@ -566,7 +576,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
                 <button
                   type="button"
                   onClick={() => { setMoreMenuOpen(false); setIconPickerOpen(true); }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-gray-400 transition-all duration-100 hover:bg-white/[0.04] hover:text-gray-200"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-white/70 transition-all duration-100 hover:bg-white/[0.08] hover:text-white/95"
                 >
                   {noteIcon ? (
                     <DynamicIcon name={noteIcon} size={13} />
@@ -575,7 +585,26 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
                   )}
                   <span>İkon Değiştir</span>
                 </button>
-                <div className="my-1 h-px bg-white/[0.06]" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    if (!editor) return;
+                    const text = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n");
+                    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${noteId}.txt`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-white/70 transition-all duration-100 hover:bg-white/[0.08] hover:text-white/95"
+                >
+                  <Download size={13} />
+                  <span>Dışa Aktar (.txt)</span>
+                </button>
+                <div className="my-1 h-px bg-white/[0.10]" />
                 <button
                   type="button"
                   onClick={() => { setMoreMenuOpen(false); setDeleteConfirmOpen(true); }}
@@ -584,8 +613,11 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
                   <Trash2 size={13} />
                   <span>Notu Sil</span>
                 </button>
-              </div>
-            )}
+                  </div>
+                </div>,
+                document.body
+              )
+            }
           </div>
         </div>
       </div>
@@ -595,7 +627,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
         className="relative rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-2xl shadow-black/30"
         style={{
           boxShadow:
-            "0 0 60px -12px rgba(139,157,90,0.08), 0 0 30px -8px rgba(139,157,90,0.05), 0 25px 50px -12px rgba(0,0,0,0.4)",
+            "0 0 60px -12px rgba(212,228,165,0.08), 0 0 30px -8px rgba(212,228,165,0.05), 0 25px 50px -12px rgba(0,0,0,0.4)",
         }}
       >
         <Toolbar editor={editor} syncStatus={syncStatus} noteId={noteId} />
@@ -616,24 +648,26 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
       {renameOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-            onClick={() => { setRenameOpen(false); setRenameError(""); }}
-          >
+          <div className="fixed inset-0 z-[60]">
             <div
-              className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-2xl shadow-black/40"
-              onClick={(e) => e.stopPropagation()}
-            >
+              className="absolute inset-0 bg-black/40 animate-backdrop-blur"
+              onClick={() => { setRenameOpen(false); setRenameError(""); }}
+            />
+            <div className="pointer-events-none relative flex h-full items-center justify-center">
+              <div
+                className="pointer-events-auto animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-white/[0.12] bg-black/20 backdrop-blur-2xl p-6 shadow-2xl shadow-black/40"
+                onClick={(e) => e.stopPropagation()}
+              >
               <div className="mb-1 flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10">
                   <Pencil size={16} className="text-[var(--accent)]" />
                 </div>
-                <h3 className="text-sm font-semibold text-gray-200">
+                <h3 className="text-sm font-semibold text-white/95">
                   Notu Yeniden Adlandır
                 </h3>
               </div>
 
-              <p className="mb-4 mt-3 text-[13px] leading-relaxed text-gray-500">
+              <p className="mb-4 mt-3 text-[13px] leading-relaxed text-white/50">
                 Notun yeni adını girin. Bu işlem notu yeni bir URL&apos;ye taşıyacak.
               </p>
 
@@ -647,7 +681,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
                   onChange={(e) => { setNewName(e.target.value); setRenameError(""); }}
                   placeholder="Yeni not adı"
                   autoFocus
-                  className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                  className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 text-sm text-white/95 placeholder-white/30 transition-all"
                 />
                 {renameError && (
                   <p className="text-xs text-red-400">{renameError}</p>
@@ -656,7 +690,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
                   <button
                     type="button"
                     onClick={() => { setRenameOpen(false); setRenameError(""); }}
-                    className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                    className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.10] px-4 py-2.5 text-xs font-medium text-white/70 transition-all hover:bg-white/[0.10] hover:text-white/85"
                   >
                     Vazgeç
                   </button>
@@ -670,6 +704,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
                 </div>
               </form>
             </div>
+            </div>
           </div>,
           document.body
         )}
@@ -678,32 +713,34 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
       {deleteConfirmOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-            onClick={() => setDeleteConfirmOpen(false)}
-          >
+          <div className="fixed inset-0 z-[60]">
             <div
-              className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-2xl shadow-black/40"
-              onClick={(e) => e.stopPropagation()}
-            >
+              className="absolute inset-0 bg-black/40 animate-backdrop-blur"
+              onClick={() => setDeleteConfirmOpen(false)}
+            />
+            <div className="pointer-events-none relative flex h-full items-center justify-center">
+              <div
+                className="pointer-events-auto animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-white/[0.12] bg-black/20 backdrop-blur-2xl p-6 shadow-2xl shadow-black/40"
+                onClick={(e) => e.stopPropagation()}
+              >
               <div className="mb-1 flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10">
                   <Trash2 size={16} className="text-red-400" />
                 </div>
-                <h3 className="text-sm font-semibold text-gray-200">
+                <h3 className="text-sm font-semibold text-white/95">
                   Notu Sil
                 </h3>
               </div>
 
-              <p className="mb-4 mt-3 text-[13px] leading-relaxed text-gray-500">
-                <strong className="text-gray-300">{noteId}</strong> notunu silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+              <p className="mb-4 mt-3 text-[13px] leading-relaxed text-white/50">
+                <strong className="text-white/85">{noteId}</strong> notunu silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
               </p>
 
               <div className="flex gap-2.5">
                 <button
                   type="button"
                   onClick={() => setDeleteConfirmOpen(false)}
-                  className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                  className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.10] px-4 py-2.5 text-xs font-medium text-white/70 transition-all hover:bg-white/[0.10] hover:text-white/85"
                 >
                   Vazgeç
                 </button>
@@ -715,6 +752,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
                   Sil
                 </button>
               </div>
+            </div>
             </div>
           </div>,
           document.body

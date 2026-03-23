@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import { createPortal } from "react-dom";
@@ -71,10 +71,10 @@ function ToolbarButton({
         aria-label={label}
         disabled={disabled}
         className={`relative rounded-lg p-[7px] transition-all duration-150 ${disabled
-          ? "cursor-not-allowed text-gray-700"
+          ? "cursor-not-allowed text-white/20"
           : isActive
             ? "text-[var(--accent-light)]"
-            : "text-gray-500 hover:bg-white/[0.04] hover:text-gray-300"
+            : "text-white/50 hover:bg-white/[0.08] hover:text-white/85"
           }`}
       >
         {icon}
@@ -86,9 +86,9 @@ function ToolbarButton({
 
       {showTooltip && (
         <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs shadow-xl shadow-black/20">
-          <span className="text-gray-300">{label}</span>
+          <span className="text-white/85">{label}</span>
           {shortcut && (
-            <span className="ml-2 rounded bg-white/[0.05] px-1.5 py-0.5 text-[10px] text-gray-500">
+            <span className="ml-2 rounded bg-white/[0.05] px-1.5 py-0.5 text-[10px] text-white/50">
               {shortcut}
             </span>
           )}
@@ -99,7 +99,7 @@ function ToolbarButton({
 }
 
 function Separator() {
-  return <div className="mx-1.5 h-4 w-px flex-shrink-0 bg-white/[0.06]" />;
+  return <div className="mx-1.5 h-4 w-px flex-shrink-0 bg-white/[0.10]" />;
 }
 
 function NoteBadge({
@@ -139,7 +139,7 @@ function NoteBadge({
           ? "border-red-500/15 bg-red-950/80 text-red-300"
           : syncStatus === "offline"
             ? "border-amber-500/15 bg-amber-950/80 text-amber-300"
-            : "border-[var(--border)] bg-[var(--surface)] text-gray-300"
+            : "border-[var(--border)] bg-[var(--surface)] text-white/85"
           }`}>
           {tooltipText}
         </div>
@@ -174,14 +174,14 @@ function LinkPopup({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 animate-backdrop-blur"
       onClick={onClose}
     >
       <div
-        className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-5 shadow-2xl shadow-black/40"
+        className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-popup)] p-5 shadow-2xl shadow-black/40"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-200">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-white/95">
           <Link2 size={15} className="text-[var(--accent)]" />
           Link Ekle
         </h3>
@@ -192,13 +192,13 @@ function LinkPopup({
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://example.com"
             autoFocus
-            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 text-sm text-gray-200 placeholder-gray-600 transition-all"
+            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 text-sm text-white/95 placeholder-white/30 transition-all"
           />
           <div className="flex gap-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+              className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-white/70 transition-all hover:bg-white/[0.10] hover:text-white/85"
             >
               Vazgeç
             </button>
@@ -224,7 +224,7 @@ const IMAGE_SIZES = [
 ];
 
 const HIGHLIGHT_COLORS = [
-  { name: "Yeşil", color: "rgba(139, 157, 90, 0.30)" },
+  { name: "Yeşil", color: "rgba(212, 228, 165, 0.30)" },
   { name: "Sarı", color: "rgba(234, 179, 8, 0.25)" },
   { name: "Mavi", color: "rgba(56, 189, 248, 0.20)" },
   { name: "Mor", color: "rgba(168, 85, 247, 0.25)" },
@@ -245,6 +245,13 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
   const [highlightOpen, setHighlightOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Close portaled dropdowns on scroll
+  useEffect(() => {
+    const close = () => { setHeadingOpen(false); setImageSizeOpen(false); setHighlightOpen(false); };
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, []);
 
   // Reactive editor state — ensures toolbar re-renders on selection/format changes
   const es = useEditorState({
@@ -336,7 +343,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
               setImageSizeOpen(false);
               setHeadingOpen(true);
             }}
-            className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-[7px] text-xs font-medium text-gray-400 transition-all duration-150 hover:bg-white/[0.04] hover:text-gray-200"
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-[7px] text-xs font-medium text-white/70 transition-all duration-150 hover:bg-white/[0.08] hover:text-white/95"
           >
             {es.isH1 ? <Heading1 size={15} className="text-[var(--accent-light)]" /> :
               es.isH2 ? <Heading2 size={15} className="text-[var(--accent-light)]" /> :
@@ -398,7 +405,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
               setImageSizeOpen(false);
               setHighlightOpen(true);
             }}
-            className={`peer relative rounded-lg p-[7px] transition-all duration-150 ${es.isHighlight ? "text-[var(--accent-light)]" : "text-gray-500 hover:bg-white/[0.04] hover:text-gray-300"}`}
+            className={`peer relative rounded-lg p-[7px] transition-all duration-150 ${es.isHighlight ? "text-[var(--accent-light)]" : "text-white/50 hover:bg-white/[0.08] hover:text-white/85"}`}
           >
             <Highlighter size={15} />
             <span
@@ -407,8 +414,8 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
             />
           </button>
           <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs opacity-0 shadow-xl shadow-black/20 transition-opacity peer-hover:opacity-100">
-            <span className="text-gray-300">Vurgula</span>
-            <span className="ml-2 rounded bg-white/[0.05] px-1.5 py-0.5 text-[10px] text-gray-500">Ctrl+Shift+H</span>
+            <span className="text-white/85">Vurgula</span>
+            <span className="ml-2 rounded bg-white/[0.05] px-1.5 py-0.5 text-[10px] text-white/50">Ctrl+Shift+H</span>
           </div>
         </div>
         <ToolbarButton
@@ -493,8 +500,8 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
               setImageSizeOpen(true);
             }}
             className={`peer flex items-center gap-1.5 rounded-lg px-2 py-[7px] text-xs font-semibold transition-all duration-150 ${!es.isImage
-              ? "cursor-not-allowed text-gray-700"
-              : "text-[var(--accent-light)] hover:bg-white/[0.04]"
+              ? "cursor-not-allowed text-white/20"
+              : "text-[var(--accent-light)] hover:bg-white/[0.08]"
               }`}
           >
             <ImageUpscale size={15} />
@@ -504,7 +511,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
             </svg>
           </button>
           <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs opacity-0 shadow-xl shadow-black/20 transition-opacity peer-hover:opacity-100">
-            <span className="text-gray-300">Görsel Boyutu</span>
+            <span className="text-white/85">Görsel Boyutu</span>
           </div>
         </div>
 
@@ -518,7 +525,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
         createPortal(
           <div className="fixed inset-0 z-[55]" onClick={() => setHeadingOpen(false)}>
             <div
-              className="fixed w-36 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-elevated)] py-1 shadow-xl shadow-black/30"
+              className="fixed w-36 overflow-hidden rounded-xl border border-[var(--border)] bg-black/25 backdrop-blur-xl py-1 shadow-xl shadow-black/30"
               style={{ top: dropdownPos.top, left: dropdownPos.left }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -537,7 +544,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
                   }}
                   className={`flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2 text-xs transition-all duration-100 ${item.active
                     ? "bg-[var(--accent)]/10 text-[var(--accent-light)]"
-                    : "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200"
+                    : "text-white/70 hover:bg-white/[0.08] hover:text-white/95"
                     }`}
                 >
                   {item.icon}
@@ -555,7 +562,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
         createPortal(
           <div className="fixed inset-0 z-[55]" onClick={() => setImageSizeOpen(false)}>
             <div
-              className="fixed w-28 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-elevated)] py-1 shadow-xl shadow-black/30"
+              className="fixed w-28 overflow-hidden rounded-xl border border-[var(--border)] bg-black/25 backdrop-blur-xl py-1 shadow-xl shadow-black/30"
               style={{ top: dropdownPos.top, left: dropdownPos.left }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -573,11 +580,11 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
                   }}
                   className={`flex w-full items-center justify-between px-3 py-1.5 text-xs transition-all duration-100 ${es.imageWidth === opt.width
                     ? "bg-[var(--accent)]/10 text-[var(--accent-light)]"
-                    : "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200"
+                    : "text-white/70 hover:bg-white/[0.08] hover:text-white/95"
                     }`}
                 >
                   <span>{opt.label}</span>
-                  <span className="text-[10px] tabular-nums text-gray-600">{opt.width}</span>
+                  <span className="text-[10px] tabular-nums text-white/30">{opt.width}</span>
                 </button>
               ))}
             </div>
@@ -599,7 +606,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
         createPortal(
           <div className="fixed inset-0 z-[55]" onClick={() => setHighlightOpen(false)}>
             <div
-              className="fixed overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-elevated)] p-2 shadow-xl shadow-black/30"
+              className="fixed overflow-hidden rounded-xl border border-[var(--border)] bg-black/25 backdrop-blur-xl p-2 shadow-xl shadow-black/30"
               style={{ top: dropdownPos.top, left: dropdownPos.left }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -628,7 +635,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
                     editor.chain().focus().unsetHighlight().run();
                     setHighlightOpen(false);
                   }}
-                  className={`flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] transition-all duration-100 hover:scale-125 ${!es.isHighlight ? "border-transparent text-gray-700" : "border-transparent text-gray-400 hover:text-gray-200"}`}
+                  className={`flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] transition-all duration-100 hover:scale-125 ${!es.isHighlight ? "border-transparent text-white/20" : "border-transparent text-white/70 hover:text-white/95"}`}
                 >
                   ✕
                 </button>

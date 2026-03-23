@@ -25,7 +25,7 @@ export default async function NotePage({ params }: NotePageProps) {
   // Unexpected database error (not "row not found")
   if (fetchError && fetchError.code !== "PGRST116") {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[var(--background)] text-gray-500">
+      <main className="flex min-h-screen items-center justify-center bg-[var(--background)] text-white/50">
         <p>Veritabanı hatası. Lütfen daha sonra tekrar deneyin.</p>
       </main>
     );
@@ -39,7 +39,7 @@ export default async function NotePage({ params }: NotePageProps) {
 
     if (error) {
       return (
-        <main className="flex min-h-screen items-center justify-center bg-[var(--background)] text-gray-500">
+        <main className="flex min-h-screen items-center justify-center bg-[var(--background)] text-white/50">
           <p>Not oluşturulamadı. Lütfen Supabase yapılandırmanızı kontrol edin.</p>
         </main>
       );

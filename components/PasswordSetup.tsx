@@ -26,6 +26,7 @@ export default function PasswordSetup({
     const [confirm, setConfirm] = useState("");
     const [hint, setHint] = useState("");
     const [showPw, setShowPw] = useState(false);
+    const [showConfirmPw, setShowConfirmPw] = useState(false);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
 
@@ -137,7 +138,7 @@ export default function PasswordSetup({
                                 <Lock size={16} className="text-[var(--accent)]" />
                             )}
                         </div>
-                        <h3 className="text-sm font-semibold text-gray-200">
+                        <h3 className="text-sm font-semibold text-white/95">
                             {mode === "change-new" ? "Yeni Şifre Belirle" : "Şifre Belirle"}
                         </h3>
                     </div>
@@ -148,30 +149,39 @@ export default function PasswordSetup({
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder="Şifre"
-                                className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 pl-3 pr-10 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                                className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 pl-3 pr-10 text-sm text-white/95 placeholder-white/30 transition-all"
                             />
                             <button
                                 type="button"
                                 onClick={() => setShowPw(!showPw)}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70"
                             >
                                 {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                             </button>
                         </div>
-                        <input
-                            type={showPw ? "text" : "password"}
-                            value={confirm}
-                            onChange={(e) => setConfirm(e.target.value)}
-                            placeholder="Şifre Tekrar"
-                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 text-sm text-gray-200 placeholder-gray-600 transition-all"
-                        />
+                        <div className="relative">
+                            <input
+                                type={showConfirmPw ? "text" : "password"}
+                                value={confirm}
+                                onChange={(e) => setConfirm(e.target.value)}
+                                placeholder="Şifre Tekrar"
+                                className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 pr-10 text-sm text-white/95 placeholder-white/30 transition-all"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowConfirmPw(!showConfirmPw)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70"
+                            >
+                                {showConfirmPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                        </div>
                         <input
                             type="text"
                             value={hint}
                             onChange={(e) => setHint(e.target.value)}
                             placeholder="İpucu (isteğe bağlı)"
                             maxLength={100}
-                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 px-3 text-sm text-white/95 placeholder-white/30 transition-all"
                         />
                     </div>
                     {error && (
@@ -181,7 +191,7 @@ export default function PasswordSetup({
                         <button
                             type="button"
                             onClick={resetState}
-                            className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                            className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.06] px-4 py-2.5 text-xs font-medium text-white/70 transition-all hover:bg-white/[0.06] hover:text-white/85"
                         >
                             Vazgeç
                         </button>
@@ -206,11 +216,11 @@ export default function PasswordSetup({
                         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10">
                             <KeyRound size={16} className="text-[var(--accent)]" />
                         </div>
-                        <h3 className="text-sm font-semibold text-gray-200">
+                        <h3 className="text-sm font-semibold text-white/95">
                             Şifreyi Değiştir
                         </h3>
                     </div>
-                    <p className="mb-3 text-[13px] leading-relaxed text-gray-500">
+                    <p className="mb-3 text-[13px] leading-relaxed text-white/50">
                         Devam etmek için mevcut şifrenizi girin.
                     </p>
                     <div className="relative">
@@ -220,12 +230,12 @@ export default function PasswordSetup({
                             onChange={(e) => setCurrentPassword(e.target.value)}
                             placeholder="Mevcut Şifre"
                             autoFocus
-                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 pl-3 pr-10 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2.5 pl-3 pr-10 text-sm text-white/95 placeholder-white/30 transition-all"
                         />
                         <button
                             type="button"
                             onClick={() => setShowPw(!showPw)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70"
                         >
                             {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
@@ -237,7 +247,7 @@ export default function PasswordSetup({
                         <button
                             type="button"
                             onClick={resetState}
-                            className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                            className="flex-1 rounded-xl border border-[var(--border)] bg-white/[0.06] px-4 py-2.5 text-xs font-medium text-white/70 transition-all hover:bg-white/[0.06] hover:text-white/85"
                         >
                             Vazgeç
                         </button>
@@ -261,11 +271,11 @@ export default function PasswordSetup({
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10">
                         <Lock size={16} className="text-[var(--accent)]" />
                     </div>
-                    <h3 className="text-sm font-semibold text-gray-200">
+                    <h3 className="text-sm font-semibold text-white/95">
                         Şifre Yönetimi
                     </h3>
                 </div>
-                <p className="mb-4 text-[13px] leading-relaxed text-gray-500">
+                <p className="mb-4 text-[13px] leading-relaxed text-white/50">
                     Bu not şifre ile korunuyor.
                 </p>
                 {error && (
@@ -290,7 +300,7 @@ export default function PasswordSetup({
                     <button
                         type="button"
                         onClick={resetState}
-                        className="w-full rounded-xl border border-[var(--border)] bg-white/[0.03] px-4 py-2.5 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                        className="w-full rounded-xl border border-[var(--border)] bg-white/[0.06] px-4 py-2.5 text-xs font-medium text-white/70 transition-all hover:bg-white/[0.06] hover:text-white/85"
                     >
                         Vazgeç
                     </button>
@@ -306,7 +316,7 @@ export default function PasswordSetup({
                 onClick={openModal}
                 className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${hasPassword
                     ? "border-[var(--accent)]/20 bg-[var(--accent)]/10 text-[var(--accent-light)]"
-                    : "border-transparent text-gray-500 hover:border-[var(--border)] hover:bg-white/[0.03] hover:text-gray-300"
+                    : "border-transparent text-white/50 hover:border-[var(--border)] hover:bg-white/[0.06] hover:text-white/85"
                     }`}
             >
                 {hasPassword ? <Lock size={13} /> : <Unlock size={13} />}
@@ -316,15 +326,20 @@ export default function PasswordSetup({
             {open &&
                 typeof document !== "undefined" &&
                 createPortal(
-                    <div
-                        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-                        onClick={resetState}
-                    >
+                    <div className="fixed inset-0 z-[60]">
+                        {/* Backdrop dim + blur */}
                         <div
-                            className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-6 shadow-2xl shadow-black/40"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            {renderContent()}
+                            className="absolute inset-0 bg-black/40 animate-backdrop-blur"
+                            onClick={resetState}
+                        />
+                        {/* Card — sibling so backdrop-blur works */}
+                        <div className="pointer-events-none relative flex h-full items-center justify-center">
+                            <div
+                                className="pointer-events-auto animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-white/[0.12] bg-black/20 backdrop-blur-2xl p-6 shadow-2xl shadow-black/40"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {renderContent()}
+                            </div>
                         </div>
                     </div>,
                     document.body

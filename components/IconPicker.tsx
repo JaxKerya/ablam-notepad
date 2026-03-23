@@ -82,12 +82,14 @@ export default function IconPicker({ currentIcon, onSelect, onClose }: IconPicke
     if (typeof document === "undefined") return null;
 
     return createPortal(
-        <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-            onClick={onClose}
-        >
+        <div className="fixed inset-0 z-[60]">
             <div
-                className="animate-fade-in-scale mx-4 flex w-full max-w-sm flex-col rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-2xl shadow-black/40"
+                className="absolute inset-0 bg-black/40 animate-backdrop-blur"
+                onClick={onClose}
+            />
+            <div className="pointer-events-none relative flex h-full items-center justify-center">
+            <div
+                className="pointer-events-auto animate-fade-in-scale mx-4 flex w-full max-w-sm flex-col rounded-2xl border border-white/[0.12] bg-black/20 backdrop-blur-2xl shadow-2xl shadow-black/40"
                 style={{ maxHeight: "70vh" }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -100,11 +102,11 @@ export default function IconPicker({ currentIcon, onSelect, onClose }: IconPicke
                             <Search size={14} className="text-[var(--accent)]" />
                         )}
                     </div>
-                    <h3 className="flex-1 text-sm font-semibold text-gray-200">İkon Seç</h3>
+                    <h3 className="flex-1 text-sm font-semibold text-white/95">İkon Seç</h3>
                     <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-lg p-1.5 text-gray-600 transition-all hover:bg-white/5 hover:text-gray-300"
+                        className="rounded-lg p-1.5 text-white/30 transition-all hover:bg-white/5 hover:text-white/85"
                     >
                         <X size={14} />
                     </button>
@@ -113,25 +115,25 @@ export default function IconPicker({ currentIcon, onSelect, onClose }: IconPicke
                 {/* Search */}
                 <div className="px-4 py-3">
                     <div className="relative">
-                        <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
+                        <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
                         <input
                             type="text"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder="1703 ikon içinde ara…"
                             autoFocus
-                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2 pl-8 pr-3 text-sm text-gray-200 placeholder-gray-600 transition-all"
+                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2 pl-8 pr-3 text-sm text-white/95 placeholder-white/30 transition-all"
                         />
                     </div>
                     {!search.trim() && (
-                        <p className="mt-2 text-[10px] text-gray-600">Popüler ikonlar · aramaya başlayın</p>
+                        <p className="mt-2 text-[10px] text-white/30">Popüler ikonlar · aramaya başlayın</p>
                     )}
                 </div>
 
                 {/* Icons grid */}
                 <div className="flex-1 overflow-y-auto px-4 pb-4">
                     {filteredIcons.length === 0 ? (
-                        <p className="py-6 text-center text-xs text-gray-600">Sonuç bulunamadı</p>
+                        <p className="py-6 text-center text-xs text-white/30">Sonuç bulunamadı</p>
                     ) : (
                         <div className="grid grid-cols-6 gap-1.5">
                             {filteredIcons.map((name) => {
@@ -144,7 +146,7 @@ export default function IconPicker({ currentIcon, onSelect, onClose }: IconPicke
                                         title={name}
                                         className={`flex h-10 w-full items-center justify-center rounded-lg transition-all duration-100 ${isActive
                                             ? "bg-[var(--accent)]/15 text-[var(--accent-light)]"
-                                            : "text-gray-500 hover:bg-white/[0.04] hover:text-gray-300"
+                                            : "text-white/50 hover:bg-white/[0.08] hover:text-white/85"
                                             }`}
                                     >
                                         <DynamicIcon name={name} size={18} />
@@ -154,6 +156,7 @@ export default function IconPicker({ currentIcon, onSelect, onClose }: IconPicke
                         </div>
                     )}
                 </div>
+            </div>
             </div>
         </div>,
         document.body

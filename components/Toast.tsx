@@ -93,14 +93,14 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
             style={{ minWidth: 220, maxWidth: 360 }}
         >
             {ICONS[toast.type]}
-            <span className="flex-1 text-[13px] text-gray-200">{toast.message}</span>
+            <span className="flex-1 text-[13px] text-white/95">{toast.message}</span>
             <button
                 type="button"
                 onClick={() => {
                     setExiting(true);
                     setTimeout(() => onDismiss(toast.id), 300);
                 }}
-                className="shrink-0 rounded-md p-0.5 text-gray-600 transition-colors hover:text-gray-300"
+                className="shrink-0 rounded-md p-0.5 text-white/30 transition-colors hover:text-white/85"
             >
                 <X size={12} />
             </button>

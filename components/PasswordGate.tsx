@@ -70,15 +70,15 @@ export default function PasswordGate({ noteId, passwordHint, onUnlock }: Passwor
 
     return (
         <div className="animate-fade-in-scale mx-auto w-full max-w-sm">
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] p-8 shadow-2xl shadow-black/30">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-popup)] p-8 shadow-2xl shadow-black/30">
                 <div className="mb-6 flex flex-col items-center gap-3">
                     <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent)]/10">
                         <Lock size={24} className="text-[var(--accent)]" />
                     </div>
-                    <h2 className="text-base font-semibold text-gray-200">
+                    <h2 className="text-base font-semibold text-white/95">
                         Şifreli Not
                     </h2>
-                    <p className="text-center text-[13px] leading-relaxed text-gray-500">
+                    <p className="text-center text-[13px] leading-relaxed text-white/50">
                         Bu notu görüntülemek için şifre girmeniz gerekiyor.
                     </p>
                     {passwordHint && (
@@ -92,7 +92,7 @@ export default function PasswordGate({ noteId, passwordHint, onUnlock }: Passwor
                     <div className="relative">
                         <Lock
                             size={15}
-                            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-600"
+                            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30"
                         />
                         <input
                             type={showPw ? "text" : "password"}
@@ -101,12 +101,12 @@ export default function PasswordGate({ noteId, passwordHint, onUnlock }: Passwor
                             placeholder="Şifre girin"
                             autoFocus
                             disabled={cooldown}
-                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-3 pl-10 pr-10 text-sm text-gray-200 placeholder-gray-600 transition-all disabled:opacity-50"
+                            className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-3 pl-10 pr-10 text-sm text-white/95 placeholder-white/30 transition-all disabled:opacity-50"
                         />
                         <button
                             type="button"
                             onClick={() => setShowPw(!showPw)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70"
                         >
                             {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
@@ -119,7 +119,7 @@ export default function PasswordGate({ noteId, passwordHint, onUnlock }: Passwor
                     <button
                         type="submit"
                         disabled={!password.trim() || loading || cooldown}
-                        className="w-full rounded-xl bg-[var(--accent)] px-5 py-3 text-sm font-medium text-white shadow-lg shadow-[var(--accent)]/10 transition-all hover:bg-[#9AAD69] hover:shadow-[var(--accent)]/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none"
+                        className="w-full rounded-xl bg-[var(--accent)] px-5 py-3 text-sm font-medium text-[var(--background)] shadow-lg shadow-[var(--accent)]/10 transition-all hover:bg-[var(--accent-light)] hover:shadow-[var(--accent)]/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none"
                     >
                         {loading ? "Doğrulanıyor..." : cooldown ? "Bekleyin..." : "Kilidi Aç"}
                     </button>
