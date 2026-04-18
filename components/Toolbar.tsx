@@ -31,6 +31,7 @@ import {
   Quote,
   Code,
   Minus,
+  Braces,
 } from "lucide-react";
 import { uploadImage } from "@/lib/upload";
 
@@ -273,6 +274,7 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
           ? (e.getAttributes("highlight").color as string) || HIGHLIGHT_COLORS[0].color
           : null,
         isCode: e.isActive("code"),
+        isCodeBlock: e.isActive("codeBlock"),
         isBlockquote: e.isActive("blockquote"),
         isBulletList: e.isActive("bulletList"),
         isOrderedList: e.isActive("orderedList"),
@@ -453,6 +455,12 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
           icon={<Quote size={15} />}
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           isActive={es.isBlockquote}
+        />
+        <ToolbarButton
+          label="Kod Bloğu"
+          icon={<Braces size={15} />}
+          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+          isActive={es.isCodeBlock}
         />
         <ToolbarButton
           label="Yatay Çizgi"

@@ -10,7 +10,7 @@ import TaskItem from "@tiptap/extension-task-item";
 import LinkExtension from "@tiptap/extension-link";
 import ImageExtension from "@tiptap/extension-image";
 import HighlightExtension from "@tiptap/extension-highlight";
-import { Share2, Check, Home, FileText, Pencil, MoreHorizontal, ChevronRight, Trash2, RefreshCw, CheckCircle2, AlertCircle, WifiOff, Download } from "lucide-react";
+import { Share2, Check, Home, FileText, Pencil, MoreHorizontal, ChevronRight, Trash2, RefreshCw, CheckCircle2, AlertCircle, WifiOff, Download, FileCode2 } from "lucide-react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase-browser";
 import { uploadImage } from "@/lib/upload";
@@ -20,6 +20,7 @@ import IconPicker, { DynamicIcon } from "./IconPicker";
 import type { JSONContent, Editor } from "@tiptap/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { jsonToMarkdown } from "@/lib/json-to-markdown";
 
 // Image extension with resizable width attribute
 const CustomImage = ImageExtension.extend({
@@ -603,6 +604,25 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
                 >
                   <Download size={13} />
                   <span>Dışa Aktar (.txt)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    if (!editor) return;
+                    const md = jsonToMarkdown(editor.getJSON());
+                    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${noteId}.md`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-xs text-white/70 transition-all duration-100 hover:bg-white/[0.08] hover:text-white/95"
+                >
+                  <FileCode2 size={13} />
+                  <span>Dışa Aktar (.md)</span>
                 </button>
                 <div className="my-1 h-px bg-white/[0.10]" />
                 <button

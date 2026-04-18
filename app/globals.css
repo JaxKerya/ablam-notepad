@@ -239,7 +239,7 @@ body::before {
 }
 
 /* Inline Code */
-.tiptap code {
+.tiptap :not(pre) > code {
   background: rgba(0, 0, 0, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 5px;
@@ -247,6 +247,27 @@ body::before {
   font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 0.88em;
   color: var(--accent-light);
+}
+
+/* Code Block */
+.tiptap pre {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 1em 1.2em;
+  margin: 0.75em 0;
+  overflow-x: auto;
+}
+
+.tiptap pre code {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.88em;
+  color: rgba(232, 245, 192, 0.85);
+  line-height: 1.6;
 }
 
 /* Blockquote */
@@ -422,4 +443,19 @@ body::before {
 
 .animate-float-reverse {
   animation: float-reverse 25s ease-in-out infinite;
+}
+
+/* Shake animation for wrong input */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-8px); }
+  30% { transform: translateX(6px); }
+  45% { transform: translateX(-5px); }
+  60% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+  90% { transform: translateX(1px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
 }
