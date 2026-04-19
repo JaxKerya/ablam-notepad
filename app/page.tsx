@@ -614,7 +614,7 @@ export default function Home() {
                 if (hour >= 5 && hour < 12) return "Günaydın ablammm!";
                 if (hour >= 12 && hour < 18) return "İyi öğlenler ablammm!";
                 if (hour >= 18 && hour < 22) return "İyi akşamlar ablammm!";
-                return "İyi geceler Ablam!";
+                return "İyi geceler ablammm!";
               })()}
             </span>
           </div>
