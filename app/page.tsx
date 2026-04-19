@@ -588,37 +588,7 @@ export default function Home() {
 
       {/* Center content */}
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 pb-20">
-        {/* Greeting pill */}
-        <div className="animate-fade-in mb-6" style={{ animationDelay: "0ms" }}>
-          <div
-            className="inline-flex items-center gap-2 rounded-full border border-white/[0.10] px-4 py-2 text-sm"
-            style={{
-              background: "rgba(0, 0, 0, 0.12)",
-              backdropFilter: "blur(16px)",
-              WebkitBackdropFilter: "blur(16px)",
-              boxShadow: "0 0 20px -4px rgba(212,228,165,0.08), 0 4px 12px -2px rgba(0,0,0,0.15)",
-            }}
-          >
-            <span className="text-[var(--accent)] leading-none">
-              {(() => {
-                const hour = new Date().getHours();
-                if (hour >= 5 && hour < 12) return <Sun size={16} />;
-                if (hour >= 12 && hour < 18) return <CloudSun size={16} />;
-                if (hour >= 18 && hour < 22) return <Sunset size={16} />;
-                return <Moon size={16} />;
-              })()}
-            </span>
-            <span className="text-white/60 font-medium">
-              {(() => {
-                const hour = new Date().getHours();
-                if (hour >= 5 && hour < 12) return "Günaydın ablammm!";
-                if (hour >= 12 && hour < 18) return "İyi öğlenler ablammm!";
-                if (hour >= 18 && hour < 22) return "İyi akşamlar ablammm!";
-                return "İyi geceler ablammm!";
-              })()}
-            </span>
-          </div>
-        </div>
+
 
         {/* Title area — stagger 80ms */}
         <div className="animate-fade-in mb-10 flex flex-col items-center" style={{ animationDelay: "80ms" }}>
