@@ -15,7 +15,7 @@ A minimal, real-time collaborative notepad. Dark theme, distraction-free, link-b
 
 1. Go to [supabase.com](https://supabase.com) and create a new project.
 2. Once the project is ready, go to **Settings > API** and copy your:
-   - **Project URL** (e.g. `https://abcdefg.supabase.co`)
+   - **Project URL** (e.g `https://abcdefg.supabase.co`)
    - **anon/public key**
 
 ### 2. Run the Database Schema
