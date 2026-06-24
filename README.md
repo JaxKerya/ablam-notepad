@@ -125,6 +125,33 @@ Open [http://localhost:3000](http://localhost:3000). Enter a custom note name (e
 
 Share the URL (e.g. `http://localhost:3000/note/my-shopping-list`) with anyone — they'll see live updates in real time.
 
+## Sheets — Animasyon İş Takip Sistemi (`/sheets`)
+
+Link tabanlı, gerçek zamanlı bir animasyon shot takip sistemi. Çok projeli, proje
+bazında özelleştirilebilir durumlar/pipeline kolonları ve animatör kadrosu içerir.
+Mevcut site geçidi (`helikopter`) arkasında çalışır.
+
+### Kurulum
+
+Supabase **SQL Editor**'da `db/sheets.sql` dosyasının tamamını çalıştırın. Bu dosya
+şu tabloları, RLS politikalarını ve Realtime yayınını oluşturur:
+
+- `sheet_projects` — projeler (ad + isimlendirme şablonu)
+- `sheet_statuses` — proje bazında özelleştirilebilir durumlar (renk + sıra)
+- `sheet_pipeline_columns` — onay kutucuğu kolonları (varsayılan boş, isteğe bağlı eklenir)
+- `sheet_animators` — animatör kadrosu (renk + sıra)
+- `sheet_shots` — shot'lar (animatör, shot kodu, kare, not, durum, pipeline, revize)
+
+### Kullanım
+
+- `/sheets` → proje listesi (oluştur / aç / sil). Birden fazla proje desteklenir.
+  Yeni proje 4 varsayılan durumla (Yapılmadı, Yapılıyor, Hazır, Onay) açılır; pipeline
+  kolonları ve isimlendirme şablonu boş başlar, ayarlardan isteğe bağlı eklenir.
+- `/sheets/[projectId]` → shot takip tablosu. Hücreler inline düzenlenir, değişiklikler
+  otomatik kaydedilir (600ms debounce) ve Realtime ile diğer kullanıcılara senkronlanır.
+- **Tablo** sekmesi: shot'lar; **Özet** sekmesi: animatör × durum matrisi + toplam kare.
+- **Ayarlar**: animatör / durum / pipeline kolonu yönetimi + isimlendirme şablonu.
+
 ## Deployment (Vercel)
 
 1. Push this project to a GitHub repository.

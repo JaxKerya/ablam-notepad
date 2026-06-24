@@ -29,6 +29,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Clapperboard,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { verifyPassword } from "@/lib/crypto";
@@ -639,6 +640,16 @@ export default function Home() {
           <span>Mevcut notları görüntüle</span>
           <kbd className="ml-1 rounded border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-white/25">/</kbd>
         </button>
+
+        {/* Ablam Sheets link — stagger 220ms */}
+        <Link
+          href="/sheets"
+          className="animate-slide-up mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-white/30 transition-all duration-200 hover:bg-white/[0.06] hover:text-white/60"
+          style={{ animationDelay: "220ms" }}
+        >
+          <Clapperboard size={14} />
+          <span>Ablam Sheets</span>
+        </Link>
       </div>
 
       {/* Footer */}

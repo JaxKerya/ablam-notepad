@@ -9,7 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@supabase/supabase-js": "^2.95.3",
+    "@tiptap/extension-bubble-menu": "^3.22.4",
     "@tiptap/extension-highlight": "^3.20.4",
     "@tiptap/extension-image": "^3.20.0",
     "@tiptap/extension-link": "^3.20.0",
