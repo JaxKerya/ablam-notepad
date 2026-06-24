@@ -144,7 +144,7 @@ Supabase **SQL Editor**'da `db/sheets.sql` dosyasının tamamını çalıştır�
 
 ### Kullanım
 
-- `/sheets` → proje listesi (oluştur / aç / sil). Birden fazla proje desteklenir.
+- `/sheets` → proje listesi (oluştur/aç/sil). Birden fazla proje desteklenir.
   Yeni proje 4 varsayılan durumla (Yapılmadı, Yapılıyor, Hazır, Onay) açılır; pipeline
   kolonları ve isimlendirme şablonu boş başlar, ayarlardan isteğe bağlı eklenir.
 - `/sheets/[projectId]` → shot takip tablosu. Hücreler inline düzenlenir, değişiklikler
