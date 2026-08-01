@@ -15,7 +15,7 @@ A minimal, real-time collaborative notepad. Dark theme, distraction-free, link-b
 
 1. Go to [supabase.com](https://supabase.com) and create a new project.
 2. Once the project is ready, go to **Settings > API** and copy your:
-   - **Project URL** (e.g `https://abcdefg.supabase.co`)
+   - **Project URL** (e.g. `https://abcdefg.supabase.co`)
    - **anon/public key**
 
 ### 2. Run the Database Schema
@@ -144,7 +144,7 @@ Supabase **SQL Editor**'da `db/sheets.sql` dosyasının tamamını çalıştır�
 
 ### Kullanım
 
-- `/sheets` → proje listesi (oluştur/aç/sil). Birden fazla proje desteklenir.
+- `/sheets` → proje listesi (oluştur / aç / sil). Birden fazla proje desteklenir.
   Yeni proje 4 varsayılan durumla (Yapılmadı, Yapılıyor, Hazır, Onay) açılır; pipeline
   kolonları ve isimlendirme şablonu boş başlar, ayarlardan isteğe bağlı eklenir.
 - `/sheets/[projectId]` → shot takip tablosu. Hücreler inline düzenlenir, değişiklikler

@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import NoteEditor from "@/components/NoteEditor";
 import NotePageClient from "./NotePageClient";
+import CreateNotePrompt from "./CreateNotePrompt";
 
 export const dynamic = "force-dynamic";
 
@@ -31,21 +32,6 @@ export default async function NotePage({ params }: NotePageProps) {
     );
   }
 
-  // If it doesn't exist, create it
-  if (!existing) {
-    const { error } = await supabase
-      .from("notes")
-      .insert({ id: noteId, content: DEFAULT_CONTENT });
-
-    if (error) {
-      return (
-        <main className="flex min-h-screen items-center justify-center bg-[var(--background)] text-white/50">
-          <p>Not oluşturulamadı. Lütfen Supabase yapılandırmanızı kontrol edin.</p>
-        </main>
-      );
-    }
-  }
-
   const hasPassword = !!existing?.password_hash;
   const content = existing?.content ?? DEFAULT_CONTENT;
 
@@ -59,10 +45,14 @@ export default async function NotePage({ params }: NotePageProps) {
             "radial-gradient(ellipse 50% 40% at 50% 30%, rgba(139,157,90,0.04) 0%, rgba(139,157,90,0.012) 50%, transparent 75%)",
         }}
       />
-      {hasPassword ? (
-        <NotePageClient noteId={noteId} passwordHint={existing?.password_hint ?? null} noteIcon={existing?.icon ?? null} />
+      {!existing ? (
+        // Not yoksa otomatik oluşturma: botların/prefetch'in GET ile not
+        // yaratmasını engellemek için oluşturma kullanıcı onayına bağlı
+        <CreateNotePrompt noteId={noteId} />
+      ) : hasPassword ? (
+        <NotePageClient noteId={noteId} passwordHint={existing.password_hint ?? null} noteIcon={existing.icon ?? null} />
       ) : (
-        <NoteEditor noteId={noteId} initialContent={content} hasPassword={false} initialIcon={existing?.icon ?? null} />
+        <NoteEditor noteId={noteId} initialContent={content} hasPassword={false} initialIcon={existing.icon ?? null} />
       )}
     </main>
   );
