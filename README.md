@@ -197,6 +197,10 @@ açmanız yeterli — ücretsiz katman ayda 100 transkript veriyor.
    - `adim: "acik"` → oturumu açar; ders özeti, konu listesi ve açık uçlu sorular.
    - `adim: "coktan"` → çoktan seçmelileri ekler, oturumu `hazir` yapar.
 
+   İkinci adım düşerse ya da sekme kapanırsa oturum `hazirlaniyor` durumunda kalır. Bu
+   oturumlar listede "Tamamlanmadı — devam et" rozetiyle görünür; tıklayınca yalnızca ikinci
+   adım çağrılır, birinci adımda üretilen özet ve açık uçlu sorular tekrar üretilmez.
+
    Bölmenin sebebi ölçüm: tek çağrı 46 dakikalık bir derste 149 saniye sürüyordu
    (bölünce en uzun istek 108 saniye). Her soru için cevap anahtarı, kilit kavramlar
    ve videodaki saniyesi saklanır.
@@ -216,10 +220,60 @@ açmanız yeterli — ücretsiz katman ayda 100 transkript veriyor.
    $0,0007-0,0031 ve ~5 sn; aynı işi `sol` $0,0276'ya yapıyor, o yüzden denetimin kendi
    model yuvası var.
 
+   **İki denetim katmanı, eleme son çare.** Üretilen sorular ayrı ve ucuz bir modele
+   (`AI_AUDIT_MODEL`) tek çağrıda gönderilir. İki farklı soru sorulur:
+
+   1. *Transkript denetimi* — bu iddia derste var mı? İki tür sorun ayırt edilir:
+      `yok` (ders bu konuyu hiç anlatmamış) ve `celiski` (ders başka türlü söylüyor).
+   2. *Olgu denetimi* — bu iddia gerçekte doğru mu? Bu katman transkripte hiç bakmaz.
+
+   İkinci katman birincinin tanımı gereği göremediği hata sınıfı içindir: hoca "1453" der,
+   otomatik altyazı "1683" yazar, üretim modeli transkripte sadık kalıp onu tekrarlar. İddia
+   transkriptle *tutarlı* olduğu için birinci katman geçirir.
+
+   **Varsayılan davranış düzeltmektir, elemek değil.** Bir soruyu atmak öğrenciyi bir soru
+   eksik bırakır; oysa çoğu durumda bozuk olan soru değil, içindeki tek bir değerdir. Açık
+   uçlularda cevap anahtarı, çoktan seçmelilerde doğru şıkkın metni veya açıklaması düzeltilir —
+   yalnızca hatalı bilgi değişir, metnin geri kalanı korunur. Eleme yalnızca iki durumda:
+
+   - Ders o konuyu hiç anlatmamış (`yok`). Cevabı düzeltmek adaletsiz soruyu adil yapmaz.
+   - Çoktan seçmelide düzeltilmiş şık başka bir şıkla çakışıyor; soru iki doğru cevaplı olur.
+
+   Çeldiriciler denetime hiç gönderilmez — onların yanlış olması zaten beklenen şeydir,
+   göndermek yanlış alarm üretir. Denetim soruların yarısından fazlasını işaretlerse hatalı
+   olanın denetim olduğu varsayılıp hiçbirine dokunulmaz; denetimin kendisi düşerse üretim
+   engellenmez.
+
+   Denetimin ne yaptığı `ders_sessions.denetim` alanına yazılır ve ders sonuç ekranında
+   görünür ("Bu derste denetim 2 cevabı düzeltti"). Sunucu loglarında kalsa kimse bakmazdı.
+   Bu yazma isteğe bağlıdır: kolon eklenmemişse ders üretimi etkilenmez.
+
+   Ölçüm: kasten bozulmuş üç olgu (1683→1453, Sokullu Mehmet Paşa→Gedik Ahmed Paşa,
+   Kırım 1512→1475) 2/2 koşuda yakalandı, sağlam sorularda yanlış alarm çıkmadı,
+   çağrı başına $0,0003-0,0006.
+
+   **Web araması neden yok.** OpenRouter'ın yerleşik web araması denendi (`:online` eki,
+   varsayılan arka ucu zaten Exa; istek başına $0,007). Aramasız model bilgisi üç hatanın
+   üçünü de bulduğu için aramaya iş kalmadı — ayrı bir Exa entegrasyonu gereksiz. Gerekirse
+   (güncel mevzuat gibi eğitim verisinin eskiyebileceği yerlerde) `AI_AUDIT_MODEL` değerine
+   `:online` eklemek yeterli, kod değişmez.
+
    **Soru sayısı sabit değil**, dersin uzunluğuna göre hesaplanır (`hedefSoruSayisi`):
-   kabaca her üç dakikaya bir soru, 8 ile 26 arasında, **%70 çoktan seçmeli**. KPSS'nin
+   kabaca her üç dakikaya bir soru, 8 ile 26 arasında, **%80 çoktan seçmeli**. KPSS'nin
    kendisi çoktan seçmeli olduğu için ağırlık orada; açık uçlular öğrenmeyi asıl
-   pekiştiren kısım olduğu için hiç eksilmiyor (en az 2 garanti). Bu bir üst sınırdır:
+   pekiştiren kısım olduğu için hiç eksilmiyor (en az 2 garanti).
+
+   **Her iki bölüm de gerçek KPSS zorluğundadır; ortak ilke şudur: zorluk sorunun
+   derinliğinden gelsin, dolambaçlılığından değil.** Fark yalnızca formattadır:
+
+   - *Açık uçlular KPSS seviyesindedir ama dolambaçlı değildir.* Tek konulu, tek cümlelik
+     kök, 2-3 cümlelik beklenen cevap. "X ile Y'yi karşılaştırınız", "üç yönüyle
+     değerlendiriniz" gibi birden çok şeyi aynı anda isteyen kalıplar yasaktır. Ezber sorusu
+     da yasaktır: yalın tanım yerine "neden / nasıl / hangi sonucu doğurdu" sorulur.
+   - *Çoktan seçmeliler gerçek KPSS zorluğundadır.* Zorluk ÇELDİRİCİLERDEN gelir, soru
+     kökünün karmaşıklığından değil: iyi çeldirici, konuyu yarım bilen birinin seçebileceği
+     şeydir. Sorular tek odaklıdır; "ortak amacı nedir", "neyi gösterir" gibi çok adımlı
+     çıkarım zincirleri yine yasaktır — zor olmakla dolambaçlı olmak aynı şey değildir. Bu bir üst sınırdır:
    ders taşımıyorsa model daha az üretir, doğrulama katmanı fazlasını kırpar.
 3. **Değerlendirme** (`/api/ders/grade`) — açık uçlu cevaplar için modele transkriptin
    tamamı değil, sorunun geldiği bölüm (±90 sn) + cevap anahtarı gönderilir. Çoktan

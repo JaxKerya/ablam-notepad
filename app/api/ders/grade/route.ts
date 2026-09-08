@@ -56,11 +56,16 @@ export async function POST(request: Request) {
   if (engel) return engel;
 
   try {
-    const govde = await request.json();
-    const questionId: string = govde?.questionId ?? "";
-    const cevap: string = typeof govde?.cevap === "string" ? govde.cevap.trim() : "";
-    const secim: number | null = typeof govde?.secim === "number" ? govde.secim : null;
-    const pas: boolean = govde?.pas === true;
+    let govde: Record<string, unknown>;
+    try {
+      govde = await request.json();
+    } catch {
+      return NextResponse.json({ hata: "Geçersiz istek gövdesi." }, { status: 400 });
+    }
+    const questionId = typeof govde.questionId === "string" ? govde.questionId : "";
+    const cevap = typeof govde.cevap === "string" ? govde.cevap.trim() : "";
+    const secim = typeof govde.secim === "number" ? govde.secim : null;
+    const pas = govde.pas === true;
 
     if (!questionId) {
       return NextResponse.json({ hata: "questionId gerekli." }, { status: 400 });

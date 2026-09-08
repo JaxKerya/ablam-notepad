@@ -116,3 +116,9 @@ end $$;
 
 -- Ablamın "bu soru saçma" işareti. Prompt'u gerçek örneklerle iyileştirmek için.
 alter table ders_questions add column if not exists flagged boolean not null default false;
+
+-- Denetimin ne yaptığı görünür olsun: elenen ve düzeltilen soru sayısı.
+-- Bunlar sunucu loglarında kalırsa kimse bakmaz; oturuma yazılınca ders
+-- sonuç ekranında görünür ve bir sorun varsa fark edilir.
+alter table ders_sessions add column if not exists denetim jsonb not null
+  default '{"duzeltilen": 0, "elenen": 0}'::jsonb;

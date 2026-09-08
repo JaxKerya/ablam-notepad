@@ -26,9 +26,15 @@ export async function POST(request: Request) {
   if (engel) return engel;
 
   try {
-    const govde = await request.json();
-    const url: string = govde?.url ?? "";
-    const elleTranskript: string | undefined = govde?.elleTranskript;
+    let govde: Record<string, unknown>;
+    try {
+      govde = await request.json();
+    } catch {
+      return NextResponse.json({ hata: "Geçersiz istek gövdesi." }, { status: 400 });
+    }
+    const url = typeof govde.url === "string" ? govde.url : "";
+    const elleTranskript =
+      typeof govde.elleTranskript === "string" ? govde.elleTranskript : undefined;
 
     const videoId = videoIdCozumle(url);
     if (!videoId) {

@@ -14,6 +14,7 @@ import {
   Trash2,
   CornerDownLeft,
   CircleCheck,
+  CircleAlert,
   Clock,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
@@ -29,6 +30,7 @@ interface OturumOzeti {
   soruSayisi: number;
   cevapSayisi: number;
   dogruSayisi: number;
+  yarim: boolean;
 }
 
 type Asama = "bos" | "transkript" | "acik" | "coktan";
@@ -47,6 +49,7 @@ export default function DersAnaSayfa() {
   const [elleAcik, setElleAcik] = useState(false);
   const [elleMetin, setElleMetin] = useState("");
   const [silinecek, setSilinecek] = useState<string | null>(null);
+  const [tamamlanan, setTamamlanan] = useState<string | null>(null);
   // Transkript ~4 sn'de geliyor ve içinde başlık var. Soru üretimi beklenirken
   // dönen bir çark yerine videonun kendisini göstermek çok daha iyi hissettiriyor.
   const [video, setVideo] = useState<{ id: string; baslik: string | null; sure: number } | null>(
@@ -64,7 +67,10 @@ export default function DersAnaSayfa() {
       .select(
         "id, title, created_at, video_id, status, ders_videos(duration_seconds), ders_questions(count)"
       )
-      .eq("status", "hazir")
+      // Yarım kalanlar da listeleniyor: ikinci adım düşerse ya da sekme
+      // kapanırsa oturum "hazirlaniyor"da kalıyordu ve tamamen görünmez
+      // oluyordu — üretilen özet ve açık uçlu sorular boşa gidiyordu.
+      .in("status", ["hazir", "hazirlaniyor"])
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -106,6 +112,7 @@ export default function DersAnaSayfa() {
           soruSayisi,
           cevapSayisi: toplamlar.get(o.id) ?? 0,
           dogruSayisi: dogrular.get(o.id) ?? 0,
+          yarim: o.status !== "hazir",
         };
       })
     );
@@ -172,6 +179,28 @@ export default function DersAnaSayfa() {
       addToast((err as Error).message, "error");
       setAsama("bos");
       setVideo(null);
+    }
+  };
+
+  /**
+   * Yarım kalan oturumu tamamlar: yalnızca ikinci adımı çağırır, birinci adım
+   * (özet + açık uçlular) zaten kayıtlı olduğu için tekrar üretilmez.
+   */
+  const tamamla = async (o: OturumOzeti) => {
+    if (tamamlanan) return;
+    setTamamlanan(o.id);
+    try {
+      const res = await fetch("/api/ders/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId: o.video_id, adim: "coktan", sessionId: o.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.hata ?? "Tamamlanamadı.");
+      router.push(`/ders/${o.id}`);
+    } catch (err) {
+      addToast((err as Error).message, "error");
+      setTamamlanan(null);
     }
   };
 
@@ -373,7 +402,16 @@ export default function DersAnaSayfa() {
                   className="animate-fade-in group glass relative flex items-center gap-3 rounded-xl border border-[var(--border)] p-2.5 transition-all hover:border-[var(--border-hover)]"
                   style={{ animationDelay: `${Math.min(i * 35, 300)}ms` }}
                 >
-                  <Link href={`/ders/${o.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                  <Link
+                    href={o.yarim ? "#" : `/ders/${o.id}`}
+                    onClick={(e) => {
+                      if (o.yarim) {
+                        e.preventDefault();
+                        tamamla(o);
+                      }
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-3"
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={`https://img.youtube.com/vi/${o.video_id}/mqdefault.jpg`}
@@ -393,7 +431,12 @@ export default function DersAnaSayfa() {
                             {formatSure(o.sure)}
                           </span>
                         )}
-                        {o.cevapSayisi > 0 ? (
+                        {o.yarim ? (
+                          <span className="flex items-center gap-1 text-amber-300/80">
+                            <CircleAlert size={10} />
+                            {tamamlanan === o.id ? "Tamamlanıyor…" : "Tamamlanmadı — devam et"}
+                          </span>
+                        ) : o.cevapSayisi > 0 ? (
                           <span className="flex items-center gap-1 text-[var(--accent)]/70">
                             <CircleCheck size={10} />
                             {o.dogruSayisi}/{o.cevapSayisi} doğru

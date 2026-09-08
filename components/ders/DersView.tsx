@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -19,10 +18,12 @@ import {
   MinusCircle,
   ThumbsDown,
   NotebookPen,
+  Undo2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
 import {
+  DERS_NOTLARI_KLASORU,
   formatSure,
   ozetiNotBelgesine,
   skorHesapla,
@@ -74,7 +75,7 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
     () => new Set(sorular.filter((s) => s.flagged).map((s) => s.id))
   );
   const [notKaydediliyor, setNotKaydediliyor] = useState(false);
-  const router = useRouter();
+  const [kaydedilenNot, setKaydedilenNot] = useState<string | null>(null);
 
   const soru = sorular[index];
   const mevcutCevap = soru ? cevaplar.get(soru.id) : undefined;
@@ -175,32 +176,76 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
     addToast(zatenIsaretli ? "İşaret kaldırıldı" : "Teşekkürler, bu soru işaretlendi", "info");
   };
 
-  /** Ders özetini mevcut not defterine kaydeder */
+  /**
+   * Ders özetini not defterine kaydeder — yönlendirme yapmadan, ablam soruların
+   * başındayken akışından kopmasın diye. Kaydettikten sonra düğme geri alma
+   * düğmesine dönüşür. Notlar mevcut klasör sistemindeki "Ders Notları"
+   * klasörüne düşer, böylece ana not listesini doldurmaz.
+   */
   const notaKaydet = async () => {
     if (notKaydediliyor) return;
     setNotKaydediliyor(true);
 
     const baslik = oturum.title ?? "Ders";
     const notId = `ders-${slugla(baslik)}`;
-    const belge = ozetiNotBelgesine(
-      baslik,
-      oturum.summary,
-      oturum.topics ?? [],
-      videoLinki(oturum.video_id, 0)
-    );
 
-    const { error } = await supabase
-      .from("notes")
-      .upsert({ id: notId, content: belge }, { onConflict: "id" });
+    try {
+      // Klasör yoksa oluştur, varsa onu kullan
+      const { data: mevcut } = await supabase
+        .from("folders")
+        .select("id")
+        .eq("name", DERS_NOTLARI_KLASORU)
+        .maybeSingle();
 
+      let klasorId: string | null = mevcut?.id ?? null;
+      if (!klasorId) {
+        const { data: yeni, error } = await supabase
+          .from("folders")
+          .insert({ name: DERS_NOTLARI_KLASORU })
+          .select("id")
+          .single();
+        if (error) throw new Error(error.message);
+        klasorId = yeni.id;
+      }
+
+      const { error: notHatasi } = await supabase.from("notes").upsert(
+        {
+          id: notId,
+          folder_id: klasorId,
+          content: ozetiNotBelgesine(
+            baslik,
+            oturum.summary,
+            oturum.topics ?? [],
+            videoLinki(oturum.video_id, 0)
+          ),
+        },
+        { onConflict: "id" }
+      );
+      if (notHatasi) throw new Error(notHatasi.message);
+
+      setKaydedilenNot(notId);
+      addToast("Özet ders notlarına kaydedildi", "success");
+    } catch (err) {
+      addToast("Nota kaydedilemedi: " + (err as Error).message, "error");
+    } finally {
+      setNotKaydediliyor(false);
+    }
+  };
+
+  /** Kaydetmeyi geri alır — oluşturulan notu siler */
+  const kaydetmeyiGeriAl = async () => {
+    if (!kaydedilenNot || notKaydediliyor) return;
+    setNotKaydediliyor(true);
+
+    const { error } = await supabase.from("notes").delete().eq("id", kaydedilenNot);
     setNotKaydediliyor(false);
 
     if (error) {
-      addToast("Nota kaydedilemedi: " + error.message, "error");
+      addToast("Geri alınamadı: " + error.message, "error");
       return;
     }
-    addToast("Özet notlara kaydedildi", "success");
-    router.push(`/note/${notId}`);
+    setKaydedilenNot(null);
+    addToast("Kaydetme geri alındı", "delete");
   };
 
   const bastanBasla = () => {
@@ -281,16 +326,22 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
         </button>
 
         <button
-          onClick={notaKaydet}
+          onClick={kaydedilenNot ? kaydetmeyiGeriAl : notaKaydet}
           disabled={notKaydediliyor}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-5 py-3 text-[13px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/85 disabled:opacity-40"
+          className={`mt-2 flex w-full items-center justify-center gap-2 rounded-xl border px-5 py-3 text-[13px] transition-colors disabled:opacity-40 ${
+            kaydedilenNot
+              ? "border-[var(--accent)]/35 bg-[var(--accent)]/[0.07] text-[var(--accent-light)] hover:border-[var(--accent)]/55"
+              : "border-[var(--border)] text-white/55 hover:border-[var(--border-hover)] hover:text-white/85"
+          }`}
         >
           {notKaydediliyor ? (
             <Loader2 size={14} className="animate-spin" />
+          ) : kaydedilenNot ? (
+            <Undo2 size={14} />
           ) : (
             <NotebookPen size={14} />
           )}
-          Özeti notlarıma kaydet
+          {kaydedilenNot ? "Kaydedildi — geri al" : "Özeti ders notlarına kaydet"}
         </button>
 
         <p className="mt-3 text-center text-[11.5px] text-white/30">
@@ -332,6 +383,15 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
             </div>
           ))}
         </div>
+
+        {(oturum.denetim?.duzeltilen > 0 || oturum.denetim?.elenen > 0) && (
+          <p className="mt-4 text-center text-[11.5px] leading-relaxed text-white/30">
+            Bu derste denetim
+            {oturum.denetim.duzeltilen > 0 && ` ${oturum.denetim.duzeltilen} cevabı düzeltti`}
+            {oturum.denetim.duzeltilen > 0 && oturum.denetim.elenen > 0 && ","}
+            {oturum.denetim.elenen > 0 && ` ${oturum.denetim.elenen} soruyu eledi`}.
+          </p>
+        )}
 
         {zayifKonular.length > 0 && (
           <div className="glass mt-4 rounded-2xl border border-[var(--border)] p-5">

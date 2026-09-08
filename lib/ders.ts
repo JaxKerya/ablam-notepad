@@ -30,6 +30,8 @@ export interface DersSession {
   topics: string[];
   status: SessionStatus;
   error: string | null;
+  /** Denetimin bu oturumda ne yaptığı — şeffaflık için sonuç ekranında gösterilir */
+  denetim: { duzeltilen: number; elenen: number };
   created_at: string;
   updated_at: string;
 }
@@ -68,8 +70,8 @@ export interface DersAnswer {
  * Soru sayısı sabit değil, dersin uzunluğuna göre hesaplanıyor: kabaca her üç
  * dakikalık anlatım için bir soru, 8 ile 26 arasında sıkıştırılmış.
  *
- * Ağırlık çoktan seçmelide (%70): KPSS'nin kendisi çoktan seçmeli, sınav
- * refleksi orada kazanılıyor. Açık uçlular kalan %30 — onlar da öğrenmeyi
+ * Ağırlık çoktan seçmelide (%80): KPSS'nin kendisi çoktan seçmeli, sınav
+ * refleksi orada kazanılıyor. Açık uçlular kalan %20 — onlar da öğrenmeyi
  * asıl pekiştiren kısım olduğu için hiç eksilmiyor, en az ikisi garanti.
  *
  * Bu bir ÜST SINIR: ders bu kadar soruyu taşımıyorsa model daha az üretir,
@@ -82,12 +84,19 @@ export function hedefSoruSayisi(sureSaniye: number): {
 } {
   const dakika = Math.max(0, sureSaniye) / 60;
   const toplam = Math.round(Math.min(26, Math.max(8, dakika / 3)));
-  const acik = Math.max(2, Math.round(toplam * 0.3));
+  const acik = Math.max(2, Math.round(toplam * 0.2));
   return { toplam, coktan: toplam - acik, acik };
 }
 
 /** Bir oturumun anlamlı sayılması için gereken en az soru sayısı */
 export const EN_AZ_SORU = 4;
+
+/**
+ * Ders özetlerinin kaydedildiği klasör. Mevcut klasör sistemi kullanılıyor:
+ * özetler bu klasöre düşüyor, ana not listesinde görünmüyor, kendi
+ * "Ders notlarını görüntüle" düğmesinin altında listeleniyor.
+ */
+export const DERS_NOTLARI_KLASORU = "Ders Notları";
 
 /** Günlük soru üretimi tavanı — sızan bir linkin faturayı şişirmesini engeller */
 export const GUNLUK_URETIM_LIMITI = 40;

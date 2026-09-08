@@ -36,6 +36,7 @@ import { supabase } from "@/lib/supabase-browser";
 import { verifyPassword } from "@/lib/crypto";
 import { DynamicIcon } from "@/components/IconPicker";
 import { useToast } from "@/components/Toast";
+import { DERS_NOTLARI_KLASORU } from "@/lib/ders";
 
 interface NoteItem {
   id: string;
@@ -73,6 +74,9 @@ export default function Home() {
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Ders özetleri "Ders Notları" klasörüne kaydediliyor. Ana not listesi o
+  // klasörü gizler, ders notları kendi düğmesinin altında listelenir.
+  const [sidebarModu, setSidebarModu] = useState<"notlar" | "ders">("notlar");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState("");
@@ -332,7 +336,7 @@ export default function Home() {
               type="text"
               value={sidebarSearch}
               onChange={(e) => setSidebarSearch(e.target.value.replace(/\s+/g, "-"))}
-              placeholder="Notlarda ara…"
+              placeholder={sidebarModu === "ders" ? "Ders notlarında ara…" : "Notlarda ara…"}
               className="w-full rounded-lg border border-[var(--border)] bg-white/[0.02] py-1.5 pl-8 pr-3 text-xs text-white/85 placeholder-white/30 transition-all focus:border-[var(--accent)]/30 focus:bg-white/[0.08] focus:outline-none"
             />
           </div>
@@ -385,7 +389,14 @@ export default function Home() {
               !sidebarSearch.trim() || item.id.toLowerCase().includes(sidebarSearch.toLowerCase())
             );
 
-            const ungrouped = filtered.filter((n) => !n.folder_id);
+            const dersKlasoru = folders.find((f) => f.name === DERS_NOTLARI_KLASORU);
+            const dersModu = sidebarModu === "ders";
+
+            // Ders notları ana listede görünmez, kendi modunda tek başına görünür.
+            const gorunenKlasorler = dersModu
+              ? folders.filter((f) => f.id === dersKlasoru?.id)
+              : folders.filter((f) => f.id !== dersKlasoru?.id);
+            const ungrouped = dersModu ? [] : filtered.filter((n) => !n.folder_id);
 
             const toggleFolder = (folderId: string) => {
               setCollapsedFolders((prev) => {
@@ -493,10 +504,28 @@ export default function Home() {
               </div>
             );
 
+            const dersNotSayisi = dersKlasoru
+              ? filtered.filter((n) => n.folder_id === dersKlasoru.id).length
+              : 0;
+
+            if (dersModu && dersNotSayisi === 0) {
+              return (
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center text-xs text-white/30">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06]">
+                    <GraduationCap size={18} className="text-white/20" />
+                  </div>
+                  <span className="max-w-[210px] leading-relaxed">
+                    Henüz ders notu yok. Ablam Ders&apos;te bir dersin özetini kaydedince burada
+                    görünecek.
+                  </span>
+                </div>
+              );
+            }
+
             return (
               <div className="flex flex-col gap-0.5">
                 {/* Folder groups */}
-                {folders.map((folder) => {
+                {gorunenKlasorler.map((folder) => {
                   const folderNotes = filtered.filter((n) => n.folder_id === folder.id);
                   const isCollapsed = collapsedFolders.has(folder.id);
 
@@ -633,13 +662,29 @@ export default function Home() {
         {/* Notes link — stagger 160ms */}
         <button
           type="button"
-          onClick={() => setSidebarOpen(true)}
+          onClick={() => {
+            setSidebarModu("notlar");
+            setSidebarOpen(true);
+          }}
           className="animate-slide-up mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-white/30 transition-all duration-200 hover:bg-white/[0.06] hover:text-white/60"
           style={{ animationDelay: "160ms" }}
         >
           <Layers size={14} />
           <span>Mevcut notları görüntüle</span>
           <kbd className="ml-1 rounded border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-white/25">/</kbd>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSidebarModu("ders");
+            setSidebarOpen(true);
+          }}
+          className="animate-slide-up flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-white/30 transition-all duration-200 hover:bg-white/[0.06] hover:text-white/60"
+          style={{ animationDelay: "200ms" }}
+        >
+          <GraduationCap size={14} />
+          <span>Ders notlarını görüntüle</span>
         </button>
       </div>
 
