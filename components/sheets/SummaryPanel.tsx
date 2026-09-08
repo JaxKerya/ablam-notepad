@@ -90,7 +90,7 @@ export default function SummaryPanel({ animators, statuses, shots }: Props) {
         <table className="w-full border-collapse text-[12.5px]">
           <thead>
             <tr className="bg-black/25">
-              <th className="sticky left-0 z-10 min-w-[140px] bg-[#3a4a3b] px-3 py-2.5 text-left font-medium text-white/70">
+              <th className="sticky left-0 z-10 min-w-[140px] bg-[var(--surface-sticky-head)] px-3 py-2.5 text-left font-medium text-white/70">
                 Animatör
               </th>
               {statuses.map((s) => (
@@ -102,10 +102,10 @@ export default function SummaryPanel({ animators, statuses, shots }: Props) {
                   {s.name}
                 </th>
               ))}
-              <th className="min-w-[64px] bg-black/30 px-2 py-2.5 text-center font-semibold text-white/80">
+              <th className="min-w-[64px] bg-[var(--surface-elevated)] px-2 py-2.5 text-center font-semibold text-white/80">
                 Shot
               </th>
-              <th className="min-w-[72px] bg-black/30 px-2 py-2.5 text-center font-semibold text-[var(--accent)]">
+              <th className="min-w-[72px] bg-[var(--surface-elevated)] px-2 py-2.5 text-center font-semibold text-[var(--accent)]">
                 Kare
               </th>
             </tr>
@@ -118,7 +118,7 @@ export default function SummaryPanel({ animators, statuses, shots }: Props) {
                   key={a.id}
                   className="border-t border-[var(--border)] transition-colors hover:bg-white/[0.03]"
                 >
-                  <td className="sticky left-0 z-10 bg-[#344335] px-3 py-2">
+                  <td className="sticky left-0 z-10 bg-[var(--surface-sticky-cell)] px-3 py-2">
                     <div className="flex items-center gap-2">
                       <span
                         className="h-3 w-3 shrink-0 rounded-full"
@@ -142,10 +142,10 @@ export default function SummaryPanel({ animators, statuses, shots }: Props) {
                       </td>
                     );
                   })}
-                  <td className="bg-black/15 px-2 py-2 text-center font-semibold tabular-nums text-white/80">
+                  <td className="bg-[var(--surface)] px-2 py-2 text-center font-semibold tabular-nums text-white/80">
                     {rec.totalShots}
                   </td>
-                  <td className="bg-black/15 px-2 py-2 text-center font-semibold tabular-nums text-[var(--accent)]">
+                  <td className="bg-[var(--surface)] px-2 py-2 text-center font-semibold tabular-nums text-[var(--accent)]">
                     {rec.totalFrames}
                   </td>
                 </tr>

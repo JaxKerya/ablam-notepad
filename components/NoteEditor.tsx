@@ -281,6 +281,8 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
           return {
             "Mod-Shift-h": () =>
               this.editor.commands.toggleHighlight({
+                // Not içeriğine yazılan bir değer, tema değil: birebir kalmalı.
+                // Toolbar'daki HIGHLIGHT_COLORS[0] ile aynı olmak zorunda.
                 color: "rgba(212, 228, 165, 0.30)",
               }),
           };
@@ -560,9 +562,9 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
 
             {moreMenuOpen && typeof window !== "undefined" &&
               createPortal(
-                <div className="fixed inset-0 z-[55]" onClick={() => setMoreMenuOpen(false)}>
+                <div className="fixed inset-0 z-[var(--z-catch)]" onClick={() => setMoreMenuOpen(false)}>
                   <div
-                    className="fixed w-44 overflow-hidden rounded-xl border border-[var(--border)] bg-black/25 backdrop-blur-xl py-1 shadow-xl shadow-black/30"
+                    className="fixed w-44 overflow-hidden rounded-xl border border-[var(--border)] glass-strong py-1 shadow-xl shadow-black/30"
                     style={{ top: moreMenuPos.top, left: moreMenuPos.left, transform: "translateX(-100%)" }}
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -647,7 +649,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
         className="relative rounded-2xl border border-[var(--border)] bg-[var(--surface-elevated)] shadow-2xl shadow-black/30"
         style={{
           boxShadow:
-            "0 0 60px -12px rgba(212,228,165,0.08), 0 0 30px -8px rgba(212,228,165,0.05), 0 25px 50px -12px rgba(0,0,0,0.4)",
+            "0 0 60px -12px rgb(var(--accent-rgb) / 0.08), 0 0 30px -8px rgb(var(--accent-rgb) / 0.05), 0 25px 50px -12px rgba(0,0,0,0.4)",
         }}
       >
         <Toolbar editor={editor} syncStatus={syncStatus} noteId={noteId} />
@@ -668,14 +670,14 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
       {renameOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[60]">
+          <div className="fixed inset-0 z-[var(--z-modal)]">
             <div
-              className="absolute inset-0 bg-black/40 animate-backdrop-blur"
+              className="absolute inset-0 bg-black/40 animate-overlay"
               onClick={() => { setRenameOpen(false); setRenameError(""); }}
             />
             <div className="pointer-events-none relative flex h-full items-center justify-center">
               <div
-                className="pointer-events-auto animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-white/[0.12] bg-black/20 backdrop-blur-2xl p-6 shadow-2xl shadow-black/40"
+                className="pointer-events-auto animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] glass-modal p-6 shadow-2xl shadow-black/40"
                 onClick={(e) => e.stopPropagation()}
               >
               <div className="mb-1 flex items-center gap-2.5">
@@ -733,14 +735,14 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
       {deleteConfirmOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[60]">
+          <div className="fixed inset-0 z-[var(--z-modal)]">
             <div
-              className="absolute inset-0 bg-black/40 animate-backdrop-blur"
+              className="absolute inset-0 bg-black/40 animate-overlay"
               onClick={() => setDeleteConfirmOpen(false)}
             />
             <div className="pointer-events-none relative flex h-full items-center justify-center">
               <div
-                className="pointer-events-auto animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-white/[0.12] bg-black/20 backdrop-blur-2xl p-6 shadow-2xl shadow-black/40"
+                className="pointer-events-auto animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] glass-modal p-6 shadow-2xl shadow-black/40"
                 onClick={(e) => e.stopPropagation()}
               >
               <div className="mb-1 flex items-center gap-2.5">

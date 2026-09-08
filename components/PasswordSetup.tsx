@@ -326,16 +326,16 @@ export default function PasswordSetup({
             {open &&
                 typeof document !== "undefined" &&
                 createPortal(
-                    <div className="fixed inset-0 z-[60]">
+                    <div className="fixed inset-0 z-[var(--z-modal)]">
                         {/* Backdrop dim + blur */}
                         <div
-                            className="absolute inset-0 bg-black/40 animate-backdrop-blur"
+                            className="absolute inset-0 bg-black/40 animate-overlay"
                             onClick={resetState}
                         />
                         {/* Card — sibling so backdrop-blur works */}
                         <div className="pointer-events-none relative flex h-full items-center justify-center">
                             <div
-                                className="pointer-events-auto animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-white/[0.12] bg-black/20 backdrop-blur-2xl p-6 shadow-2xl shadow-black/40"
+                                className="pointer-events-auto animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] glass-modal p-6 shadow-2xl shadow-black/40"
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 {renderContent()}

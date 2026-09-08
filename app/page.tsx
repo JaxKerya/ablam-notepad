@@ -74,9 +74,8 @@ export default function Home() {
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // Ders özetleri "Ders Notları" klasörüne kaydediliyor. Ana not listesi o
-  // klasörü gizler, ders notları kendi düğmesinin altında listelenir.
-  const [sidebarModu, setSidebarModu] = useState<"notlar" | "ders">("notlar");
+  // Ders özetleri "Ders Notları" klasörüne kaydediliyor ve bu listede
+  // gizleniyor — onlar /ders sayfasındaki kendi panelinde listeleniyor.
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState("");
@@ -282,25 +281,26 @@ export default function Home() {
         className="pointer-events-none fixed inset-0 z-0"
         style={{
           background: [
-            "radial-gradient(ellipse 80% 60% at 50% 35%, rgba(212,228,165,0.08) 0%, transparent 60%)",
-            "radial-gradient(circle at 15% 85%, rgba(212,228,165,0.04) 0%, transparent 40%)",
+            "radial-gradient(ellipse 80% 60% at 50% 35%, rgb(var(--accent-rgb) / 0.08) 0%, transparent 60%)",
+            "radial-gradient(circle at 15% 85%, rgb(var(--accent-rgb) / 0.04) 0%, transparent 40%)",
             "radial-gradient(circle at 85% 15%, rgba(255,255,255,0.03) 0%, transparent 35%)",
             "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 100%)",
           ].join(", "),
         }}
       />
 
-      {/* Backdrop overlay */}
+      {/* Backdrop overlay — yalnızca karartma. Arkadaki sayfa
+          bulanıklaştırılmıyor; ayrımı panelin kendi camsı zemini sağlıyor. */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity"
+          className="animate-overlay fixed inset-0 z-[var(--z-overlay)] bg-black/50"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`glass-strong fixed left-0 top-0 z-50 flex h-screen w-72 flex-col border-r border-[var(--border)] shadow-2xl shadow-black/40 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        className={`glass-strong fixed left-0 top-0 z-[var(--z-panel)] flex h-screen w-72 flex-col border-r border-[var(--border)] shadow-2xl shadow-black/40 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
       >
         {/* Subtle top glow */}
@@ -336,7 +336,7 @@ export default function Home() {
               type="text"
               value={sidebarSearch}
               onChange={(e) => setSidebarSearch(e.target.value.replace(/\s+/g, "-"))}
-              placeholder={sidebarModu === "ders" ? "Ders notlarında ara…" : "Notlarda ara…"}
+              placeholder="Notlarda ara…"
               className="w-full rounded-lg border border-[var(--border)] bg-white/[0.02] py-1.5 pl-8 pr-3 text-xs text-white/85 placeholder-white/30 transition-all focus:border-[var(--accent)]/30 focus:bg-white/[0.08] focus:outline-none"
             />
           </div>
@@ -390,13 +390,9 @@ export default function Home() {
             );
 
             const dersKlasoru = folders.find((f) => f.name === DERS_NOTLARI_KLASORU);
-            const dersModu = sidebarModu === "ders";
-
-            // Ders notları ana listede görünmez, kendi modunda tek başına görünür.
-            const gorunenKlasorler = dersModu
-              ? folders.filter((f) => f.id === dersKlasoru?.id)
-              : folders.filter((f) => f.id !== dersKlasoru?.id);
-            const ungrouped = dersModu ? [] : filtered.filter((n) => !n.folder_id);
+            // Ders notları burada görünmez; /ders sayfasındaki panelde listelenir.
+            const gorunenKlasorler = folders.filter((f) => f.id !== dersKlasoru?.id);
+            const ungrouped = filtered.filter((n) => !n.folder_id);
 
             const toggleFolder = (folderId: string) => {
               setCollapsedFolders((prev) => {
@@ -452,7 +448,7 @@ export default function Home() {
                       <FolderPlus size={12} />
                     </button>
                     {noteFolderMenuOpen === item.id && (
-                      <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-lg border border-[var(--border)] bg-black/30 backdrop-blur-xl py-1 shadow-xl shadow-black/30">
+                      <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-lg border border-[var(--border)] glass-strong py-1 shadow-xl shadow-black/30">
                         {folders.map((f) => (
                           <button
                             key={f.id}
@@ -504,24 +500,6 @@ export default function Home() {
               </div>
             );
 
-            const dersNotSayisi = dersKlasoru
-              ? filtered.filter((n) => n.folder_id === dersKlasoru.id).length
-              : 0;
-
-            if (dersModu && dersNotSayisi === 0) {
-              return (
-                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center text-xs text-white/30">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06]">
-                    <GraduationCap size={18} className="text-white/20" />
-                  </div>
-                  <span className="max-w-[210px] leading-relaxed">
-                    Henüz ders notu yok. Ablam Ders&apos;te bir dersin özetini kaydedince burada
-                    görünecek.
-                  </span>
-                </div>
-              );
-            }
-
             return (
               <div className="flex flex-col gap-0.5">
                 {/* Folder groups */}
@@ -570,7 +548,7 @@ export default function Home() {
                             <MoreHorizontal size={12} />
                           </button>
                           {folderMenuOpen === folder.id && (
-                            <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-lg border border-[var(--border)] bg-black/30 backdrop-blur-xl py-1 shadow-xl shadow-black/30">
+                            <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-lg border border-[var(--border)] glass-strong py-1 shadow-xl shadow-black/30">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -643,7 +621,7 @@ export default function Home() {
               onChange={(e) => setNoteId(e.target.value)}
               placeholder="örn. ablam da ablam"
               autoFocus
-              className="w-full rounded-xl border border-white/[0.08] bg-black/[0.15] py-3 pl-10 pr-4 text-sm text-white/95 placeholder-white/25 shadow-inner shadow-black/10 outline-none transition-all duration-300 focus:border-[var(--accent)]/40 focus:shadow-[0_0_20px_rgba(212,228,165,0.08)] focus:ring-1 focus:ring-[var(--accent)]/20"
+              className="w-full rounded-xl border border-white/[0.08] bg-[var(--surface)] py-3 pl-10 pr-4 text-sm text-white/95 placeholder-white/25 shadow-inner shadow-black/10 outline-none transition-all duration-300 focus:border-[var(--accent)]/40 focus:shadow-[0_0_20px_rgb(var(--accent-rgb)/0.08)] focus:ring-1 focus:ring-[var(--accent)]/20"
             />
           </div>
           <button
@@ -663,7 +641,6 @@ export default function Home() {
         <button
           type="button"
           onClick={() => {
-            setSidebarModu("notlar");
             setSidebarOpen(true);
           }}
           className="animate-slide-up mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-white/30 transition-all duration-200 hover:bg-white/[0.06] hover:text-white/60"
@@ -674,41 +651,43 @@ export default function Home() {
           <kbd className="ml-1 rounded border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-white/25">/</kbd>
         </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            setSidebarModu("ders");
-            setSidebarOpen(true);
-          }}
-          className="animate-slide-up flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-white/30 transition-all duration-200 hover:bg-white/[0.06] hover:text-white/60"
-          style={{ animationDelay: "200ms" }}
+        {/*
+          Diğer iki uygulama. Önceden sağ üst köşede üst üste iki hap olarak
+          duruyorlardı: farklı genişlikte oldukları için kenarları hizasızdı ve
+          kazara birikmiş gibi görünüyorlardı. Burada eşit ağırlıkta, hizalı ve
+          ayrı bir bölüm olarak duruyorlar — köşe iliştirmesi değil, gerçek
+          giriş noktası.
+        */}
+        <div
+          className="animate-slide-up mt-9 flex w-full max-w-sm flex-col items-center gap-3"
+          style={{ animationDelay: "220ms" }}
         >
-          <GraduationCap size={14} />
-          <span>Ders notlarını görüntüle</span>
-        </button>
-      </div>
+          <div className="flex w-full items-center gap-3">
+            <span className="h-px flex-1 bg-white/[0.07]" />
+            <span className="text-[10px] uppercase tracking-[0.14em] text-white/20">
+              Diğer uygulamalar
+            </span>
+            <span className="h-px flex-1 bg-white/[0.07]" />
+          </div>
 
-      {/* Yan kapılar — ayrı özellikler, ana kompozisyona karışmıyor */}
-      <div className="fixed top-5 right-5 z-20 flex flex-col items-end gap-2 sm:top-6 sm:right-7">
-        <Link
-          href="/sheets"
-          aria-label="Ablam Sheets"
-          className="glass animate-fade-in flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85"
-          style={{ animationDelay: "280ms" }}
-        >
-          <Clapperboard size={14} className="text-[var(--accent)]/80" />
-          <span>Ablam Sheets</span>
-        </Link>
+          <div className="grid w-full grid-cols-2 gap-2">
+            <Link
+              href="/sheets"
+              className="glass flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2.5 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85"
+            >
+              <Clapperboard size={14} className="text-[var(--accent)]/80" />
+              <span>Ablam Sheets</span>
+            </Link>
 
-        <Link
-          href="/ders"
-          aria-label="Ablam Ders"
-          className="glass animate-fade-in flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85"
-          style={{ animationDelay: "320ms" }}
-        >
-          <GraduationCap size={14} className="text-[var(--accent)]/80" />
-          <span>Ablam Ders</span>
-        </Link>
+            <Link
+              href="/ders"
+              className="glass flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2.5 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85"
+            >
+              <GraduationCap size={14} className="text-[var(--accent)]/80" />
+              <span>Ablam Ders</span>
+            </Link>
+          </div>
+        </div>
       </div>
 
       {/* Footer */}
@@ -719,7 +698,7 @@ export default function Home() {
       {/* Delete confirmation popup */}
       {deleteConfirm && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 animate-backdrop-blur"
+          className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/40 animate-overlay"
           onClick={resetDeleteState}
         >
           <div

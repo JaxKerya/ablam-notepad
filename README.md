@@ -155,9 +155,11 @@ Supabase **SQL Editor**'da `db/sheets.sql` dosyasının tamamını çalıştır�
 ## Ablam Ders — video destekli kendini sınama (`/ders`)
 
 İzlenen bir YouTube ders videosunun linkinden, o derste anlatılanları ölçen sorular
-üretir. Sorular şıklı değil, açık uçlu cevaplanır; her cevap yapay zeka tarafından
-değerlendirilip anında geri bildirim verilir. Yanlış cevapta konunun videoda
-anlatıldığı ana giden link gösterilir.
+üretir. Soru sayısı sabit değil, dersin uzunluğuna göre hesaplanır (8–26 arası) ve
+ağırlık çoktan seçmelidedir (%80) — KPSS'nin kendisi çoktan seçmeli olduğu için sınav
+refleksi orada kazanılıyor. Kalan %20 açık uçludur ve yapay zeka tarafından
+değerlendirilip anında geri bildirim verilir. Her soruda konunun videoda anlatıldığı
+ana giden link gösterilir; cevap anahtarları ayrı bir denetim katmanından geçer.
 
 ### Kurulum
 
@@ -165,13 +167,14 @@ anlatıldığı ana giden link gösterilir.
 tabloları oluşturur: `ders_videos` (video başına bir kez çekilen transkript),
 `ders_sessions`, `ders_questions`, `ders_answers`.
 
-**2.** `.env.local` dosyasına dört değişken ekleyin:
+**2.** `.env.local` dosyasına şu değişkenleri ekleyin:
 
 ```
-AI_BASE_URL=https://yapayzekalab.org/v1
+AI_BASE_URL=https://openrouter.ai/api/v1
 AI_API_KEY=...
-AI_MODEL=gemini-3.7-flash-high
-AI_GRADE_MODEL=gemini-3.7-flash-high
+AI_MODEL=openai/gpt-5.6-sol          # soru üretimi
+AI_GRADE_MODEL=openai/gpt-5.6-sol    # açık uçlu cevap değerlendirmesi
+AI_AUDIT_MODEL=openai/gpt-5.6-luna   # cevap anahtarı denetimi (ucuz model yeter)
 SUPADATA_API_KEY=...
 SITE_GATE_SECRET=rastgele-uzun-bir-metin
 ```
@@ -402,7 +405,7 @@ imzalı çerezi arar (`lib/gate.ts`).
 3. Add your environment variables in the Vercel dashboard:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, `AI_GRADE_MODEL` (Ablam Ders)
+   - `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, `AI_GRADE_MODEL`, `AI_AUDIT_MODEL` (Ablam Ders)
    - `SUPADATA_API_KEY` (Ablam Ders)
    - `SITE_GATE_SECRET` (Ablam Ders)
 4. Deploy. Your app will be live at your Vercel URL.

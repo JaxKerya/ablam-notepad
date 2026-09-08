@@ -65,14 +65,14 @@ export default function SiteGate({ onUnlock }: SiteGateProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[var(--background)]">
+    <div className="fixed inset-0 z-[var(--z-top)] flex items-center justify-center bg-[var(--background)]">
       {/* Background depth */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           background: [
-            "radial-gradient(ellipse 80% 60% at 50% 35%, rgba(212,228,165,0.08) 0%, transparent 60%)",
-            "radial-gradient(circle at 15% 85%, rgba(212,228,165,0.04) 0%, transparent 40%)",
+            "radial-gradient(ellipse 80% 60% at 50% 35%, rgb(var(--accent-rgb) / 0.08) 0%, transparent 60%)",
+            "radial-gradient(circle at 15% 85%, rgb(var(--accent-rgb) / 0.04) 0%, transparent 40%)",
             "radial-gradient(circle at 85% 15%, rgba(255,255,255,0.03) 0%, transparent 35%)",
             "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 100%)",
           ].join(", "),
@@ -88,7 +88,7 @@ export default function SiteGate({ onUnlock }: SiteGateProps) {
           top: "15%",
           left: "10%",
           background:
-            "radial-gradient(circle, rgba(212,228,165,0.3), transparent 70%)",
+            "radial-gradient(circle, rgb(var(--accent-rgb) / 0.3), transparent 70%)",
         }}
       />
       <div
@@ -99,7 +99,7 @@ export default function SiteGate({ onUnlock }: SiteGateProps) {
           bottom: "20%",
           right: "15%",
           background:
-            "radial-gradient(circle, rgba(212,228,165,0.25), transparent 70%)",
+            "radial-gradient(circle, rgb(var(--accent-rgb) / 0.25), transparent 70%)",
         }}
       />
 

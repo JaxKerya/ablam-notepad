@@ -16,10 +16,12 @@ import {
   CircleCheck,
   CircleAlert,
   Clock,
+  NotebookPen,
+  FileText,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
-import { formatSure, tarihMetni } from "@/lib/ders";
+import { DERS_NOTLARI_KLASORU, formatSure, tarihMetni } from "@/lib/ders";
 
 interface OturumOzeti {
   id: string;
@@ -50,6 +52,8 @@ export default function DersAnaSayfa() {
   const [elleMetin, setElleMetin] = useState("");
   const [silinecek, setSilinecek] = useState<string | null>(null);
   const [tamamlanan, setTamamlanan] = useState<string | null>(null);
+  const [notlarAcik, setNotlarAcik] = useState(false);
+  const [dersNotlari, setDersNotlari] = useState<{ id: string; updated_at: string }[] | null>(null);
   // Transkript ~4 sn'de geliyor ve içinde başlık var. Soru üretimi beklenirken
   // dönen bir çark yerine videonun kendisini göstermek çok daha iyi hissettiriyor.
   const [video, setVideo] = useState<{ id: string; baslik: string | null; sure: number } | null>(
@@ -123,6 +127,26 @@ export default function DersAnaSayfa() {
     oturumlariGetir();
   }, [oturumlariGetir]);
 
+  /** Ders notları panelini ilk açılışta doldurur */
+  const dersNotlariniGetir = useCallback(async () => {
+    const { data: klasor } = await supabase
+      .from("folders")
+      .select("id")
+      .eq("name", DERS_NOTLARI_KLASORU)
+      .maybeSingle();
+
+    if (!klasor) {
+      setDersNotlari([]);
+      return;
+    }
+    const { data } = await supabase
+      .from("notes")
+      .select("id, updated_at")
+      .eq("folder_id", klasor.id)
+      .order("updated_at", { ascending: false });
+    setDersNotlari(data ?? []);
+  }, []);
+
   const basla = async (elleTranskript?: string) => {
     const url = link.trim();
     if (!url || asama !== "bos") return;
@@ -186,6 +210,11 @@ export default function DersAnaSayfa() {
    * Yarım kalan oturumu tamamlar: yalnızca ikinci adımı çağırır, birinci adım
    * (özet + açık uçlular) zaten kayıtlı olduğu için tekrar üretilmez.
    */
+  const notlariAc = () => {
+    setNotlarAcik(true);
+    if (dersNotlari === null) dersNotlariniGetir();
+  };
+
   const tamamla = async (o: OturumOzeti) => {
     if (tamamlanan) return;
     setTamamlanan(o.id);
@@ -224,7 +253,7 @@ export default function DersAnaSayfa() {
         className="pointer-events-none fixed inset-0"
         style={{
           background: [
-            "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(212,228,165,0.07) 0%, transparent 60%)",
+            "radial-gradient(ellipse 80% 50% at 50% 0%, rgb(var(--accent-rgb) / 0.07) 0%, transparent 60%)",
             "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 100%)",
           ].join(", "),
         }}
@@ -237,6 +266,23 @@ export default function DersAnaSayfa() {
         <ArrowLeft size={14} />
         <span>Ana sayfa</span>
       </Link>
+
+      {/* Ders notları burada, kendi panelinde açılır. Önceden ana sayfaya
+          yönlendirip oradaki kenar çubuğunu açıyordu — sayfadan koparıyordu. */}
+      {/* Panel açıkken gizleniyor: aynı köşede panelin kapatma düğmesiyle
+          üst üste biniyordu ve zaten gereksiz kalıyor. */}
+      {!notlarAcik && (
+        <button
+          type="button"
+          onClick={notlariAc}
+          aria-label="Ders notlarım"
+          title="Ders notlarım"
+          className="glass fixed top-5 right-5 z-20 animate-fade-in flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85 sm:top-6 sm:right-7"
+        >
+          <NotebookPen size={14} className="text-[var(--accent)]/80" />
+          <span className="hidden sm:inline">Ders notlarım</span>
+        </button>
+      )}
 
       <div className="relative z-10 mx-auto max-w-3xl px-5 pb-20 pt-24 sm:pt-28">
         {/* Başlık */}
@@ -462,10 +508,82 @@ export default function DersAnaSayfa() {
         </div>
       </div>
 
+      {/* Ders notları paneli — sayfadan çıkmadan, soldan.
+          Ana sayfadaki notlar kenar çubuğuyla aynı desen: left-0, w-72,
+          border-r ve aynı yatay kaydırma geçişi. */}
+      {notlarAcik && (
+        <div
+          className="animate-overlay fixed inset-0 z-[var(--z-overlay)] bg-black/50"
+          onClick={() => setNotlarAcik(false)}
+        />
+      )}
+
+      <aside
+        className={`glass-strong fixed left-0 top-0 z-[var(--z-panel)] flex h-screen w-72 flex-col border-r border-[var(--border)] shadow-2xl shadow-black/40 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          notlarAcik ? "translate-x-0" : "-translate-x-full"
+        }`}
+        aria-hidden={!notlarAcik}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)]/10">
+              <NotebookPen size={13} className="text-[var(--accent)]" />
+            </div>
+            <h2 className="text-[13.5px] font-medium text-white/90">Ders notlarım</h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotlarAcik(false)}
+            aria-label="Kapat"
+            tabIndex={notlarAcik ? 0 : -1}
+            className="-mr-1.5 flex h-9 w-9 items-center justify-center rounded-lg text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/70"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          {dersNotlari === null ? (
+            <div className="flex justify-center py-12">
+              <Loader2 size={18} className="animate-spin text-[var(--accent)]/50" />
+            </div>
+          ) : dersNotlari.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 px-3 py-14 text-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06]">
+                <NotebookPen size={18} className="text-white/20" />
+              </div>
+              <p className="text-[12.5px] leading-relaxed text-white/30">
+                Henüz ders notun yok. Bir dersin özet ekranında &quot;Özeti ders notlarına
+                kaydet&quot; dediğinde burada görünecek.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {dersNotlari.map((n) => (
+                <Link
+                  key={n.id}
+                  href={`/note/${n.id}`}
+                  tabIndex={notlarAcik ? 0 : -1}
+                  className="group flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-[var(--accent)]/[0.06]"
+                >
+                  <FileText size={14} className="flex-shrink-0 text-white/25" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] text-white/85">
+                      {n.id.replace(/^ders-/, "").replace(/-/g, " ")}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-white/30">{tarihMetni(n.updated_at)}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      </aside>
+
       {/* Silme onayı */}
       {silinecek && (
         <div
-          className="animate-backdrop-blur fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-5"
+          className="animate-overlay fixed inset-0 z-[var(--z-panel)] flex items-center justify-center bg-black/40 px-5"
           onClick={() => setSilinecek(null)}
         >
           <div

@@ -60,11 +60,11 @@ export default function SheetSettings({
   ];
 
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40 animate-backdrop-blur" onClick={onClose} />
+    <div className="fixed inset-0 z-[var(--z-panel)]">
+      <div className="absolute inset-0 bg-black/40 animate-overlay" onClick={onClose} />
       <div className="pointer-events-none relative flex h-full items-center justify-center p-4">
       <div
-        className="pointer-events-auto animate-fade-in-scale flex h-[80vh] max-h-[640px] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-black/20 backdrop-blur-2xl shadow-2xl shadow-black/40"
+        className="pointer-events-auto animate-fade-in-scale flex h-[80vh] max-h-[640px] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--border)] glass-modal shadow-2xl shadow-black/40"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -202,7 +202,7 @@ function AnimatorsTab({
           {animators.map((a) => (
             <div
               key={a.id}
-              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-black/15 p-2 pl-3"
+              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 pl-3"
             >
               <input
                 type="color"
@@ -289,7 +289,7 @@ function StatusesTab({
           {statuses.map((s) => (
             <div
               key={s.id}
-              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-black/15 p-2 pl-3"
+              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 pl-3"
             >
               <input
                 type="color"
@@ -373,7 +373,7 @@ function ColumnsTab({
           {columns.map((c) => (
             <div
               key={c.id}
-              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-black/15 p-2 pl-3"
+              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 pl-3"
             >
               <GripVertical size={14} className="shrink-0 text-white/20" />
               <input

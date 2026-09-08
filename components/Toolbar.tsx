@@ -175,7 +175,7 @@ function LinkPopup({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 animate-backdrop-blur"
+      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/40 animate-overlay"
       onClick={onClose}
     >
       <div
@@ -224,6 +224,8 @@ const IMAGE_SIZES = [
   { label: "Full", width: "100%" },
 ];
 
+// Not içeriğine yazılan renkler — tema tokenlarına BAĞLANMAZ, birebir kalır.
+// var() kullanılsaydı dışa aktarılan notlarda renkler kaybolurdu.
 const HIGHLIGHT_COLORS = [
   { name: "Yeşil", color: "rgba(212, 228, 165, 0.30)" },
   { name: "Sarı", color: "rgba(234, 179, 8, 0.25)" },
@@ -531,9 +533,9 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
       {headingOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[55]" onClick={() => setHeadingOpen(false)}>
+          <div className="fixed inset-0 z-[var(--z-catch)]" onClick={() => setHeadingOpen(false)}>
             <div
-              className="fixed w-36 overflow-hidden rounded-xl border border-[var(--border)] bg-black/25 backdrop-blur-xl py-1 shadow-xl shadow-black/30"
+              className="fixed w-36 overflow-hidden rounded-xl border border-[var(--border)] glass-strong py-1 shadow-xl shadow-black/30"
               style={{ top: dropdownPos.top, left: dropdownPos.left }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -568,9 +570,9 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
       {imageSizeOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[55]" onClick={() => setImageSizeOpen(false)}>
+          <div className="fixed inset-0 z-[var(--z-catch)]" onClick={() => setImageSizeOpen(false)}>
             <div
-              className="fixed w-28 overflow-hidden rounded-xl border border-[var(--border)] bg-black/25 backdrop-blur-xl py-1 shadow-xl shadow-black/30"
+              className="fixed w-28 overflow-hidden rounded-xl border border-[var(--border)] glass-strong py-1 shadow-xl shadow-black/30"
               style={{ top: dropdownPos.top, left: dropdownPos.left }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -612,9 +614,9 @@ function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStat
       {highlightOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[55]" onClick={() => setHighlightOpen(false)}>
+          <div className="fixed inset-0 z-[var(--z-catch)]" onClick={() => setHighlightOpen(false)}>
             <div
-              className="fixed overflow-hidden rounded-xl border border-[var(--border)] bg-black/25 backdrop-blur-xl p-2 shadow-xl shadow-black/30"
+              className="fixed overflow-hidden rounded-xl border border-[var(--border)] glass-strong p-2 shadow-xl shadow-black/30"
               style={{ top: dropdownPos.top, left: dropdownPos.left }}
               onClick={(e) => e.stopPropagation()}
             >

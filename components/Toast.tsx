@@ -46,7 +46,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             {children}
             {mounted &&
                 createPortal(
-                    <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2">
+                    <div className="fixed bottom-6 right-6 z-[var(--z-top)] flex flex-col gap-2">
                         {toasts.map((toast) => (
                             <ToastItem key={toast.id} toast={toast} onDismiss={removeToast} />
                         ))}
@@ -86,7 +86,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
 
     return (
         <div
-            className={`flex items-center gap-2.5 rounded-xl border px-4 py-3 shadow-lg shadow-black/20 backdrop-blur-md transition-all duration-300 ${BG[toast.type]} ${show && !exiting
+            className={`flex items-center gap-2.5 rounded-xl border px-4 py-3 shadow-lg shadow-black/20 glass-blur-layer transition-all duration-300 ${BG[toast.type]} ${show && !exiting
                 ? "translate-x-0 opacity-100"
                 : "translate-x-8 opacity-0"
                 }`}

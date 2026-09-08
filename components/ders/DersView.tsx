@@ -263,7 +263,7 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
         className="pointer-events-none fixed inset-0"
         style={{
           background: [
-            "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(212,228,165,0.07) 0%, transparent 60%)",
+            "radial-gradient(ellipse 80% 50% at 50% 0%, rgb(var(--accent-rgb) / 0.07) 0%, transparent 60%)",
             "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 100%)",
           ].join(", "),
         }}
@@ -657,7 +657,7 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
           )}
 
           {soru.kind === "acik" && verdict !== "dogru" && soru.answer_key && (
-            <div className="mt-3 rounded-xl border border-white/10 bg-black/15 p-3.5">
+            <div className="mt-3 rounded-xl border border-white/10 bg-[var(--surface)] p-3.5">
               <p className="mb-1 text-[11px] font-medium uppercase tracking-wider opacity-60">
                 Beklenen cevap
               </p>
@@ -669,7 +669,7 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
             href={videoLinki(oturum.video_id, soru.start_seconds)}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-black/15 px-3 py-2 text-[12px] transition-colors hover:border-white/30"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[var(--surface)] px-3 py-2 text-[12px] transition-colors hover:border-white/30"
           >
             <PlayCircle size={13} />
             Bu konu videonun {formatSure(soru.start_seconds)} anında anlatılıyor
@@ -677,7 +677,7 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
 
           <button
             onClick={sonraki}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-black/20 px-5 py-3 text-[13px] font-medium transition-colors hover:bg-black/30"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-black/20 px-5 py-3 text-[13px] font-medium transition-colors hover:bg-[var(--surface-elevated)]"
           >
             {index + 1 >= sorular.length ? "Sonuçları gör" : "Sonraki soru"}
             <ArrowRight size={14} />

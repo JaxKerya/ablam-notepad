@@ -71,9 +71,9 @@ export default function ShotCodeGenerator({ pattern, onApply }: Props) {
         coords &&
         createPortal(
           <>
-            <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
+            <div className="fixed inset-0 z-[var(--z-modal)]" onClick={() => setOpen(false)} />
             <div
-              className="animate-fade-in-scale fixed z-[61] w-[280px] rounded-xl border border-[var(--border)] bg-black/25 backdrop-blur-xl p-3.5 shadow-xl shadow-black/30"
+              className="animate-fade-in-scale fixed z-[var(--z-menu)] w-[280px] rounded-xl border border-[var(--border)] glass-strong p-3.5 shadow-xl shadow-black/30"
               style={{ top: coords.top, left: coords.left }}
             >
               <p className="mb-2.5 text-[12px] font-medium text-white/70">Shot Kodu Üreteci</p>

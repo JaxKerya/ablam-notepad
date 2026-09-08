@@ -82,14 +82,14 @@ export default function IconPicker({ currentIcon, onSelect, onClose }: IconPicke
     if (typeof document === "undefined") return null;
 
     return createPortal(
-        <div className="fixed inset-0 z-[60]">
+        <div className="fixed inset-0 z-[var(--z-modal)]">
             <div
-                className="absolute inset-0 bg-black/40 animate-backdrop-blur"
+                className="absolute inset-0 bg-black/40 animate-overlay"
                 onClick={onClose}
             />
             <div className="pointer-events-none relative flex h-full items-center justify-center">
             <div
-                className="pointer-events-auto animate-fade-in-scale mx-4 flex w-full max-w-sm flex-col rounded-2xl border border-white/[0.12] bg-black/20 backdrop-blur-2xl shadow-2xl shadow-black/40"
+                className="pointer-events-auto animate-fade-in-scale mx-4 flex w-full max-w-sm flex-col rounded-2xl border border-[var(--border)] glass-modal shadow-2xl shadow-black/40"
                 style={{ maxHeight: "70vh" }}
                 onClick={(e) => e.stopPropagation()}
             >

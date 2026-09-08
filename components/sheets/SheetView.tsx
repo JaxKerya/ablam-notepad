@@ -550,7 +550,7 @@ export default function SheetView({
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <table className="w-full border-collapse text-[13px]">
                   <thead>
-                    <tr className="bg-black/30 text-[11.5px] uppercase tracking-wide text-white/55">
+                    <tr className="bg-[var(--surface-elevated)] text-[11.5px] uppercase tracking-wide text-white/55">
                       <th className="w-8 px-1 py-2.5 text-center">
                         <button
                           type="button"
@@ -638,8 +638,8 @@ export default function SheetView({
 
       {/* Bulk action bar */}
       {selected.size > 0 && tab === "table" && (
-        <div className="fixed inset-x-0 bottom-5 z-40 flex justify-center px-4">
-          <div className="animate-slide-up flex flex-wrap items-center gap-2 rounded-2xl border border-white/[0.12] bg-black/25 backdrop-blur-xl px-3 py-2.5 shadow-xl shadow-black/30">
+        <div className="fixed inset-x-0 bottom-5 z-[var(--z-overlay)] flex justify-center px-4">
+          <div className="animate-slide-up flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--border)] glass-strong px-3 py-2.5 shadow-xl shadow-black/30">
             <span className="px-1.5 text-[12.5px] font-medium text-white">{selected.size} seçili</span>
             <div className="h-5 w-px bg-[var(--border)]" />
             <div className="w-[130px]">

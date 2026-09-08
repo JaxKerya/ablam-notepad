@@ -1,15 +1,42 @@
 @import "tailwindcss";
 
 :root {
+  /* --- Renk ---------------------------------------------------------------
+     Accent üç kademeli ve TEK kaynaktan türüyor: kanal değerleri --*-rgb'de
+     duruyor, saydam kullanımlar rgb(var(--accent-rgb) / 0.2) diye yazılıyor.
+     Rengi değiştirmek için yalnızca kanal satırlarına dokun; hiçbir yerde
+     212 228 165 diye elle yazma. */
+  --accent-rgb: 212 228 165;
+  --accent-light-rgb: 232 245 192;
+  --accent-lighter-rgb: 240 250 208;
+  --accent: rgb(var(--accent-rgb));
+  --accent-light: rgb(var(--accent-light-rgb));
+  --accent-lighter: rgb(var(--accent-lighter-rgb));
+
   --background: #5C735D;
   --foreground: #f0f2ed;
-  --accent: #d4e4a5;
-  --accent-light: #e8f5c0;
+
+  /* --- Yüzeyler ----------------------------------------------------------- */
   --surface: rgba(0, 0, 0, 0.15);
   --surface-elevated: rgba(0, 0, 0, 0.30);
   --surface-popup: #3d4f3e;
+  --surface-sticky-head: #3a4a3b; /* sheets: sabit sütun başlığı */
+  --surface-sticky-cell: #344335; /* sheets: sabit sütun hücresi */
+
   --border: rgba(255, 255, 255, 0.12);
   --border-hover: rgba(255, 255, 255, 0.22);
+
+  /* --- Katman merdiveni ---------------------------------------------------
+     Yalnızca `fixed` elemanlar için. Sayfa içi (`absolute`) yığınlar
+     Tailwind'in kendi z ölçeğinde kalıyor — onlar kendi kabının içinde.
+     Yeni bir katman gerekirse buraya isimle eklenir; gövdeye çıplak sayı
+     yazılmaz, yoksa hangi sayının neyin üstünde olduğu yine kaybolur. */
+  --z-overlay: 40;  /* örtüler ve sayfa üstünde yüzen çubuklar */
+  --z-panel: 50;    /* kenar çubuğu, sayfa içi pencere kabı */
+  --z-catch: 55;    /* menü arkasındaki tıklama yakalayıcı */
+  --z-modal: 60;    /* pencere kabı */
+  --z-menu: 61;     /* pencerenin üstüne çıkması gereken menü */
+  --z-top: 100;     /* kapı ekranı ve bildirimler — her şeyin üstü */
 }
 
 body {
@@ -31,28 +58,59 @@ body::before {
   pointer-events: none;
 }
 
-/* Glass morphism utility */
+/* --- Cam yüzey ölçeği ------------------------------------------------------
+   Bulanıklık göz kararı seçilmiyor: elemanın sayfadan ne kadar koptuğuna göre
+   üç kademe var. Kademe yükseldikçe zemin koyulaşır ve bulanıklık artar.
+
+     .glass         YÜZEY   20px — sayfanın üstünde duran şeyler:
+                                   kart, panel, buton, liste satırı
+     .glass-strong  KATMAN  24px — sayfadan kopmuş, üstte yüzen şeyler:
+                                   kenar çubuğu, açılır menü, sabit başlık
+     .glass-modal   PENCERE 40px — her şeyin üstündeki odak penceresi
+
+   Kendi zemini olan elemanlar (renkli bildirimler gibi) zemini kendi taşır,
+   ölçekten yalnızca bulanıklığı alır: .glass-blur-surface / -layer / -modal.
+
+   Örtüler bu ölçeğe girmez — hiç bulanıklaştırmazlar, bkz. .animate-overlay.
+
+   DİKKAT: -webkit-backdrop-filter ELLE YAZILMAYACAK. Lightning CSS ön eki
+   kendisi ekliyor; elle yazılırsa standart özelliği düşürüyor ve bulanıklık
+   hiçbir hata vermeden ölüyor. */
+:root {
+  --blur-surface: 20px;
+  --blur-layer: 24px;
+  --blur-modal: 40px;
+}
+
 .glass {
   background: rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--blur-surface));
 }
 
 .glass-strong {
   background: rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(var(--blur-layer));
 }
+
+.glass-modal {
+  background: rgba(0, 0, 0, 0.20);
+  backdrop-filter: blur(var(--blur-modal));
+}
+
+/* Zemini kendinde olanlar için yalnızca bulanıklık */
+.glass-blur-surface { backdrop-filter: blur(var(--blur-surface)); }
+.glass-blur-layer   { backdrop-filter: blur(var(--blur-layer)); }
+.glass-blur-modal   { backdrop-filter: blur(var(--blur-modal)); }
 
 /* Glow effect for accent elements */
 .glow-sm {
-  box-shadow: 0 0 15px -3px rgba(212, 228, 165, 0.2),
-    0 0 6px -2px rgba(212, 228, 165, 0.12);
+  box-shadow: 0 0 15px -3px rgb(var(--accent-rgb) / 0.2),
+    0 0 6px -2px rgb(var(--accent-rgb) / 0.12);
 }
 
 .glow-md {
-  box-shadow: 0 0 30px -5px rgba(212, 228, 165, 0.25),
-    0 0 10px -3px rgba(212, 228, 165, 0.15);
+  box-shadow: 0 0 30px -5px rgb(var(--accent-rgb) / 0.25),
+    0 0 10px -3px rgb(var(--accent-rgb) / 0.15);
 }
 
 /* Shimmer animation for title */
@@ -156,7 +214,7 @@ body::before {
 .tiptap u {
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: rgba(212, 228, 165, 0.5);
+  text-decoration-color: rgb(var(--accent-rgb) / 0.5);
 }
 
 /* Heading styles */
@@ -187,17 +245,17 @@ body::before {
 
 /* Link styles */
 .tiptap a.tiptap-link {
-  color: #e8f5c0;
+  color: var(--accent-light);
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: rgba(232, 245, 192, 0.35);
+  text-decoration-color: rgb(var(--accent-light-rgb) / 0.35);
   transition: text-decoration-color 0.2s ease, color 0.2s ease;
   cursor: pointer;
 }
 
 .tiptap a.tiptap-link:hover {
-  color: #f0fad0;
-  text-decoration-color: rgba(232, 245, 192, 0.6);
+  color: var(--accent-lighter);
+  text-decoration-color: rgb(var(--accent-light-rgb) / 0.6);
 }
 
 /* Image styles */
@@ -266,13 +324,13 @@ body::before {
   padding: 0;
   font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 0.88em;
-  color: rgba(232, 245, 192, 0.85);
+  color: rgb(var(--accent-light-rgb) / 0.85);
   line-height: 1.6;
 }
 
 /* Blockquote */
 .tiptap blockquote {
-  border-left: 3px solid rgba(212, 228, 165, 0.5);
+  border-left: 3px solid rgb(var(--accent-rgb) / 0.5);
   background: rgba(0, 0, 0, 0.08);
   padding: 0.5em 1em;
   margin: 0.75em 0;
@@ -334,14 +392,14 @@ body::before {
 
 .tiptap ul[data-type="taskList"] li>label input[type="checkbox"]:hover {
   border-color: var(--accent);
-  background: rgba(212, 228, 165, 0.12);
-  box-shadow: 0 0 0 3px rgba(212, 228, 165, 0.08);
+  background: rgb(var(--accent-rgb) / 0.12);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.08);
 }
 
 .tiptap ul[data-type="taskList"] li>label input[type="checkbox"]:checked {
   background: var(--accent);
   border-color: var(--accent);
-  box-shadow: 0 0 8px rgba(212, 228, 165, 0.3);
+  box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.3);
 }
 
 .tiptap ul[data-type="taskList"] li>label input[type="checkbox"]:checked::after {
@@ -395,7 +453,7 @@ body::before {
 
 /* Selection */
 ::selection {
-  background: rgba(212, 228, 165, 0.35);
+  background: rgb(var(--accent-rgb) / 0.35);
 }
 
 /* Focus ring utility */
@@ -405,9 +463,9 @@ body::before {
 
 .focus-ring:focus {
   outline: none;
-  border-color: rgba(212, 228, 165, 0.4);
-  box-shadow: 0 0 0 3px rgba(212, 228, 165, 0.12),
-    0 0 15px rgba(212, 228, 165, 0.06);
+  border-color: rgb(var(--accent-rgb) / 0.4);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.12),
+    0 0 15px rgb(var(--accent-rgb) / 0.06);
 }
 
 /* Animated backdrop overlay */
@@ -416,10 +474,11 @@ body::before {
   to { opacity: 1; }
 }
 
-.animate-backdrop-blur {
+/* Tüm örtüler (kenar çubukları ve pencereler) — yalnızca karartma.
+   Arkadaki sayfa bulanıklaştırılmıyor; ayrımı üstteki panelin kendi
+   camsı zemini sağlıyor. */
+.animate-overlay {
   animation: overlay-fade-in 300ms ease-out forwards;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
 }
 
 /* Floating bokeh particle animation */

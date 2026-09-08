@@ -187,9 +187,9 @@ function MultiFilter({
         coords &&
         createPortal(
           <>
-            <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
+            <div className="fixed inset-0 z-[var(--z-modal)]" onClick={() => setOpen(false)} />
             <div
-              className="animate-fade-in-scale fixed z-[61] max-h-72 min-w-[180px] overflow-y-auto rounded-xl border border-[var(--border)] bg-black/25 backdrop-blur-xl p-1 shadow-xl shadow-black/30"
+              className="animate-fade-in-scale fixed z-[var(--z-menu)] max-h-72 min-w-[180px] overflow-y-auto rounded-xl border border-[var(--border)] glass-strong p-1 shadow-xl shadow-black/30"
               style={{ top: coords.top, left: coords.left }}
             >
               {options.length === 0 ? (

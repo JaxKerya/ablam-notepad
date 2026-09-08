@@ -199,7 +199,7 @@ export default function SheetsHome() {
             {projects.map((p, i) => (
               <div
                 key={p.id}
-                className="animate-fade-in group relative flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-black/15 p-4 transition-all hover:border-[var(--border-hover)] hover:bg-black/25"
+                className="animate-fade-in group relative flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 transition-all hover:border-[var(--border-hover)] hover:bg-black/25"
                 style={{ animationDelay: `${i * 40}ms` }}
               >
                 <Link href={`/sheets/${p.id}`} className="flex flex-1 items-center gap-3.5">
@@ -239,14 +239,14 @@ export default function SheetsHome() {
 
       {/* Delete confirm modal */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-[var(--z-panel)]">
           <div
-            className="absolute inset-0 bg-black/40 animate-backdrop-blur"
+            className="absolute inset-0 bg-black/40 animate-overlay"
             onClick={() => !deleting && setDeleteConfirm(null)}
           />
           <div className="pointer-events-none relative flex h-full items-center justify-center p-4">
           <div
-            className="pointer-events-auto animate-fade-in-scale w-full max-w-sm rounded-2xl border border-white/[0.12] bg-black/20 backdrop-blur-2xl p-6 shadow-2xl shadow-black/40"
+            className="pointer-events-auto animate-fade-in-scale w-full max-w-sm rounded-2xl border border-[var(--border)] glass-modal p-6 shadow-2xl shadow-black/40"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-2 flex items-center justify-between">
