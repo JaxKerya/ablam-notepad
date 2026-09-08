@@ -1,0 +1,42 @@
+// Ablam Ders — API uçlarının paylaştığı sunucu yardımcıları
+
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+import { GATE_COOKIE, gateTokenGecerli } from "@/lib/gate";
+import { GUNLUK_URETIM_LIMITI } from "@/lib/ders";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+
+/** Kapıyı geçmemiş istekleri reddeder. Geçtiyse null döner. */
+export async function kapiKontrol(): Promise<NextResponse | null> {
+  const cerezler = await cookies();
+  if (!gateTokenGecerli(cerezler.get(GATE_COOKIE)?.value)) {
+    return NextResponse.json(
+      { hata: "Bu işlem için siteye giriş yapmış olmanız gerekiyor. Sayfayı yenileyin." },
+      { status: 401 }
+    );
+  }
+  return null;
+}
+
+/**
+ * Günlük soru üretimi tavanı. Bugün açılan oturumları sayar — ayrı bir sayaç
+ * tablosu tutmaya gerek yok.
+ */
+export async function gunlukLimitAsildiMi(): Promise<boolean> {
+  const supabase = createServerSupabaseClient();
+  const gunBasi = new Date();
+  gunBasi.setHours(0, 0, 0, 0);
+
+  const { count, error } = await supabase
+    .from("ders_sessions")
+    .select("id", { count: "exact", head: true })
+    .gte("created_at", gunBasi.toISOString());
+
+  if (error) return false; // sayamıyorsak engelleme, sadece logla
+  return (count ?? 0) >= GUNLUK_URETIM_LIMITI;
+}
+
+export function hataCevabi(err: unknown, durum = 500) {
+  const mesaj = err instanceof Error ? err.message : "Bilinmeyen hata.";
+  return NextResponse.json({ hata: mesaj }, { status: durum });
+}

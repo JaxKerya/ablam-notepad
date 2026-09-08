@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { KeyRound, Lightbulb } from "lucide-react";
 
-const MAGIC_TEXT = "helikopter";
+export const MAGIC_TEXT = "helikopter";
 const HINT = "Ablamın birden fazla düşman ile savaşırken dönüştüğü cisim.";
 
 /** Normalize Turkish characters & lowercase for comparison */

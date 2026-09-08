@@ -30,6 +30,7 @@ import {
   Pencil,
   Plus,
   Clapperboard,
+  GraduationCap,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { verifyPassword } from "@/lib/crypto";
@@ -642,16 +643,28 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Sheets portal — ayrı özellik, ana kompozisyona karışmayan yan kapı */}
-      <Link
-        href="/sheets"
-        aria-label="Ablam Sheets"
-        className="glass fixed top-5 right-5 z-20 animate-fade-in flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85 sm:top-6 sm:right-7"
-        style={{ animationDelay: "280ms" }}
-      >
-        <Clapperboard size={14} className="text-[var(--accent)]/80" />
-        <span>Ablam Sheets</span>
-      </Link>
+      {/* Yan kapılar — ayrı özellikler, ana kompozisyona karışmıyor */}
+      <div className="fixed top-5 right-5 z-20 flex flex-col items-end gap-2 sm:top-6 sm:right-7">
+        <Link
+          href="/sheets"
+          aria-label="Ablam Sheets"
+          className="glass animate-fade-in flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85"
+          style={{ animationDelay: "280ms" }}
+        >
+          <Clapperboard size={14} className="text-[var(--accent)]/80" />
+          <span>Ablam Sheets</span>
+        </Link>
+
+        <Link
+          href="/ders"
+          aria-label="Ablam Ders"
+          className="glass animate-fade-in flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85"
+          style={{ animationDelay: "320ms" }}
+        >
+          <GraduationCap size={14} className="text-[var(--accent)]/80" />
+          <span>Ablam Ders</span>
+        </Link>
+      </div>
 
       {/* Footer */}
       <div className="absolute inset-x-0 bottom-0 z-10 flex justify-center pb-5">

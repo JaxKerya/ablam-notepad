@@ -152,6 +152,195 @@ Supabase **SQL Editor**'da `db/sheets.sql` dosyasının tamamını çalıştır�
 - **Tablo** sekmesi: shot'lar; **Özet** sekmesi: animatör × durum matrisi + toplam kare.
 - **Ayarlar**: animatör / durum / pipeline kolonu yönetimi + isimlendirme şablonu.
 
+## Ablam Ders — video destekli kendini sınama (`/ders`)
+
+İzlenen bir YouTube ders videosunun linkinden, o derste anlatılanları ölçen sorular
+üretir. Sorular şıklı değil, açık uçlu cevaplanır; her cevap yapay zeka tarafından
+değerlendirilip anında geri bildirim verilir. Yanlış cevapta konunun videoda
+anlatıldığı ana giden link gösterilir.
+
+### Kurulum
+
+**1.** Supabase **SQL Editor**'da `db/ders.sql` dosyasının tamamını çalıştırın. Şu
+tabloları oluşturur: `ders_videos` (video başına bir kez çekilen transkript),
+`ders_sessions`, `ders_questions`, `ders_answers`.
+
+**2.** `.env.local` dosyasına dört değişken ekleyin:
+
+```
+AI_BASE_URL=https://yapayzekalab.org/v1
+AI_API_KEY=...
+AI_MODEL=gemini-3.7-flash-high
+AI_GRADE_MODEL=gemini-3.7-flash-high
+SUPADATA_API_KEY=...
+SITE_GATE_SECRET=rastgele-uzun-bir-metin
+```
+
+`SUPADATA_API_KEY` için [supadata.ai](https://supadata.ai/) üzerinden ücretsiz hesap
+açmanız yeterli — ücretsiz katman ayda 100 transkript veriyor.
+
+`SITE_GATE_SECRET` giriş çerezini imzalar; rastgele uzun bir metin olmalı
+(`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
+
+### Nasıl çalışıyor
+
+1. **Transkript** (`/api/ders/transcript`) — üç katmanlı: Supadata → YouTube'un kendi
+   altyazı ucu → elle yapıştırma. Link çözümlemesi oynatma listesi parametrelerini
+   yok sayar (`watch?v=...&list=...&index=...` sorunsuz çalışır); saf liste adresi
+   (`/playlist?list=...`) yapıştırılırsa ne yapması gerektiğini söyleyen ayrı bir
+   mesaj döner. Otomatik yollar düşerse arayüz, YouTube'un
+   "Transkripti göster" panelinden kopyalanan metni kabul eden bir panel açar (zaman
+   damgaları da ayrıştırılır). Transkript video başına bir kez çekilir, aynı video
+   tekrar girilirse veritabanından gelir.
+2. **Soru üretimi** (`/api/ders/generate`) — **iki ayrı istek**, her birinin kendi süre
+   bütçesi var:
+   - `adim: "acik"` → oturumu açar; ders özeti, konu listesi ve açık uçlu sorular.
+   - `adim: "coktan"` → çoktan seçmelileri ekler, oturumu `hazir` yapar.
+
+   Bölmenin sebebi ölçüm: tek çağrı 46 dakikalık bir derste 149 saniye sürüyordu
+   (bölünce en uzun istek 108 saniye). Her soru için cevap anahtarı, kilit kavramlar
+   ve videodaki saniyesi saklanır.
+
+   **Cevap anahtarı denetimi.** Her iki adımın sonunda üretilen sorular ayrı ve ucuz bir
+   modele (`AI_AUDIT_MODEL`) tek çağrıda gönderilir: "bu cevap anahtarlarında derste hiç
+   geçmeyen ya da derste söylenenle çelişen bir iddia var mı?" Açık çelişki bulunan sorular
+   elenir. Sistemin en büyük riski yanlış bir cevap anahtarıdır — hem öğrenciye yanlış bilgi
+   öğretir hem de değerlendirici o anahtara baktığı için doğru cevabı "yanlış" sayar.
+
+   Denetim kasten yanılmaya karşı temkinli kurulmuştur: yalnızca açık çelişkiler elenir,
+   şüphe yetmez, ve denetim soruların yarısından fazlasını işaretlerse hatalı olanın denetim
+   olduğu varsayılıp hiçbiri elenmez. Denetimin kendisi düşerse üretim engellenmez.
+
+   Ölçüm: kasten bozulmuş bir cevap anahtarı (yanlış tarih, yanlış başkent, uydurma sefer)
+   `luna` ile 2/2 yakalandı, gerçek sorulara yanlış alarm verilmedi. Çağrı başına
+   $0,0007-0,0031 ve ~5 sn; aynı işi `sol` $0,0276'ya yapıyor, o yüzden denetimin kendi
+   model yuvası var.
+
+   **Soru sayısı sabit değil**, dersin uzunluğuna göre hesaplanır (`hedefSoruSayisi`):
+   kabaca her üç dakikaya bir soru, 8 ile 26 arasında, **%70 çoktan seçmeli**. KPSS'nin
+   kendisi çoktan seçmeli olduğu için ağırlık orada; açık uçlular öğrenmeyi asıl
+   pekiştiren kısım olduğu için hiç eksilmiyor (en az 2 garanti). Bu bir üst sınırdır:
+   ders taşımıyorsa model daha az üretir, doğrulama katmanı fazlasını kırpar.
+3. **Değerlendirme** (`/api/ders/grade`) — açık uçlu cevaplar için modele transkriptin
+   tamamı değil, sorunun geldiği bölüm (±90 sn) + cevap anahtarı gönderilir. Çoktan
+   seçmeli sorular ve pas geçmeler sunucuda yerel değerlendirilir, model çağrısı
+   yapılmaz.
+
+   **Geri bildirim metninin kaynağına dikkat.** Çoktan seçmeli ağırlığı %70 olduğu için
+   öğrencinin okuduğu metnin çoğu değerlendirme modelinden değil, üretim modelinin yazdığı
+   `aciklama` alanından gelir. Bu yüzden üretim prompt'u `aciklama`yı öğrenciye hitap
+   ederek (sen dili) yazmakla yükümlü, ve `grade` ucu ham metni olduğu gibi basmak yerine
+   "Doğru bildin." / "Doğru cevap B) ..." gibi bir cümleyle çerçeveler. Erken bir sürümde
+   bu yapılmadığı için ekranda edilgen, ansiklopedi üslubunda geri bildirimler çıkıyordu —
+   model kaynaklı sanılan bu sorun aslında koddan geliyordu.
+
+### Sağlayıcı notları
+
+Kod OpenAI uyumlu herhangi bir uca bağlanabilir; değişecek tek dosya `lib/ai.ts`.
+Proje yapayzekalab.org ile başlayıp OpenRouter'a taşındı ve tek satır kod değişmedi —
+yalnızca `.env.local` güncellendi.
+
+Sağlayıcıdan bağımsız savunmalar:
+
+- `json_schema` (structured outputs) her sağlayıcıda güvenilir değil; bir sağlayıcıda
+  şema tamamen yok sayılıyordu. Bu yüzden `json_object` + `parseJsonLoose` ile kendi
+  doğrulamamızı yapıyoruz.
+- Bazı modeller çıktıyı ` ```json ` bloğuna sarıyor — ayrıştırıcı temizliyor, ilk deneme
+  başarısız olursa düz JSON istenerek bir kez daha deneniyor.
+- Sağlayıcılar ara sıra **429/503** dönüyor. `chatJson` artan gecikmeyle üç kez deniyor.
+
+**Zaman damgası modelden alınmıyor, transkriptten hesaplanıyor.** Modelin döndürdüğü
+`saniye` alanı güvenilmez: `claude-sonnet-5` aynı ders üzerinde üç kez çalıştırıldığında
+10 damganın sırasıyla 0'ı, 7'si ve 8'i videonun süresini 2-15 kat aştı. Bu değeri kırpmak
+hatayı gizler (link videonun sonuna gider), düzeltmez. `damgaBelirle` (lib/youtube.ts)
+sorunun kavramlarının transkriptte en yoğun geçtiği anı süpürme yöntemiyle bulur; modelin
+önerisi geçerli ve isabetliyse korunur, değilse hesaplanan an kullanılır. Bozuk koşularda
+ortalama isabet 0,20 → 0,57 ve 0,16 → 0,61 yükseldi; sağlam koşuda hiçbir damga değişmedi.
+
+**Model seçimi üçer koşuyla ölçüldü.** Tek koşu yanıltıcı: aynı model aynı derste
+0,58 / 0,14 / 0,09 gibi savrulabiliyor. 52 dakikalık bir KPSS dersinde, model başına 3 koşu:
+
+| Model | Dayanak (ort.) | Sapma | Süre | Maliyet |
+|---|---|---|---|---|
+| `anthropic/claude-sonnet-5` | 0,78 | 0,03 | 48 sn | $0,091 |
+| `openai/gpt-5.6-sol-pro` | 0,65 | 0,04 | 63 sn | $0,145 |
+| `openai/gpt-5.6-sol` | 0,64 | 0,07 | 39 sn | $0,047 |
+| `google/gemini-3.7-flash` | 0,61 | 0,02 | 27 sn | $0,023 |
+
+Dördü de üç koşuda da tam 6+4 soru üretti ve ayrıştırılabilir JSON döndürdü.
+
+**Bu tablonun okunma biçimine dikkat.** "Dayanak", sorudaki kavramların transkriptte geçme
+oranı — yani kısmen *uydurma azlığını*, kısmen de *dersin kelimelerine yapışmayı* ölçer.
+Birebir kopyalama ölçüldüğünde `claude-sonnet-5`'in transkriptten aynen aldığı 4 kelimelik
+dizi oranı 0,064; diğer üçünde 0,010-0,012. Yani sonnet-5'in dayanak üstünlüğünün bir kısmı
+kopyalamadan geliyor, "daha az halüsinasyon" olarak okunamaz. **Dört model arasında soru
+kalitesi açısından savunulabilir bir fark ölçülememiştir.**
+
+Güvenilir sayılabilecek bulgular:
+
+- `sol` ile `sol-pro` her metrikte eşit (aynı aile olduğu için kopyalama sapması ikisini eşit
+  etkiler). `sol` 1,6 kat hızlı, 3 kat ucuz — pro modunun ölçülebilir bir karşılığı yok.
+- Değerlendirme doymuş bir iş: 12 zor vakada `gpt-5.6-luna` 12/12 (2,6 sn, $0,003),
+  `sol-pro` da 12/12 (7,1 sn, $0,085). Buraya pahalı model koymanın karşılığı yok.
+- `claude-sonnet-5` değerlendirmede 10/12 — iki sapması da yarım doğru cevaba "yanlış"
+  demek yönünde. Değerlendirici olarak kullanılmamalı.
+
+**Ölçümün kabul edilen sınırları:** tek ders (sözel/hukuk), model başına 3 koşu, cevap
+anahtarlarının olgusal doğruluğu elle denetlenmedi, değerlendirme evalinin doğru cevapları
+tek kişinin yargısı.
+
+### Maliyet ve sınırlar
+
+Ders başına maliyet soru sayısına göre değişir. 39 dakikalık gerçek bir ders (13 soru:
+4 açık uçlu + 9 çoktan seçmeli) üzerinde ölçülen değerler:
+
+| Adım | `sol` (kurulu) | `sol-pro` |
+|---|---|---|
+| Açık uçlu üretimi | $0,0165 · 32 sn | $0,1067 · 44 sn |
+| Çoktan seçmeli üretimi | $0,0584 · 90 sn | $0,2137 · 162 sn |
+| 4 açık uçlu değerlendirme | $0,0196 · 17 sn | $0,0181 · 15 sn |
+| **Ders başına** | **$0,0945 · 140 sn** | **$0,3384 · 221 sn** |
+
+Farkın kaynağı fiyat değil, `sol-pro`'nun pro modunda aynı istemi birden çok kez işlemesi:
+iki adımda 101.515 giriş tokenı faturalandı, gönderilen metin ise ~21 bin token.
+
+**Örnek senaryo — günde 5 ders, 40 dakikalık videolar (ayda 150 ders):**
+
+| | `sol` | `sol-pro` |
+|---|---|---|
+| OpenRouter | $14,18 | $50,76 |
+| Supadata (Basic, 300 kredi) | $5 | $5 |
+| **Aylık toplam** | **≈ $19** | **≈ $56** |
+
+Supabase ücretsiz katman yeter (150 video/ay ≈ 7 MB transkript). Vercel'de aylık ~6 saat
+fonksiyon süresi oluşur; Hobby planının sınırını aşarsa Pro gerekebilir.
+
+**Ders uzunluğu ve süre tavanı:** çoktan seçmeli adımı soru sayısıyla birlikte uzuyor.
+`sol` ile 39 dakikalık derste 90 sn, 78 dakikalıkta tahminen ~200 sn — Vercel'in 300 sn
+tavanına rahat sığar. `sol-pro` ile aynı adım 162 sn'den başlar ve 78 dakikalık bir derste
+tavanı aşar.
+### İşaretlenen sorular
+
+Ablam bir soruyu 👎 ile işaretlediğinde `ders_questions.flagged` alanı `true` olur. Bu veri
+prompt'u gerçek örneklerle iyileştirmek için birikir; okumak için Supabase SQL Editor'da:
+
+```sql
+select q.question, q.answer_key, q.explanation, s.title
+from ders_questions q
+join ders_sessions s on s.id = q.session_id
+where q.flagged
+order by s.created_at desc;
+```
+
+Boş dönmesi iyi haberdir. Dolmaya başlarsa, çıkan örnekler `app/api/ders/generate/route.ts`
+içindeki üretim prompt'unu düzeltmek için kullanılmalı.
+
+### Maliyet ve sınırlar
+
+`lib/ders.ts` içindeki `GUNLUK_URETIM_LIMITI` günde 40 ders ile sınırlar; sızan bir
+linkin faturayı şişirmesini engeller. API uçları ayrıca giriş kapısının verdiği
+imzalı çerezi arar (`lib/gate.ts`).
+
 ## Deployment (Vercel)
 
 1. Push this project to a GitHub repository.
@@ -159,6 +348,9 @@ Supabase **SQL Editor**'da `db/sheets.sql` dosyasının tamamını çalıştır�
 3. Add your environment variables in the Vercel dashboard:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, `AI_GRADE_MODEL` (Ablam Ders)
+   - `SUPADATA_API_KEY` (Ablam Ders)
+   - `SITE_GATE_SECRET` (Ablam Ders)
 4. Deploy. Your app will be live at your Vercel URL.
 
 ## Project Structure
