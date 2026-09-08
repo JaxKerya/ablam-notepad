@@ -25,7 +25,7 @@ import { useToast } from "@/components/Toast";
 import {
   DERS_NOTLARI_KLASORU,
   formatSure,
-  ozetiNotBelgesine,
+  notlariNotBelgesine,
   skorHesapla,
   slugla,
   videoLinki,
@@ -76,6 +76,9 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
   );
   const [notKaydediliyor, setNotKaydediliyor] = useState(false);
   const [kaydedilenNot, setKaydedilenNot] = useState<string | null>(null);
+  // Aynı kimlikte bir not zaten varsa içeriğini saklıyoruz: "geri al" o notu
+  // silmek yerine eski hâline döndürsün, ablamın kendi yazdıkları uçmasın.
+  const [oncekiIcerik, setOncekiIcerik] = useState<unknown | null>(null);
 
   const soru = sorular[index];
   const mevcutCevap = soru ? cevaplar.get(soru.id) : undefined;
@@ -177,10 +180,14 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
   };
 
   /**
-   * Ders özetini not defterine kaydeder — yönlendirme yapmadan, ablam soruların
-   * başındayken akışından kopmasın diye. Kaydettikten sonra düğme geri alma
-   * düğmesine dönüşür. Notlar mevcut klasör sistemindeki "Ders Notları"
+   * Dersten çıkarılmış ders notunu not defterine kaydeder — yönlendirme yapmadan,
+   * ablam soruların başındayken akışından kopmasın diye. Kaydettikten sonra düğme
+   * geri alma düğmesine dönüşür. Notlar mevcut klasör sistemindeki "Ders Notları"
    * klasörüne düşer, böylece ana not listesini doldurmaz.
+   *
+   * Not, özetin kendisi değil: transkriptten çıkarılmış, bölümlere ayrılmış ve her
+   * bölümü videodaki anına bağlanmış bir çalışma materyali. Çıkarma işi istek
+   * üzerine yapılıyor (bkz. /api/ders/notes), o yüzden burada bir bekleme var.
    */
   const notaKaydet = async () => {
     if (notKaydediliyor) return;
@@ -190,6 +197,14 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
     const notId = `ders-${slugla(baslik)}`;
 
     try {
+      const res = await fetch("/api/ders/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: oturum.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.hata ?? "Ders notu çıkarılamadı.");
+
       // Klasör yoksa oluştur, varsa onu kullan
       const { data: mevcut } = await supabase
         .from("folders")
@@ -208,23 +223,26 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
         klasorId = yeni.id;
       }
 
+      // Üzerine yazmadan önce eskisini al — geri alma bunu geri koyacak
+      const { data: eskiNot } = await supabase
+        .from("notes")
+        .select("content")
+        .eq("id", notId)
+        .maybeSingle();
+
       const { error: notHatasi } = await supabase.from("notes").upsert(
         {
           id: notId,
           folder_id: klasorId,
-          content: ozetiNotBelgesine(
-            baslik,
-            oturum.summary,
-            oturum.topics ?? [],
-            videoLinki(oturum.video_id, 0)
-          ),
+          content: notlariNotBelgesine(baslik, data.notlar, oturum.video_id),
         },
         { onConflict: "id" }
       );
       if (notHatasi) throw new Error(notHatasi.message);
 
+      setOncekiIcerik(eskiNot?.content ?? null);
       setKaydedilenNot(notId);
-      addToast("Özet ders notlarına kaydedildi", "success");
+      addToast("Ders notu kaydedildi", "success");
     } catch (err) {
       addToast("Nota kaydedilemedi: " + (err as Error).message, "error");
     } finally {
@@ -232,12 +250,14 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
     }
   };
 
-  /** Kaydetmeyi geri alır — oluşturulan notu siler */
+  /** Kaydetmeyi geri alır: not zaten varsa eski hâline döner, yoksa silinir */
   const kaydetmeyiGeriAl = async () => {
     if (!kaydedilenNot || notKaydediliyor) return;
     setNotKaydediliyor(true);
 
-    const { error } = await supabase.from("notes").delete().eq("id", kaydedilenNot);
+    const { error } = oncekiIcerik
+      ? await supabase.from("notes").update({ content: oncekiIcerik }).eq("id", kaydedilenNot)
+      : await supabase.from("notes").delete().eq("id", kaydedilenNot);
     setNotKaydediliyor(false);
 
     if (error) {
@@ -245,7 +265,8 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
       return;
     }
     setKaydedilenNot(null);
-    addToast("Kaydetme geri alındı", "delete");
+    setOncekiIcerik(null);
+    addToast(oncekiIcerik ? "Not eski hâline döndürüldü" : "Kaydetme geri alındı", "delete");
   };
 
   const bastanBasla = () => {
@@ -255,6 +276,36 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
     setSecim(null);
     setMod("soru");
   };
+
+  /**
+   * Not kaydetme düğmesi iki ekranda birden duruyor: derse başlamadan önce
+   * (özet ekranı) ve ders bittikten sonra (sonuç ekranı). İkincisi önemli —
+   * notu asıl isteyeceği an, soruları çözüp neyi bilmediğini gördükten sonra.
+   */
+  const notDugmesi = (ekstraSinif = "") => (
+    <button
+      onClick={kaydedilenNot ? kaydetmeyiGeriAl : notaKaydet}
+      disabled={notKaydediliyor}
+      className={`flex w-full items-center justify-center gap-2 rounded-xl border px-5 py-3 text-[13px] transition-colors disabled:opacity-40 ${ekstraSinif} ${
+        kaydedilenNot
+          ? "border-[var(--accent)]/35 bg-[var(--accent)]/[0.07] text-[var(--accent-light)] hover:border-[var(--accent)]/55"
+          : "border-[var(--border)] text-white/55 hover:border-[var(--border-hover)] hover:text-white/85"
+      }`}
+    >
+      {notKaydediliyor ? (
+        <Loader2 size={14} className="animate-spin" />
+      ) : kaydedilenNot ? (
+        <Undo2 size={14} />
+      ) : (
+        <NotebookPen size={14} />
+      )}
+      {notKaydediliyor && !kaydedilenNot
+        ? "Ders notu çıkarılıyor..."
+        : kaydedilenNot
+          ? "Kaydedildi — geri al"
+          : "Ders notu çıkar ve kaydet"}
+    </button>
+  );
 
   // ---------------------------------------------------------------- kabuk
   const kabuk = (icerik: React.ReactNode) => (
@@ -325,24 +376,7 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
           <ArrowRight size={15} />
         </button>
 
-        <button
-          onClick={kaydedilenNot ? kaydetmeyiGeriAl : notaKaydet}
-          disabled={notKaydediliyor}
-          className={`mt-2 flex w-full items-center justify-center gap-2 rounded-xl border px-5 py-3 text-[13px] transition-colors disabled:opacity-40 ${
-            kaydedilenNot
-              ? "border-[var(--accent)]/35 bg-[var(--accent)]/[0.07] text-[var(--accent-light)] hover:border-[var(--accent)]/55"
-              : "border-[var(--border)] text-white/55 hover:border-[var(--border-hover)] hover:text-white/85"
-          }`}
-        >
-          {notKaydediliyor ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : kaydedilenNot ? (
-            <Undo2 size={14} />
-          ) : (
-            <NotebookPen size={14} />
-          )}
-          {kaydedilenNot ? "Kaydedildi — geri al" : "Özeti ders notlarına kaydet"}
-        </button>
+        {notDugmesi("mt-2")}
 
         <p className="mt-3 text-center text-[11.5px] text-white/30">
           {sorular.length} soru · her cevaptan sonra hemen geri bildirim alacaksın
@@ -356,9 +390,14 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
     return kabuk(
       <div className="animate-fade-in">
         <div className="mb-7 flex flex-col items-center text-center">
-          <div className="glow-md mb-4 flex h-20 w-20 items-center justify-center rounded-full border-2 border-[var(--accent)]/30 bg-[var(--accent)]/10">
-            <span className="text-2xl font-semibold text-[var(--accent-light)]">
-              %{skor.yuzde}
+          {/* Yüzde işareti değil, derslerdeki gibi 100 üzerinden not:
+              puan büyük, üzerinden alındığı 100 altında küçük yazılıyor. */}
+          <div className="glow-md mb-4 flex h-20 w-20 flex-col items-center justify-center rounded-full border-2 border-[var(--accent)]/30 bg-[var(--accent)]/10">
+            <span className="text-2xl font-semibold leading-none text-[var(--accent-light)]">
+              {skor.puan}
+            </span>
+            <span className="mt-1 text-[11.5px] leading-none text-[var(--accent-light)]/55">
+              / 100
             </span>
           </div>
           <h1 className="text-xl font-semibold text-white/95">Ders tamamlandı</h1>
@@ -460,7 +499,9 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
           })}
         </div>
 
-        <div className="mt-6 flex gap-2">
+        {notDugmesi("mt-6")}
+
+        <div className="mt-2 flex gap-2">
           <button
             onClick={bastanBasla}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-4 py-3 text-[13px] text-white/65 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"

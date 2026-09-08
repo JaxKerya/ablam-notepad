@@ -162,37 +162,197 @@ export function slugla(metin: string, enFazla = 60): string {
   return (sade || "ders").slice(0, enFazla).replace(/-+$/, "");
 }
 
-/**
- * Ders özetini not defterinin (TipTap) belge biçimine çevirir.
- * Böylece özet tek tıkla mevcut /note sistemine kaydedilebiliyor.
- */
-export function ozetiNotBelgesine(
-  baslik: string,
-  ozet: string | null,
-  konular: string[],
-  videoUrl: string
-) {
-  const paragraf = (metin: string) => ({
-    type: "paragraph",
-    content: [{ type: "text", text: metin }],
-  });
+/** Çıkarılan ders notunun yapısı — modelin döndürdüğü şema */
+export interface NotBolumu {
+  baslik: string;
+  maddeler: string[];
+  /** Bu bölümün videoda anlatıldığı an (saniye) */
+  saniye: number;
+}
 
+export interface NotTerimi {
+  terim: string;
+  aciklama: string;
+}
+
+export interface DersNotIcerigi {
+  giris: string;
+  bolumler: NotBolumu[];
+  terimler: NotTerimi[];
+}
+
+// --- Vurgu renkleri ---------------------------------------------------------
+
+/**
+ * Not İÇERİĞİNE yazılan renkler — tema tokenlarına bağlanmaz, birebir kalır.
+ * Toolbar'daki HIGHLIGHT_COLORS ile aynı değerler; ablam elle vurguladığında
+ * çıkan renkle üretilen not aynı görünsün diye.
+ *
+ * Üç renk, üç anlam. Daha fazlası vurguyu vurgu olmaktan çıkarır:
+ *   sarı  — ezberlenecek nicel bilgi (tarih, sayı, süre)
+ *   mavi  — özel isim (kişi, yer, kurum, eser)
+ *   yeşil — dersin anahtar kavramı
+ */
+const VURGU = {
+  sari: "rgba(234, 179, 8, 0.25)",
+  mavi: "rgba(56, 189, 248, 0.20)",
+  yesil: "rgba(212, 228, 165, 0.30)",
+} as const;
+
+/** Modelin kullandığı işaretler -> vurgu rengi */
+const ISARET: Record<string, string> = {
+  t: VURGU.sari,
+  i: VURGU.mavi,
+  k: VURGU.yesil,
+};
+
+/**
+ * Model maddeleri `[t]1683[/t]`, `[i]Kösem Sultan[/i]`, `[k]iltizam[/k]` gibi
+ * işaretlerle yazıyor; burada TipTap vurgu işaretlemelerine çevriliyor.
+ *
+ * Ayrıştırıcı kasten toleranslı: gerçek çıktıda modelin kapanış parantezini
+ * düşürdüğü görüldü ("[k]doğal sınırlara[/k ulaştı"). Kapanışın son köşeli
+ * parantezi isteğe bağlı, ve hangi biçimde olursa olsun artakalan işaretler
+ * metinden temizleniyor — ekranda "[/k" gibi bir kalıntı görünmesin.
+ * Eşi hiç bulunmayan işaretlerde vurgu düşer, metin düz geçer.
+ */
+export function satiriDugumlere(metin: string): unknown[] {
+  const dugumler: unknown[] = [];
+  const desen = /\[([tik])\]([\s\S]*?)\[\/\1\]?/g;
+  let son = 0;
+  let eslesme: RegExpExecArray | null;
+
+  const duzMetin = (ham: string) => ham.replace(/\[\/?[tik]\]?/g, "");
+
+  while ((eslesme = desen.exec(metin)) !== null) {
+    const onces = duzMetin(metin.slice(son, eslesme.index));
+    if (onces) dugumler.push({ type: "text", text: onces });
+
+    const icerik = duzMetin(eslesme[2]);
+    if (icerik) {
+      dugumler.push({
+        type: "text",
+        text: icerik,
+        marks: [{ type: "highlight", attrs: { color: ISARET[eslesme[1]] } }],
+      });
+    }
+    son = eslesme.index + eslesme[0].length;
+  }
+
+  const kalan = duzMetin(metin.slice(son));
+  if (kalan) dugumler.push({ type: "text", text: kalan });
+
+  return dugumler.length ? dugumler : [{ type: "text", text: duzMetin(metin) || " " }];
+}
+
+/**
+ * Kavram vurgularını sözlükle sınırlar: `[k]...[/k]` işareti yalnızca "terimler"
+ * listesinde tanımı verilen bir kavramı sarıyorsa kalır, aksi hâlde düz metne
+ * dönüşür. Tarih ve isim vurgularına dokunulmaz.
+ *
+ * Bunu prompt'a bırakmak yetmedi — ölçüldü: modelden gelen 24 farklı kavram
+ * vurgusunun 16'sı sözlükte olmayan sıradan kelimelerdi ("israf", "rüşvet",
+ * "pozitif bilimler"). 45 maddelik bir notta 25 yeşil vurgu, vurguyu vurgu
+ * olmaktan çıkarıyordu. Kural artık kodda: vurgulanan kavramlarla sözlük
+ * aynı kümedir.
+ */
+export function kavramVurgulariniSuz(maddeler: string[], terimler: NotTerimi[]): string[] {
+  const sadelestir = (m: string) =>
+    m
+      .replace(/[çğıöşüÇĞİÖŞÜ]/g, (h) => TR_HARF[h] ?? h)
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+
+  const sozluk = terimler.map((t) => sadelestir(t.terim)).filter(Boolean);
+
+  return maddeler.map((madde) =>
+    madde.replace(/\[k\]([\s\S]*?)\[\/k\]?/g, (tam, icerik: string) => {
+      const aday = sadelestir(icerik);
+      // Ek almış hâlleri de kabul et: "enflasyonla" -> "Enflasyon"
+      const sozlukte = sozluk.some(
+        (t) => t.length > 2 && (aday.startsWith(t) || t.startsWith(aday))
+      );
+      return sozlukte ? tam : icerik;
+    })
+  );
+}
+
+// --- TipTap belge parçaları -------------------------------------------------
+
+const paragraf = (metin: string) => ({
+  type: "paragraph",
+  content: [{ type: "text", text: metin }],
+});
+
+/** Vurgu işaretlerini çözerek paragraf üretir */
+const vurgulu = (metin: string) => ({
+  type: "paragraph",
+  content: satiriDugumlere(metin),
+});
+
+const maddeListesi = (ogeler: unknown[]) => ({
+  type: "bulletList",
+  content: ogeler.map((o) => ({ type: "listItem", content: [o] })),
+});
+
+/**
+ * Çıkarılan ders notunu not defterinin (TipTap) belge biçimine çevirir.
+ *
+ * Biçim çalışmak için kurgulandı, okumak için değil: maddeler kısa, ezberlenecek
+ * bilgi renkle işaretli, her bölüm başlığının yanında videodaki anına giden
+ * bağlantı var. Zaman damgasını ayrı bir satır yerine başlığa koymak sayfadan
+ * bölüm sayısı kadar paragraf eksiltiyor — göz maddelerin üstünde kalıyor.
+ */
+export function notlariNotBelgesine(
+  baslik: string,
+  notlar: DersNotIcerigi,
+  videoId: string
+) {
   const icerik: unknown[] = [
     { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: baslik }] },
   ];
 
-  if (ozet) icerik.push(paragraf(ozet));
+  if (notlar.giris) icerik.push(paragraf(notlar.giris));
 
-  if (konular.length) {
+  for (const bolum of notlar.bolumler) {
+    if (!bolum.baslik || !bolum.maddeler.length) continue;
     icerik.push({
       type: "heading",
       attrs: { level: 2 },
-      content: [{ type: "text", text: "Konular" }],
+      content: [
+        { type: "text", text: `${bolum.baslik}  ` },
+        {
+          type: "text",
+          text: formatSure(bolum.saniye),
+          marks: [
+            {
+              type: "link",
+              attrs: { href: videoLinki(videoId, bolum.saniye), target: "_blank" },
+            },
+          ],
+        },
+      ],
     });
+    icerik.push(maddeListesi(bolum.maddeler.map(vurgulu)));
+  }
+
+  if (notlar.terimler.length) {
     icerik.push({
-      type: "bulletList",
-      content: konular.map((k) => ({ type: "listItem", content: [paragraf(k)] })),
+      type: "heading",
+      attrs: { level: 2 },
+      content: [{ type: "text", text: "Kilit terimler" }],
     });
+    icerik.push(
+      maddeListesi(
+        notlar.terimler.map((t) => ({
+          type: "paragraph",
+          content: [
+            { type: "text", text: t.terim, marks: [{ type: "bold" }] },
+            { type: "text", text: ` — ${t.aciklama}` },
+          ],
+        }))
+      )
+    );
   }
 
   icerik.push({
@@ -201,7 +361,7 @@ export function ozetiNotBelgesine(
       {
         type: "text",
         text: "Dersin videosu",
-        marks: [{ type: "link", attrs: { href: videoUrl, target: "_blank" } }],
+        marks: [{ type: "link", attrs: { href: videoLinki(videoId, 0), target: "_blank" } }],
       },
     ],
   });
@@ -209,13 +369,16 @@ export function ozetiNotBelgesine(
   return { type: "doc", content: icerik };
 }
 
-/** Oturumun skoru — pas geçilenler yanlış sayılmaz, ayrı gösterilir */
+/**
+ * Oturumun skoru. Sonuç, derslerdeki gibi 100 ÜZERİNDEN PUAN olarak veriliyor —
+ * yüzde işaretiyle değil, sınav notu gibi. Eksik cevap yarım puan; pas geçilenler
+ * yanlış sayılmaz ama puandan düşer, çünkü bölen toplam soru sayısıdır.
+ */
 export function skorHesapla(answers: DersAnswer[]) {
   const dogru = answers.filter((a) => a.verdict === "dogru").length;
   const eksik = answers.filter((a) => a.verdict === "eksik").length;
   const yanlis = answers.filter((a) => a.verdict === "yanlis").length;
   const pas = answers.filter((a) => a.verdict === "pas").length;
-  const puanli = dogru + eksik * 0.5;
   const toplam = answers.length;
   return {
     dogru,
@@ -223,6 +386,6 @@ export function skorHesapla(answers: DersAnswer[]) {
     yanlis,
     pas,
     toplam,
-    yuzde: toplam ? Math.round((puanli / toplam) * 100) : 0,
+    puan: toplam ? Math.round(((dogru + eksik * 0.5) / toplam) * 100) : 0,
   };
 }

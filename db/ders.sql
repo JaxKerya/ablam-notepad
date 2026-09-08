@@ -122,3 +122,7 @@ alter table ders_questions add column if not exists flagged boolean not null def
 -- sonuç ekranında görünür ve bir sorun varsa fark edilir.
 alter table ders_sessions add column if not exists denetim jsonb not null
   default '{"duzeltilen": 0, "elenen": 0}'::jsonb;
+
+-- Dersten çıkarılmış çalışma notu. İstek üzerine üretilir (/api/ders/notes) ve
+-- burada saklanır; ablam notu silip yeniden kaydederse tekrar üretilmez.
+alter table ders_sessions add column if not exists notlar jsonb;

@@ -283,13 +283,59 @@ açmanız yeterli — ücretsiz katman ayda 100 transkript veriyor.
    seçmeli sorular ve pas geçmeler sunucuda yerel değerlendirilir, model çağrısı
    yapılmaz.
 
-   **Geri bildirim metninin kaynağına dikkat.** Çoktan seçmeli ağırlığı %70 olduğu için
+   **Geri bildirim metninin kaynağına dikkat.** Çoktan seçmeli ağırlığı %80 olduğu için
    öğrencinin okuduğu metnin çoğu değerlendirme modelinden değil, üretim modelinin yazdığı
    `aciklama` alanından gelir. Bu yüzden üretim prompt'u `aciklama`yı öğrenciye hitap
    ederek (sen dili) yazmakla yükümlü, ve `grade` ucu ham metni olduğu gibi basmak yerine
    "Doğru bildin." / "Doğru cevap B) ..." gibi bir cümleyle çerçeveler. Erken bir sürümde
    bu yapılmadığı için ekranda edilgen, ansiklopedi üslubunda geri bildirimler çıkıyordu —
    model kaynaklı sanılan bu sorun aslında koddan geliyordu.
+4. **Ders notu çıkarma** (`/api/ders/notes`) — dersten, özet değil **çalışma notu**
+   çıkarır. Amaç okunacak bir metin değil, sınav öncesi bakılacak bir sayfa üretmek:
+
+   - **Maddeler cümle değil, not.** Prompt madde başına en fazla 15 kelime ve tek bilgi
+     şartı koyar; ölçüldü, madde başına ortalama 16 kelimeden 7'ye indi. Bölüm başına
+     3-6 madde, dersin tamamı ~430 kelime.
+   - **Ezberlenecek yer renkli.** Model üç işaret kullanır — `[t]` tarih/sayı, `[i]` özel
+     isim, `[k]` anahtar kavram — ve `satiriDugumlere` bunları TipTap vurgu
+     işaretlemelerine çevirir (sırasıyla sarı, mavi, yeşil). Renkler Toolbar'daki
+     `HIGHLIGHT_COLORS` ile birebir aynı, böylece elle vurgulananla üretilen aynı görünür.
+     Madde başına en fazla 2 vurgu: her şey vurguluysa hiçbir şey vurgulu değildir.
+   - **Kavram vurgusu sözlükle sınırlı.** `[k]` yalnızca "terimler" listesine giren
+     kavramlarda kalır; `kavramVurgulariniSuz` gerisini düz metne çevirir. Kuralı prompt'a
+     bırakmak yetmedi — ölçüldü, 24 farklı kavram vurgusunun 16'sı "israf", "rüşvet",
+     "liyakat" gibi sıradan kelimelerdi. Kural koda alınınca kavram vurgusu 25'ten 8'e
+     indi (sözlükteki terim sayısı kadar), toplam vurgu 44 → 30 ve renk dağılımı dengelendi.
+   - **Sözlük maddelerin tekrarı değil.** Madde kavramın ne YAPTIĞINI söyler, tanımı
+     sözlüğe bırakır ("Büyük Kaçgun köyleri boşalttı, tımar gelirini düşürdü" — tanım
+     sözlükte). Madde ile tanım arasındaki kelime örtüşmesi 0,18'den 0,08'e indi.
+   - **Zaman damgası başlığın içinde**, ayrı satırda değil — bölüm sayısı kadar paragraf
+     eksiliyor, göz maddelerin üstünde kalıyor.
+   - Sonda derste tanımı verilen kavramların sözlüğü (en fazla 8, kalın terim + tek cümle).
+
+   Ayrıştırıcı kasten toleranslı: gerçek çıktıda modelin kapanış parantezini düşürdüğü
+   görüldü (`[k]doğal sınırlara[/k ulaştı`). Kapanışın son köşeli parantezi isteğe bağlı
+   ve artakalan işaretler metinden temizleniyor — ekranda `[/k` gibi bir kalıntı çıkmaz.
+   Ayrıştırıcı ve süzgeç `lib_test` içinde 18 vakayla test ediliyor.
+
+   **Not da olgu denetiminden geçer.** Sorulardaki denetimin not karşılığı: bütün maddeler
+   ucuz modele (`AI_AUDIT_MODEL`) tek çağrıda gönderilir, yanlış olan düzeltilir. Notun
+   riski sorudan yüksektir — soru bir kez cevaplanıp geçilir, not ezberlenir; bozuk bir
+   altyazı tarihi nota girerse öğrenilir. Aynı iki güvenlik kuralı geçerli: maddelerin
+   yarısından fazlası işaretlenirse hatalı olan denetimin kendisi sayılıp hiçbirine
+   dokunulmaz, denetim düşerse not yine üretilir. İlk gerçek koşuda bir madde düzeltildi
+   ("Osmanlı bilinen dünyanın yarısından fazlasını kontrol ediyordu" → "geniş bir bölümünü").
+
+   Çıkarma **istek üzerine** yapılır, soru üretimiyle birlikte değil. İki sebep var:
+   kaydedilmeyen derslerde boşuna token yakılmaz, ve soru üretimi zaten süre bütçesinin
+   sınırında çalıştığı için aynı çağrıya yüklemek ikisini birden riske atardı. Sonuç
+   `ders_sessions.notlar` alanına yazılır; kolon eklenmemişse özellik yine çalışır,
+   yalnızca her kaydetmede yeniden üretilir.
+
+   Bölüm zaman damgaları da modelden alınmaz, sorulardaki gibi `damgaBelirle` ile
+   transkriptten hesaplanır. Not, mevcut klasör sistemindeki "Ders Notları" klasörüne
+   TipTap belgesi olarak kaydedilir. Aynı kimlikte bir not zaten varsa içeriği önce
+   saklanır: "geri al" o notu silmek yerine eski hâline döndürür.
 
 ### Sağlayıcı notları
 

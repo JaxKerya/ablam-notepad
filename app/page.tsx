@@ -390,8 +390,17 @@ export default function Home() {
             );
 
             const dersKlasoru = folders.find((f) => f.name === DERS_NOTLARI_KLASORU);
-            // Ders notları burada görünmez; /ders sayfasındaki panelde listelenir.
-            const gorunenKlasorler = folders.filter((f) => f.id !== dersKlasoru?.id);
+            // Ders notları gezinirken burada görünmez, /ders sayfasındaki panelde
+            // listelenir — listeyi doldurmasınlar diye. Ama ARARKEN görünürler:
+            // gizlemek gezinmek içindi; aramadan da düşürmek, sitenin en çok
+            // aranacak notlarını (ablamın çalışma notları) bulunamaz yapıyordu.
+            // Eşleşme yoksa yine gösterilmiyor, boş klasör sonuçları kirletmesin.
+            const araniyor = !!sidebarSearch.trim();
+            const dersEslesmesiVar =
+              araniyor && filtered.some((n) => n.folder_id === dersKlasoru?.id);
+            const gorunenKlasorler = folders.filter(
+              (f) => f.id !== dersKlasoru?.id || dersEslesmesiVar
+            );
             const ungrouped = filtered.filter((n) => !n.folder_id);
 
             const toggleFolder = (folderId: string) => {
