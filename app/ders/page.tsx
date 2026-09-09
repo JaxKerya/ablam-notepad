@@ -37,6 +37,14 @@ interface OturumOzeti {
 
 type Asama = "bos" | "transkript" | "acik" | "coktan";
 
+/**
+ * Listede en fazla kaç ders gösterilir. 50'ydi ve tavana çarpınca eski dersler
+ * hiçbir uyarı olmadan kayboluyordu — günde birkaç ders çözüldüğünde bir ay
+ * bile sürmüyor, ablam derslerinin silindiğini sanıyordu. Sayı yükseltildi ve
+ * tavana çarpıldığı artık listenin altında yazıyor: sessiz kesme yok.
+ */
+const LISTE_TAVANI = 200;
+
 const ASAMA_METNI: Record<Exclude<Asama, "bos">, string> = {
   transkript: "Dersin altyazısı alınıyor...",
   acik: "Ders çözümleniyor, açık uçlu sorular hazırlanıyor...",
@@ -76,7 +84,7 @@ export default function DersAnaSayfa() {
       // oluyordu — üretilen özet ve açık uçlu sorular boşa gidiyordu.
       .in("status", ["hazir", "hazirlaniyor"])
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(LISTE_TAVANI);
 
     if (error) {
       console.error("Dersler yüklenemedi:", error.message);
@@ -510,6 +518,12 @@ export default function DersAnaSayfa() {
                   </button>
                 </div>
               ))}
+
+              {oturumlar.length >= LISTE_TAVANI && (
+                <p className="px-1 pt-2 text-center text-[11.5px] text-white/25">
+                  En yeni {LISTE_TAVANI} ders gösteriliyor. Daha eskileri listede yok.
+                </p>
+              )}
             </div>
           )}
         </div>

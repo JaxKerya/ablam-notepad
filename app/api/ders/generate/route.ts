@@ -45,13 +45,39 @@ export const maxDuration = 300;
  *     iki doğru cevaplı olur, kurtarılamaz.
  */
 
-type Nerede = "anahtar" | "sik" | "aciklama";
+/** Şık harfleri — denetime giden metinde ve dönen cevapta aynı harfler kullanılır */
+const HARF = ["A", "B", "C", "D", "E"];
+
+/**
+ * Şık karşılaştırması için sadeleştirme. Önceden karşılaştırma birebir küçük harf
+ * eşitliğiydi; "Merkezî otorite." ile "merkezi otorite" farklı sayılıyor, yani iki
+ * şık aynı cevabı verse bile çakışma yakalanmıyor ve soru iki doğru cevaplı olarak
+ * kaydediliyordu.
+ *
+ * Bu dosyadaki harf katlaması, projenin başka yerlerindeki altı harflik eşleme
+ * tablosunu (slugla, icerikKelimeleri) KULLANMIYOR: o tablo şapkalı harfleri
+ * (â, î, û) tanımıyor ve onlar "a-z değil" diye tamamen siliniyor — "millî" -> "mill",
+ * "milli" -> "milli", yani karşılaştırma tutmuyor. Unicode ayrıştırması bütün
+ * aksanları katlıyor; tabloda ayrıca ele alınması gereken tek harf, ayrışmayan
+ * noktasız "ı".
+ */
+const sadelestir = (metin: string): string =>
+  metin
+    .toLowerCase()
+    .replace(/ı/g, "i")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+
+type Nerede = "anahtar" | "sik" | "aciklama" | "dogru_sik";
 
 interface DenetimBulgusu {
   tur: "yok" | "celiski";
   nerede: Nerede;
   gerekce: string;
   duzeltilmis: string;
+  /** nerede === "dogru_sik" iken denetimin doğru bulduğu şıkkın indeksi; yoksa null */
+  dogruIndeks: number | null;
 }
 
 interface DenetimYaniti {
@@ -59,11 +85,23 @@ interface DenetimYaniti {
   hatalar?: Record<string, unknown>[];
 }
 
-/** Denetime gönderilen soru: parçaları ayrı ayrı etiketli */
+/**
+ * Denetime gönderilen soru: parçaları ayrı ayrı etiketli.
+ *
+ * Çoktan seçmelide ŞIKLARIN TAMAMI gönderiliyor. Önceden yalnızca işaretli şık
+ * gidiyordu ("çeldiricilerin yanlış olması zaten beklenen şey") ama bu, denetimin
+ * göremediği bir hata sınıfı bırakıyordu: doğru şıkkın YANLIŞ İŞARETLENMESİ.
+ * Denetime giden üçlü (soru + işaretli şık + açıklama) kendi içinde tutarlı
+ * olduğu için iki katman da geçiyordu — transkript denetimi "iddia derste var"
+ * diyor (iyi bir çeldirici zaten derste geçer), olgu denetimi "iddia yanlış
+ * değil" diyor (çeldirici genelde doğru bir önermedir, sadece bu sorunun cevabı
+ * değildir). Şıkların tamamı olmadan bu ikisi yapısal olarak karar veremez.
+ */
 interface DenetimGirdisi {
   question: string;
   anahtar?: string;
-  sik?: string;
+  secenekler?: string[];
+  isaretli?: number;
   aciklama?: string;
 }
 
@@ -78,7 +116,10 @@ async function denetimCalistir(
     .map((g, i) => {
       const parcalar = [`${i + 1}. SORU: ${g.question}`];
       if (g.anahtar) parcalar.push(`   anahtar: ${g.anahtar}`);
-      if (g.sik) parcalar.push(`   sik: ${g.sik}`);
+      if (g.secenekler?.length) {
+        g.secenekler.forEach((o, j) => parcalar.push(`   ${HARF[j] ?? j + 1}) ${o}`));
+        parcalar.push(`   İŞARETLİ DOĞRU CEVAP: ${HARF[g.isaretli ?? 0] ?? "?"}`);
+      }
       if (g.aciklama) parcalar.push(`   aciklama: ${g.aciklama}`);
       return parcalar.join("\n");
     })
@@ -105,17 +146,19 @@ async function denetimCalistir(
   }
 
   const gecerliNerede = (v: unknown): Nerede =>
-    v === "sik" || v === "aciklama" ? v : "anahtar";
+    v === "sik" || v === "aciklama" || v === "dogru_sik" ? v : "anahtar";
 
   const bulgular = new Map<number, DenetimBulgusu>();
   for (const h of yanit.sorunlular ?? yanit.hatalar ?? []) {
     const no = h?.no;
     if (typeof no !== "number" || no < 1 || no > girdiler.length) continue;
+    const harf = metin(h?.dogru).toUpperCase();
     bulgular.set(no - 1, {
       tur: h?.tur === "yok" ? "yok" : "celiski",
       nerede: gecerliNerede(h?.nerede),
       gerekce: metin(h?.gerekce) || "gerekçe belirtilmedi",
       duzeltilmis: metin(h?.duzeltilmis),
+      dogruIndeks: HARF.indexOf(harf) >= 0 ? HARF.indexOf(harf) : null,
     });
   }
 
@@ -138,7 +181,8 @@ function acikUygula<T extends { question: string; answer_key: string | null }>(
 ): T[] {
   return sorular.filter((s, i) => {
     const b = bulgular.get(i);
-    if (!b) return true;
+    // "dogru_sik" yalnızca çoktan seçmeli için anlamlı; açık uçluda gelirse yok say.
+    if (!b || b.nerede === "dogru_sik") return true;
 
     if (b.tur === "yok") {
       ozet.elenen++;
@@ -161,10 +205,31 @@ function acikUygula<T extends { question: string; answer_key: string | null }>(
  * Çoktan seçmeliye denetim uygular. Açıklama düzeltmek her zaman güvenli;
  * doğru şıkkın metnini düzeltmek de güvenli, tek istisna düzeltilmiş metnin
  * başka bir şıkla çakışması — o zaman soru iki doğru cevaplı olur, elenir.
+ *
+ * "dogru_sik" bulgusunda (işaretli şık sorunun cevabı değil) soru ELENMEZ, cevap
+ * anahtarı denetimin verdiği harfe göre DÜZELTİLİR. Sebep: soru zaten üretildi ve
+ * parası ödendi; atmak hem ablamı bir soru eksik bırakır hem de bu dosyanın kendi
+ * kuralına ("eleme son çare") aykırı. Yanlış anahtarlı bir soruyu göstermek ile
+ * denetimin verdiği anahtara geçmek arasında seçim yapılıyor ve ikincisi daha
+ * olası doğru: üretim modelinin tek görüşüne karşı, biri transkripti görerek
+ * çalışan iki ayrı denetim geçişi var.
+ *
+ * İki durumda yine de eleniyor:
+ *   - Denetim tek bir doğru şık gösteremiyorsa (harf yok) — birden fazla şık
+ *     savunulabilir demektir, sorunun tek cevabı yoktur, kurtarılamaz.
+ *   - Soru İKİ geçişte birden "dogru_sik" alıyorsa. Birinci geçiş anahtarı
+ *     düzeltmiş olur; ikinci geçiş hâlâ itiraz ediyorsa iki denetim aynı fikirde
+ *     değildir ve hakem yoktur.
  */
 function coktanUygula<
   T extends { question: string; choices: string[] | null; correct_index: number | null; explanation: string | null },
->(sorular: T[], bulgular: Map<number, DenetimBulgusu>, ozet: DenetimOzeti): T[] {
+>(
+  sorular: T[],
+  bulgular: Map<number, DenetimBulgusu>,
+  ozet: DenetimOzeti,
+  /** Birinci geçişte anahtarı düzeltilen sorular; ikinci geçiş bunlara itiraz ederse elenir */
+  anahtariDuzeltilen: Set<unknown>
+): T[] {
   return sorular.filter((s, i) => {
     const b = bulgular.get(i);
     if (!b) return true;
@@ -174,7 +239,42 @@ function coktanUygula<
       ozet.notlar.push(`elendi (derste yok): ${s.question.slice(0, 60)} — ${b.gerekce}`);
       return false;
     }
+    if (b.nerede === "dogru_sik") {
+      const secenekSayisi = (s.choices ?? []).length;
+      if (anahtariDuzeltilen.has(s)) {
+        ozet.elenen++;
+        ozet.notlar.push(
+          `elendi (iki denetim anahtarda anlaşamadı): ${s.question.slice(0, 60)} — ${b.gerekce}`
+        );
+        return false;
+      }
+      if (b.dogruIndeks === null || b.dogruIndeks >= secenekSayisi) {
+        ozet.elenen++;
+        ozet.notlar.push(
+          `elendi (tek doğru şık gösterilemedi): ${s.question.slice(0, 60)} — ${b.gerekce}`
+        );
+        return false;
+      }
+      if (b.dogruIndeks === s.correct_index) return true; // zaten o şık işaretli
+      s.correct_index = b.dogruIndeks;
+      anahtariDuzeltilen.add(s);
+      ozet.duzeltilen++;
+      ozet.notlar.push(
+        `anahtar düzeltildi -> ${HARF[b.dogruIndeks]}: ${s.question.slice(0, 60)} — ${b.gerekce}`
+      );
+      return true;
+    }
     if (!b.duzeltilmis) {
+      // Açıklamada hata bulunmuş ama düzeltmesi gelmemişse soruyu atmak gereksiz:
+      // soru kökü ve şıklar sağlam, sorunlu olan yalnızca geri bildirim metni.
+      // Açıklamayı düşürüp soruyu tutuyoruz — grade ucu boş açıklamayı zaten
+      // kaldırıyor, ablam soruyu çözer, sadece ek yorumu görmez.
+      if (b.nerede === "aciklama") {
+        s.explanation = null;
+        ozet.duzeltilen++;
+        ozet.notlar.push(`açıklama düşürüldü (düzeltme gelmedi): ${s.question.slice(0, 60)}`);
+        return true;
+      }
       ozet.elenen++;
       ozet.notlar.push(`elendi (düzeltme gelmedi): ${s.question.slice(0, 60)}`);
       return false;
@@ -183,8 +283,9 @@ function coktanUygula<
     if (b.nerede === "sik") {
       const secenekler = s.choices ?? [];
       const dogruIndeks = s.correct_index ?? 0;
+      const duzeltilmisSade = sadelestir(b.duzeltilmis);
       const carpisma = secenekler.some(
-        (o, j) => j !== dogruIndeks && o.trim().toLowerCase() === b.duzeltilmis.trim().toLowerCase()
+        (o, j) => j !== dogruIndeks && sadelestir(o) === duzeltilmisSade
       );
       if (carpisma) {
         ozet.elenen++;
@@ -227,10 +328,16 @@ const dizi = (v: unknown): string[] =>
 // Sorunun kavramlarının transkriptte en yoğun geçtiği anı kendimiz buluyoruz.
 type Dizin = Map<string, number[]>;
 
-function acikDogrula(ham: UretilenAcik[], adet: number, sure: number, dizin: Dizin) {
+/**
+ * Hedef sayıya kırpma burada YAPILMIYOR, denetimden sonraya bırakıldı. Önce
+ * kırpılınca modelin ürettiği fazla sorular daha denetim çalışmadan atılıyor,
+ * sonra denetim birkaç soru eleyince nihai sayı hedefin altına düşüyordu — oysa
+ * atılan fazlalıklar o boşluğu doldurabilirdi. Fazlalıklar için ödeme zaten
+ * yapılmış durumda; yedek olarak tutuluyorlar.
+ */
+function acikDogrula(ham: UretilenAcik[], sure: number, dizin: Dizin) {
   return (ham ?? [])
     .filter((s) => metin(s.soru) && metin(s.anahtar))
-    .slice(0, adet)
     .map((s) => ({
       kind: "acik" as const,
       question: metin(s.soru),
@@ -249,32 +356,42 @@ function acikDogrula(ham: UretilenAcik[], adet: number, sure: number, dizin: Diz
     }));
 }
 
-function coktanDogrula(ham: UretilenCoktan[], adet: number, sure: number, dizin: Dizin) {
+function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
   const gelen = ham ?? [];
   const gecerli = gelen.filter((s) => {
-    const sec = dizi(s.secenekler);
+    // Harf öneki temizlendikten SONRA sayılıyor. Önce sayılırsa "A)" gibi tek
+    // başına önekten ibaret bir şık geçerli görünür, temizlenince boşalır ve
+    // ortada beş şık değil, dört şık artı bir boşluk kalır.
+    const sec = dizi(s.secenekler).map(sikOnekiniAt);
     return (
       metin(s.soru) &&
       // KPSS beş şıklıdır; eksik ya da fazla şıklı soru sınav pratiği sayılmaz.
       // Arayüz de şıkları A-E diye harfliyor, altıncısı harfsiz kalırdı.
       sec.length === SIK_SAYISI &&
+      // Beş TANE değil, beş AYRI ve DOLU şık. Boş bir şık ekranda harfi olan
+      // ama metni olmayan bir satır bırakır; aynı metinli iki şık ise hem soruyu
+      // iki doğru cevaplı yapar hem de siklariKaristir'daki indexOf'u belirsiz
+      // hâle getirir (aynı metnin ilk kopyasını bulur).
+      sec.every((o) => o.length > 0) &&
+      new Set(sec.map(sadelestir)).size === SIK_SAYISI &&
       typeof s.dogru === "number" &&
       s.dogru >= 0 &&
       s.dogru < sec.length
     );
   });
 
-  // Şık sayısı şartı yeni; kaç soruyu düşürdüğü görünmezse soru sayısındaki
-  // düşüş sebebi bilinmez kalır. Sessiz kayıp bırakmıyoruz.
+  // Şık sayısı şartı kayıpla uygulanıyor: kuralı çiğneyen soru düzeltilmiyor,
+  // atılıyor. Kaç soruyu düşürdüğü görünmezse soru sayısındaki düşüşün sebebi
+  // bilinmez kalır. Sessiz kayıp bırakmıyoruz.
   if (gecerli.length < gelen.length) {
     console.warn(
       `[ders] ${gelen.length - gecerli.length} çoktan seçmeli elendi ` +
-        `(şık sayısı ${SIK_SAYISI} değil ya da doğru şık geçersiz)`
+        `(şık sayısı ${SIK_SAYISI} değil, şık boş/tekrar ediyor ya da doğru şık geçersiz)`
     );
   }
 
+  // Kırpma yok — gerekçesi acikDogrula'nın başında.
   return gecerli
-    .slice(0, adet)
     .map((s) => {
       // Doğru şıkkın konumu modele bırakılmıyor — bkz. siklariKaristir
       const karisik = siklariKaristir(dizi(s.secenekler).map(sikOnekiniAt), s.dogru!);
@@ -430,13 +547,14 @@ export async function POST(request: Request) {
 
       // 1. katman: derste var mı? 2. katman: gerçekte doğru mu?
       // İkisi de önce düzeltmeye çalışır, eleme son çare.
-      let acik = acikDogrula(uretilen.acik_uclu ?? [], hedef.acik, sure, dizin);
+      let acik = acikDogrula(uretilen.acik_uclu ?? [], sure, dizin);
       acik = acikUygula(
         acik,
         await denetimCalistir(SORU_TRANSKRIPT_DENETIMI, acik.map(girdi), transkript),
         ozet
       );
       acik = acikUygula(acik, await denetimCalistir(SORU_OLGU_DENETIMI, acik.map(girdi)), ozet);
+      acik = acik.slice(0, hedef.acik);
       if (ozet.notlar.length) console.warn("[ders] denetim (açık uçlu):", ozet.notlar);
 
       const { data: oturum, error: oturumHatasi } = await supabase
@@ -514,9 +632,11 @@ export async function POST(request: Request) {
       });
 
       const ozet: DenetimOzeti = { duzeltilen: 0, elenen: 0, notlar: [] };
-      // Şık ve açıklama ayrı ayrı gönderiliyor ki denetim hangisini düzelttiğini
-      // söyleyebilsin. Çeldiriciler gönderilmiyor — onların yanlış olması zaten
-      // beklenen şey, denetime sokmak yanlış alarm üretir.
+      // Şıkların TAMAMI ve hangisinin işaretlendiği gönderiliyor; şık metni ile
+      // açıklama yine ayrı etiketli, çünkü denetimin hangisini düzelttiğini
+      // söyleyebilmesi gerekiyor. Çeldiricilerin de gönderilme sebebi
+      // DenetimGirdisi'nde açıklanıyor: onlar olmadan denetim yanlış
+      // anahtarlanmış bir soruyu göremez.
       const girdi = (s: {
         question: string;
         choices: string[] | null;
@@ -524,17 +644,29 @@ export async function POST(request: Request) {
         explanation: string | null;
       }) => ({
         question: s.question,
-        sik: (s.choices ?? [])[s.correct_index ?? 0] ?? "",
+        secenekler: s.choices ?? [],
+        isaretli: s.correct_index ?? 0,
         aciklama: s.explanation ?? "",
       });
 
-      let coktan = coktanDogrula(uretilen.coktan_secmeli ?? [], hedef.coktan, sure, dizin);
+      // İki geçiş arasında paylaşılıyor: birinci geçişte anahtarı düzeltilen soruya
+      // ikinci geçiş de itiraz ederse hakem yok demektir, o soru elenir.
+      const anahtariDuzeltilen = new Set<unknown>();
+
+      let coktan = coktanDogrula(uretilen.coktan_secmeli ?? [], sure, dizin);
       coktan = coktanUygula(
         coktan,
         await denetimCalistir(SORU_TRANSKRIPT_DENETIMI, coktan.map(girdi), transkript),
-        ozet
+        ozet,
+        anahtariDuzeltilen
       );
-      coktan = coktanUygula(coktan, await denetimCalistir(SORU_OLGU_DENETIMI, coktan.map(girdi)), ozet);
+      coktan = coktanUygula(
+        coktan,
+        await denetimCalistir(SORU_OLGU_DENETIMI, coktan.map(girdi)),
+        ozet,
+        anahtariDuzeltilen
+      );
+      coktan = coktan.slice(0, hedef.coktan);
       if (ozet.notlar.length) console.warn("[ders] denetim (çoktan seçmeli):", ozet.notlar);
 
       if (coktan.length) {

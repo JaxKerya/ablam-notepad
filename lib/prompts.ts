@@ -187,14 +187,42 @@ ${acikSorular.map((s, i) => `${i + 1}. ${s}`).join("\n") || "(yok)"}`;
 // bilgi öğretir, üstelik değerlendirici de o anahtara baktığı için ablamın
 // DOĞRU cevabına "yanlış" der — hata çoğalarak ilerler. Bulguların nasıl
 // uygulandığı generate/route.ts'te (düzeltme esas, eleme son çare).
+//
+// Üçüncü bir delik vardı ve iki katman da onu YAPISAL OLARAK göremiyordu:
+// çoktan seçmelide yanlış şıkkın doğru diye işaretlenmesi. Denetime yalnızca
+// soru + işaretli şık + açıklama gidiyordu; bu üçlü kendi içinde tutarlı olduğu
+// için transkript denetimi "iddia derste geçiyor" diyordu (iyi bir çeldirici
+// zaten derste geçer, prompt bunu açıkça istiyor) ve olgu denetimi "iddia
+// yanlış değil" diyordu (çeldirici genelde doğru bir önermedir, sadece bu
+// sorunun cevabı değildir). Artık şıkların tamamı ve hangisinin işaretlendiği
+// gönderiliyor; denetim "işaretli şık cevap değil" ya da "iki şık birden
+// savunulabilir" diyebiliyor. Bu bulgu düzeltilmiyor, soru eleniyor — gerekçesi
+// generate/route.ts'teki coktanUygula'da.
 
-const DENETIM_ORTAK = `Her sorunun cevabı iki parçadan oluşabilir ve hangi parçada sorun olduğunu
-belirtmen gerekir:
-- Açık uçlu sorularda tek parça vardır: "anahtar" (beklenen cevap).
-- Çoktan seçmeli sorularda iki parça vardır: "sik" (doğru şıkkın metni) ve "aciklama".
+const DENETIM_ORTAK = `Sorunun neresinde sorun olduğunu "nerede" alanında belirtmen gerekir.
 
-Her bulduğun sorun için o parçanın DÜZELTİLMİŞ tam hâlini de yaz: yalnızca hatalı bilgiyi
-düzelt, metnin geri kalanını olduğu gibi koru.
+Açık uçlu sorularda tek parça vardır:
+- "anahtar"   : beklenen cevap.
+
+Çoktan seçmeli sorularda şıkların TAMAMI ve hangisinin doğru olarak işaretlendiği
+veriliyor. Üç parça olabilir:
+- "sik"       : işaretli şıkkın METNİNDEKİ bilgi yanlış (ama doğru şık yine odur).
+- "aciklama"  : açıklamadaki bilgi yanlış.
+- "dogru_sik" : İŞARETLİ ŞIK SORUNUN CEVABI DEĞİL.
+
+"sik" ve "aciklama" için o parçanın DÜZELTİLMİŞ tam hâlini de yaz: yalnızca hatalı
+bilgiyi düzelt, metnin geri kalanını olduğu gibi koru.
+
+"dogru_sik" bildirirken iki durumu AYIRMAN gerekir, çünkü sonuçları farklıdır:
+
+- Başka bir TEK şık doğru cevapsa: o şıkkın harfini "dogru" alanına yaz ("dogru": "C").
+  Sorunun cevap anahtarı senin verdiğin harfe göre DÜZELTİLİR ve soru kullanılmaya
+  devam eder. Yani anahtarı sen belirlemiş olursun; emin değilsen bildirme.
+- Birden fazla şık gerçekten savunulabiliyorsa: "dogru" alanını BOŞ BIRAK. Tek bir
+  doğru cevabı olmayan soru kullanılamaz, elenir.
+
+Her iki durumda da "duzeltilmis" yazma. "Bence şu şık daha iyi ifade edilmiş" bildirim
+sebebi değildir; yalnızca işaretli şıkkın gerçekten yanlış olduğu durumda bildir.
 
 ŞÜPHE YETERLİ DEĞİLDİR. Emin değilsen bildirme. Boş liste dönmek tamamen normaldir.
 
@@ -216,7 +244,10 @@ Kurallar:
 
 ${DENETIM_ORTAK}
 
-{"sorunlular": [{"no": 1, "tur": "celiski", "nerede": "anahtar", "gerekce": "derste 1453 deniyor", "duzeltilmis": "..."}]}`;
+{"sorunlular": [
+  {"no": 1, "tur": "celiski", "nerede": "anahtar", "gerekce": "derste 1453 deniyor", "duzeltilmis": "..."},
+  {"no": 4, "tur": "celiski", "nerede": "dogru_sik", "dogru": "C", "gerekce": "derste bu sonucu doğuran şey C şıkkı; işaretli B derste başka bir bağlamda geçiyor"}
+]}`;
 
 export const SORU_OLGU_DENETIMI = `Sen bir KPSS ders materyali olgu denetçisisin. Sana soru–cevap çiftleri
 veriliyor. Görevin: cevapta GERÇEKTE YANLIŞ olan bir bilgi var mı bulmak.
@@ -231,7 +262,10 @@ Kurallar:
 
 ${DENETIM_ORTAK}
 
-{"hatalar": [{"no": 1, "nerede": "anahtar", "gerekce": "1683 değil 1453", "duzeltilmis": "..."}]}`;
+{"hatalar": [
+  {"no": 1, "nerede": "anahtar", "gerekce": "1683 değil 1453", "duzeltilmis": "..."},
+  {"no": 4, "nerede": "dogru_sik", "dogru": "C", "gerekce": "işaretli B doğru bir bilgi ama sorunun cevabı değil; cevap C"}
+]}`;
 
 // --- Cevap değerlendirme ----------------------------------------------------
 
