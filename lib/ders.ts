@@ -31,7 +31,7 @@ export interface DersSession {
   status: SessionStatus;
   error: string | null;
   /** Denetimin bu oturumda ne yaptığı — şeffaflık için sonuç ekranında gösterilir */
-  denetim: { duzeltilen: number; elenen: number };
+  denetim: DenetimOzeti;
   created_at: string;
   updated_at: string;
 }
@@ -62,6 +62,119 @@ export interface DersAnswer {
   feedback: string | null;
   missing: string[];
   created_at: string;
+}
+
+// --- Denetim kaydı ----------------------------------------------------------
+//
+// Denetimin verdiği kararlar eskiden yalnızca console.warn'a gidiyordu ve API
+// kayıtlarıyla ~24 saatte siliniyordu; oturumda sadece iki sayı kalıyordu
+// ("2 düzeltme, 1 eleme"). Hangi soruya ne yapıldığı, hangi gerekçeyle, hangi
+// katmanın bulduğu görünmüyordu. En kötüsü: emniyet valfi devreye girip bütün
+// bulguları attığında bu, "denetim hiçbir şey bulmadı" ile birebir aynı
+// görünüyordu. Artık hepsi ders_sessions.denetim içine yazılıyor ve
+// /ders/aiview sayfasında gösteriliyor.
+
+/** Bir kaydın gerekçesi bu uzunlukta kırpılır — oturum satırı şişmesin */
+export const DENETIM_GEREKCE_SINIRI = 300;
+/** Bir oturumda saklanacak en fazla kayıt sayısı */
+export const DENETIM_KAYIT_SINIRI = 80;
+/**
+ * Ham model çıktısı bu uzunlukta kırpılır. Ham çıktı YALNIZCA bir şey ters
+ * gittiğinde saklanıyor (valf devreye girdi, ya da soru elendi) — her derste
+ * saklamak oturum başına ~25 KB demekti ve her okumayı şişiriyordu.
+ */
+export const HAM_CIKTI_SINIRI = 20000;
+
+export type DenetimKatmani = "transkript" | "olgu" | "bicim";
+
+export type DenetimIslemi =
+  | "anahtar"              // cevap anahtarı değiştirildi (en kritik olanı)
+  | "sik"                  // doğru şıkkın metni düzeltildi
+  | "aciklama"             // açıklama düzeltildi
+  | "aciklama-dusuruldu"   // açıklama düzeltilemedi, kaldırıldı, soru kaldı
+  | "anahtar-duzeltildi"   // açık uçlunun beklenen cevabı düzeltildi
+  | "elendi"               // soru atıldı
+  | "bicim-elendi";        // soru daha denetime girmeden biçim şartına takıldı
+
+export interface DenetimKaydi {
+  katman: DenetimKatmani;
+  soru: string;
+  islem: DenetimIslemi;
+  /** elendi/bicim-elendi için kısa sebep etiketi */
+  sebep?: string;
+  eski?: string;
+  yeni?: string;
+  gerekce?: string;
+  /**
+   * Yalnızca ELENEN sorularda dolu: sorunun tam hâli (kök + şıklar + işaretli
+   * cevap). "Bu eleme doğru muydu?" sorusuna 120 karakterlik kırpılmış kökle
+   * bakılamıyordu. Eleme nadir olduğu için maliyeti düşük.
+   */
+  tamMetin?: string;
+}
+
+/** Bir denetim geçişinin özeti — valf devreye girdiyse bulgular UYGULANMADI */
+export interface DenetimGecisi {
+  katman: "transkript" | "olgu";
+  bulgu: number;
+  valf: boolean;
+  sn: number;
+  girdiToken: number;
+  ciktiToken: number;
+  model?: string;
+  /**
+   * Valf devreye girdiğinde denetimin ham cevabı. Bunlar atılan bulgular:
+   * başka hiçbir yerde iz bırakmıyorlar, oysa "denetim ne iddia etmişti"
+   * sorusunun cevabı tam olarak burada.
+   */
+  hamCevap?: string;
+}
+
+export interface DenetimAdimi {
+  adim: "acik" | "coktan" | "not";
+  /** Modelin döndürdüğü ham öğe sayısı */
+  uretilen: number;
+  /** Biçim şartına takılanların sebep kırılımı */
+  bicimElenen?: Record<string, number>;
+  hedef: number;
+  nihai: number;
+  uretimSn?: number;
+  uretimGirdiToken?: number;
+  uretimCiktiToken?: number;
+  uretimModeli?: string;
+  /** Üretim modelinin ham çıktısı — yalnızca bu adımda bir şey ters gittiyse */
+  hamUretim?: string;
+  gecisler: DenetimGecisi[];
+  kayitlar: DenetimKaydi[];
+}
+
+export interface DenetimOzeti {
+  duzeltilen: number;
+  elenen: number;
+  /** Eski oturumlarda yok — sayfa bu alanın olmamasını tolere eder */
+  adimlar?: DenetimAdimi[];
+}
+
+/** Uzun gerekçeleri kırpar; boşsa alanı hiç yazmamak için undefined döner */
+export function gerekceKirp(metin: string | undefined): string | undefined {
+  const t = (metin ?? "").trim();
+  if (!t) return undefined;
+  return t.length > DENETIM_GEREKCE_SINIRI
+    ? t.slice(0, DENETIM_GEREKCE_SINIRI - 1) + "…"
+    : t;
+}
+
+/** Soru metnini kayda yazarken kısaltır */
+export function soruKirp(metin: string): string {
+  const t = metin.trim();
+  return t.length > 120 ? t.slice(0, 119) + "…" : t;
+}
+
+/** Ham çıktıyı sınırında kırpar ve kırpıldığını metnin içinde belli eder */
+export function hamKirp(metin: string): string {
+  return metin.length > HAM_CIKTI_SINIRI
+    ? metin.slice(0, HAM_CIKTI_SINIRI) + "\n\n…(kırpıldı)"
+    : metin;
 }
 
 // --- Sabitler ---------------------------------------------------------------

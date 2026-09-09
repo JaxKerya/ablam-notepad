@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
-import { chatJson } from "@/lib/ai";
+import { chatJsonOlculu } from "@/lib/ai";
 import {
+  DENETIM_KAYIT_SINIRI,
   EN_AZ_SORU,
+  gerekceKirp,
+  hamKirp,
   hedefSoruSayisi,
   hukumOneksizAciklama,
   siklariKaristir,
   sikOnekiniAt,
+  soruKirp,
+  type DenetimAdimi,
+  type DenetimGecisi,
+  type DenetimKatmani,
+  type DenetimKaydi,
+  type DenetimOzeti as DenetimOzetiKaydi,
   type Segment,
 } from "@/lib/ders";
 import { gunlukLimitAsildiMi, hataCevabi, kapiKontrol } from "@/lib/ders-server";
@@ -105,12 +114,23 @@ interface DenetimGirdisi {
   aciklama?: string;
 }
 
+/** Denetimin sonucu: uygulanacak bulgular + o geçişin kaydı (aiview için) */
+interface DenetimSonucu {
+  bulgular: Map<number, DenetimBulgusu>;
+  gecis: DenetimGecisi;
+}
+
 async function denetimCalistir(
+  katman: "transkript" | "olgu",
   sistem: string,
   girdiler: DenetimGirdisi[],
   transkript?: string
-): Promise<Map<number, DenetimBulgusu>> {
-  if (!girdiler.length) return new Map();
+): Promise<DenetimSonucu> {
+  const bos = (): DenetimSonucu => ({
+    bulgular: new Map(),
+    gecis: { katman, bulgu: 0, valf: false, sn: 0, girdiToken: 0, ciktiToken: 0 },
+  });
+  if (!girdiler.length) return bos();
 
   const liste = girdiler
     .map((g, i) => {
@@ -126,8 +146,10 @@ async function denetimCalistir(
     .join("\n\n");
 
   let yanit: DenetimYaniti;
+  let olcum = { girdiToken: 0, ciktiToken: 0, sn: 0, model: "" };
+  let hamCevap = "";
   try {
-    yanit = await chatJson<DenetimYaniti>({
+    const sonuc = await chatJsonOlculu<DenetimYaniti>({
       mesajlar: [
         { role: "system", content: sistem },
         {
@@ -140,9 +162,12 @@ async function denetimCalistir(
       maxTokens: 8000,
       rol: "denetim",
     });
+    yanit = sonuc.veri;
+    olcum = sonuc.olcum;
+    hamCevap = sonuc.ham;
   } catch {
     // Denetim bir güvenlik ağı; kendisi düşerse üretimi engellemesin.
-    return new Map();
+    return bos();
   }
 
   const gecerliNerede = (v: unknown): Nerede =>
@@ -164,20 +189,74 @@ async function denetimCalistir(
 
   // Soruların yarısından fazlası işaretlendiyse hatalı olan büyük ihtimalle
   // denetimin kendisidir; o durumda hiçbirine dokunmuyoruz.
-  return bulgular.size > girdiler.length / 2 ? new Map() : bulgular;
+  //
+  // Bu olay AYRICA kaydediliyor (valf: true). Kaydedilmezse dışarıdan
+  // "denetim hiçbir şey bulmadı" ile ayırt edilemiyor: ikisinde de sıfır
+  // düzeltme görünüyor. Oysa biri "temiz", diğeri "denetim devre dışı kaldı".
+  const valf = bulgular.size > girdiler.length / 2;
+  return {
+    bulgular: valf ? new Map() : bulgular,
+    gecis: {
+      katman,
+      bulgu: bulgular.size,
+      valf,
+      ...olcum,
+      // Atılan bulgular başka hiçbir yerde iz bırakmıyor; ham cevap yalnızca
+      // bu durumda saklanıyor.
+      hamCevap: valf ? hamKirp(hamCevap) : undefined,
+    },
+  };
 }
 
-interface DenetimOzeti {
+/**
+ * Bir adımın denetim birikimi. `kayitlar` tek gerçek kaynak: hem oturuma yazılıp
+ * /ders/aiview'de gösteriliyor hem de sunucu logu ondan türetiliyor.
+ */
+interface DenetimBirikimi {
   duzeltilen: number;
   elenen: number;
-  notlar: string[];
+  kayitlar: DenetimKaydi[];
 }
+
+function kaydet(
+  ozet: DenetimBirikimi,
+  katman: DenetimKatmani,
+  soru: string,
+  kayit: Omit<DenetimKaydi, "katman" | "soru">
+) {
+  if (ozet.kayitlar.length >= DENETIM_KAYIT_SINIRI) return;
+  ozet.kayitlar.push({ katman, soru: soruKirp(soru), ...kayit });
+}
+
+/** Elenen sorunun tam hâli: kök + şıklar + hangisinin işaretli olduğu */
+function tamSoruMetni(s: {
+  question: string;
+  choices?: string[] | null;
+  correct_index?: number | null;
+  answer_key?: string | null;
+  explanation?: string | null;
+}): string {
+  const parcalar = [s.question];
+  if (s.choices?.length) {
+    s.choices.forEach((o, j) => {
+      parcalar.push(`${HARF[j] ?? j + 1}) ${o}${j === (s.correct_index ?? -1) ? "   ← işaretli" : ""}`);
+    });
+  }
+  if (s.answer_key) parcalar.push(`Beklenen cevap: ${s.answer_key}`);
+  if (s.explanation) parcalar.push(`Açıklama: ${s.explanation}`);
+  return parcalar.join("\n");
+}
+
+/** Sunucu logu için tek satırlık özet — ayrıntı artık veritabanında */
+const logSatiri = (k: DenetimKaydi) =>
+  `${k.islem}${k.sebep ? ` (${k.sebep})` : ""}: ${k.soru}${k.gerekce ? ` — ${k.gerekce}` : ""}`;
 
 /** Açık uçlu sorulara denetim uygular: "yok" elenir, geri kalanı düzeltilir. */
 function acikUygula<T extends { question: string; answer_key: string | null }>(
   sorular: T[],
+  katman: "transkript" | "olgu",
   bulgular: Map<number, DenetimBulgusu>,
-  ozet: DenetimOzeti
+  ozet: DenetimBirikimi
 ): T[] {
   return sorular.filter((s, i) => {
     const b = bulgular.get(i);
@@ -186,17 +265,31 @@ function acikUygula<T extends { question: string; answer_key: string | null }>(
 
     if (b.tur === "yok") {
       ozet.elenen++;
-      ozet.notlar.push(`elendi (derste yok): ${s.question.slice(0, 60)} — ${b.gerekce}`);
+      kaydet(ozet, katman, s.question, {
+        islem: "elendi",
+        sebep: "derste yok",
+        gerekce: gerekceKirp(b.gerekce),
+        tamMetin: tamSoruMetni(s),
+      });
       return false;
     }
     if (!b.duzeltilmis) {
       ozet.elenen++;
-      ozet.notlar.push(`elendi (düzeltme gelmedi): ${s.question.slice(0, 60)}`);
+      kaydet(ozet, katman, s.question, {
+        islem: "elendi",
+        sebep: "düzeltme gelmedi",
+        tamMetin: tamSoruMetni(s),
+      });
       return false;
     }
+    kaydet(ozet, katman, s.question, {
+      islem: "anahtar-duzeltildi",
+      eski: gerekceKirp(s.answer_key ?? ""),
+      yeni: gerekceKirp(b.duzeltilmis),
+      gerekce: gerekceKirp(b.gerekce),
+    });
     s.answer_key = b.duzeltilmis;
     ozet.duzeltilen++;
-    ozet.notlar.push(`düzeltildi: ${s.question.slice(0, 60)} — ${b.gerekce}`);
     return true;
   });
 }
@@ -225,43 +318,57 @@ function coktanUygula<
   T extends { question: string; choices: string[] | null; correct_index: number | null; explanation: string | null },
 >(
   sorular: T[],
+  katman: "transkript" | "olgu",
   bulgular: Map<number, DenetimBulgusu>,
-  ozet: DenetimOzeti,
+  ozet: DenetimBirikimi,
   /** Birinci geçişte anahtarı düzeltilen sorular; ikinci geçiş bunlara itiraz ederse elenir */
   anahtariDuzeltilen: Set<unknown>
 ): T[] {
   return sorular.filter((s, i) => {
     const b = bulgular.get(i);
     if (!b) return true;
+    const gerekce = gerekceKirp(b.gerekce);
+    const sikMetni = (j: number) => `${HARF[j]}) ${(s.choices ?? [])[j] ?? ""}`;
 
     if (b.tur === "yok") {
       ozet.elenen++;
-      ozet.notlar.push(`elendi (derste yok): ${s.question.slice(0, 60)} — ${b.gerekce}`);
+      kaydet(ozet, katman, s.question, {
+        islem: "elendi", sebep: "derste yok", gerekce, tamMetin: tamSoruMetni(s),
+      });
       return false;
     }
     if (b.nerede === "dogru_sik") {
       const secenekSayisi = (s.choices ?? []).length;
       if (anahtariDuzeltilen.has(s)) {
         ozet.elenen++;
-        ozet.notlar.push(
-          `elendi (iki denetim anahtarda anlaşamadı): ${s.question.slice(0, 60)} — ${b.gerekce}`
-        );
+        kaydet(ozet, katman, s.question, {
+          islem: "elendi",
+          sebep: "iki denetim anahtarda anlaşamadı",
+          gerekce,
+          tamMetin: tamSoruMetni(s),
+        });
         return false;
       }
       if (b.dogruIndeks === null || b.dogruIndeks >= secenekSayisi) {
         ozet.elenen++;
-        ozet.notlar.push(
-          `elendi (tek doğru şık gösterilemedi): ${s.question.slice(0, 60)} — ${b.gerekce}`
-        );
+        kaydet(ozet, katman, s.question, {
+          islem: "elendi",
+          sebep: "tek doğru şık gösterilemedi",
+          gerekce,
+          tamMetin: tamSoruMetni(s),
+        });
         return false;
       }
       if (b.dogruIndeks === s.correct_index) return true; // zaten o şık işaretli
+      kaydet(ozet, katman, s.question, {
+        islem: "anahtar",
+        eski: gerekceKirp(sikMetni(s.correct_index ?? 0)),
+        yeni: gerekceKirp(sikMetni(b.dogruIndeks)),
+        gerekce,
+      });
       s.correct_index = b.dogruIndeks;
       anahtariDuzeltilen.add(s);
       ozet.duzeltilen++;
-      ozet.notlar.push(
-        `anahtar düzeltildi -> ${HARF[b.dogruIndeks]}: ${s.question.slice(0, 60)} — ${b.gerekce}`
-      );
       return true;
     }
     if (!b.duzeltilmis) {
@@ -270,13 +377,19 @@ function coktanUygula<
       // Açıklamayı düşürüp soruyu tutuyoruz — grade ucu boş açıklamayı zaten
       // kaldırıyor, ablam soruyu çözer, sadece ek yorumu görmez.
       if (b.nerede === "aciklama") {
+        kaydet(ozet, katman, s.question, {
+          islem: "aciklama-dusuruldu",
+          eski: gerekceKirp(s.explanation ?? ""),
+          gerekce,
+        });
         s.explanation = null;
         ozet.duzeltilen++;
-        ozet.notlar.push(`açıklama düşürüldü (düzeltme gelmedi): ${s.question.slice(0, 60)}`);
         return true;
       }
       ozet.elenen++;
-      ozet.notlar.push(`elendi (düzeltme gelmedi): ${s.question.slice(0, 60)}`);
+      kaydet(ozet, katman, s.question, {
+        islem: "elendi", sebep: "düzeltme gelmedi", gerekce, tamMetin: tamSoruMetni(s),
+      });
       return false;
     }
 
@@ -289,16 +402,29 @@ function coktanUygula<
       );
       if (carpisma) {
         ozet.elenen++;
-        ozet.notlar.push(`elendi (şık çakışması): ${s.question.slice(0, 60)}`);
+        kaydet(ozet, katman, s.question, {
+          islem: "elendi", sebep: "şık çakışması", gerekce, tamMetin: tamSoruMetni(s),
+        });
         return false;
       }
+      kaydet(ozet, katman, s.question, {
+        islem: "sik",
+        eski: gerekceKirp(secenekler[dogruIndeks] ?? ""),
+        yeni: gerekceKirp(b.duzeltilmis),
+        gerekce,
+      });
       s.choices = secenekler.map((o, j) => (j === dogruIndeks ? b.duzeltilmis : o));
     } else {
+      kaydet(ozet, katman, s.question, {
+        islem: "aciklama",
+        eski: gerekceKirp(s.explanation ?? ""),
+        yeni: gerekceKirp(b.duzeltilmis),
+        gerekce,
+      });
       s.explanation = b.duzeltilmis;
     }
 
     ozet.duzeltilen++;
-    ozet.notlar.push(`düzeltildi: ${s.question.slice(0, 60)} — ${b.gerekce}`);
     return true;
   });
 }
@@ -358,40 +484,45 @@ function acikDogrula(ham: UretilenAcik[], sure: number, dizin: Dizin) {
 
 function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
   const gelen = ham ?? [];
+  // Hangi şartın kaç soruyu düşürdüğü ayrı ayrı sayılıyor: "12 soru geldi 9 kaldı"
+  // bilgisi tek başına ne yapılacağını söylemiyor, "3 tanesi 4 şıklıydı" söylüyor.
+  const bicimElenen: Record<string, number> = {};
+  const dus = (sebep: string) => {
+    bicimElenen[sebep] = (bicimElenen[sebep] ?? 0) + 1;
+    return false;
+  };
   const gecerli = gelen.filter((s) => {
     // Harf öneki temizlendikten SONRA sayılıyor. Önce sayılırsa "A)" gibi tek
     // başına önekten ibaret bir şık geçerli görünür, temizlenince boşalır ve
     // ortada beş şık değil, dört şık artı bir boşluk kalır.
     const sec = dizi(s.secenekler).map(sikOnekiniAt);
-    return (
-      metin(s.soru) &&
-      // KPSS beş şıklıdır; eksik ya da fazla şıklı soru sınav pratiği sayılmaz.
-      // Arayüz de şıkları A-E diye harfliyor, altıncısı harfsiz kalırdı.
-      sec.length === SIK_SAYISI &&
-      // Beş TANE değil, beş AYRI ve DOLU şık. Boş bir şık ekranda harfi olan
-      // ama metni olmayan bir satır bırakır; aynı metinli iki şık ise hem soruyu
-      // iki doğru cevaplı yapar hem de siklariKaristir'daki indexOf'u belirsiz
-      // hâle getirir (aynı metnin ilk kopyasını bulur).
-      sec.every((o) => o.length > 0) &&
-      new Set(sec.map(sadelestir)).size === SIK_SAYISI &&
-      typeof s.dogru === "number" &&
-      s.dogru >= 0 &&
-      s.dogru < sec.length
-    );
+    if (!metin(s.soru)) return dus("soru metni boş");
+    // KPSS beş şıklıdır; eksik ya da fazla şıklı soru sınav pratiği sayılmaz.
+    // Arayüz de şıkları A-E diye harfliyor, altıncısı harfsiz kalırdı.
+    if (sec.length !== SIK_SAYISI) return dus(`şık sayısı ${sec.length}`);
+    // Beş TANE değil, beş AYRI ve DOLU şık. Boş bir şık ekranda harfi olan ama
+    // metni olmayan bir satır bırakır; aynı metinli iki şık ise hem soruyu iki
+    // doğru cevaplı yapar hem de siklariKaristir'daki indexOf'u belirsiz hâle
+    // getirir (aynı metnin ilk kopyasını bulur).
+    if (!sec.every((o) => o.length > 0)) return dus("boş şık");
+    if (new Set(sec.map(sadelestir)).size !== SIK_SAYISI) return dus("tekrar eden şık");
+    if (!(typeof s.dogru === "number" && s.dogru >= 0 && s.dogru < sec.length)) {
+      return dus("doğru şık indeksi geçersiz");
+    }
+    return true;
   });
 
-  // Şık sayısı şartı kayıpla uygulanıyor: kuralı çiğneyen soru düzeltilmiyor,
-  // atılıyor. Kaç soruyu düşürdüğü görünmezse soru sayısındaki düşüşün sebebi
-  // bilinmez kalır. Sessiz kayıp bırakmıyoruz.
+  // Şık şartı kayıpla uygulanıyor: kuralı çiğneyen soru düzeltilmiyor, atılıyor.
+  // Sebep kırılımı çağırana dönüyor ve oturuma yazılıyor; sessiz kayıp yok.
   if (gecerli.length < gelen.length) {
     console.warn(
-      `[ders] ${gelen.length - gecerli.length} çoktan seçmeli elendi ` +
-        `(şık sayısı ${SIK_SAYISI} değil, şık boş/tekrar ediyor ya da doğru şık geçersiz)`
+      `[ders] ${gelen.length - gecerli.length} çoktan seçmeli biçim şartına takıldı`,
+      bicimElenen
     );
   }
 
   // Kırpma yok — gerekçesi acikDogrula'nın başında.
-  return gecerli
+  const sorular = gecerli
     .map((s) => {
       // Doğru şıkkın konumu modele bırakılmıyor — bkz. siklariKaristir
       const karisik = siklariKaristir(dizi(s.secenekler).map(sikOnekiniAt), s.dogru!);
@@ -412,6 +543,8 @@ function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
         ),
       };
     });
+
+  return { sorular, bicimElenen, uretilen: gelen.length };
 }
 
 /**
@@ -422,29 +555,31 @@ function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
 async function denetimOzetiYaz(
   supabase: ReturnType<typeof createServerSupabaseClient>,
   sessionId: string,
-  ozet: DenetimOzeti,
+  ozet: DenetimBirikimi,
+  adim: DenetimAdimi,
   ekle: boolean
 ) {
   try {
-    let taban = { duzeltilen: 0, elenen: 0 };
+    let taban: DenetimOzetiKaydi = { duzeltilen: 0, elenen: 0, adimlar: [] };
     if (ekle) {
       const { data } = await supabase
         .from("ders_sessions")
         .select("denetim")
         .eq("id", sessionId)
         .maybeSingle();
-      const onceki = (data?.denetim ?? {}) as { duzeltilen?: number; elenen?: number };
-      taban = { duzeltilen: onceki.duzeltilen ?? 0, elenen: onceki.elenen ?? 0 };
+      const onceki = (data?.denetim ?? {}) as Partial<DenetimOzetiKaydi>;
+      taban = {
+        duzeltilen: onceki.duzeltilen ?? 0,
+        elenen: onceki.elenen ?? 0,
+        adimlar: Array.isArray(onceki.adimlar) ? onceki.adimlar : [],
+      };
     }
-    await supabase
-      .from("ders_sessions")
-      .update({
-        denetim: {
-          duzeltilen: taban.duzeltilen + ozet.duzeltilen,
-          elenen: taban.elenen + ozet.elenen,
-        },
-      })
-      .eq("id", sessionId);
+    const yeni: DenetimOzetiKaydi = {
+      duzeltilen: taban.duzeltilen + ozet.duzeltilen,
+      elenen: taban.elenen + ozet.elenen,
+      adimlar: [...(taban.adimlar ?? []), adim],
+    };
+    await supabase.from("ders_sessions").update({ denetim: yeni }).eq("id", sessionId);
   } catch {
     // kolon yoksa sessizce geç
   }
@@ -522,7 +657,11 @@ export async function POST(request: Request) {
         .eq("video_id", videoId)
         .eq("status", "hazirlaniyor");
 
-      const uretilen = await chatJson<{
+      const {
+        veri: uretilen,
+        olcum: uretimOlcum,
+        ham: uretimHam,
+      } = await chatJsonOlculu<{
         baslik?: string;
         ozet?: string;
         konular?: string[];
@@ -539,7 +678,7 @@ export async function POST(request: Request) {
         maxTokens: 32000,
       });
 
-      const ozet: DenetimOzeti = { duzeltilen: 0, elenen: 0, notlar: [] };
+      const ozet: DenetimBirikimi = { duzeltilen: 0, elenen: 0, kayitlar: [] };
       const girdi = (s: { question: string; answer_key: string | null }) => ({
         question: s.question,
         anahtar: s.answer_key ?? "",
@@ -547,15 +686,39 @@ export async function POST(request: Request) {
 
       // 1. katman: derste var mı? 2. katman: gerçekte doğru mu?
       // İkisi de önce düzeltmeye çalışır, eleme son çare.
+      const hamAcik = (uretilen.acik_uclu ?? []).length;
       let acik = acikDogrula(uretilen.acik_uclu ?? [], sure, dizin);
-      acik = acikUygula(
-        acik,
-        await denetimCalistir(SORU_TRANSKRIPT_DENETIMI, acik.map(girdi), transkript),
-        ozet
+
+      const gecis1 = await denetimCalistir(
+        "transkript", SORU_TRANSKRIPT_DENETIMI, acik.map(girdi), transkript
       );
-      acik = acikUygula(acik, await denetimCalistir(SORU_OLGU_DENETIMI, acik.map(girdi)), ozet);
+      acik = acikUygula(acik, "transkript", gecis1.bulgular, ozet);
+
+      const gecis2 = await denetimCalistir("olgu", SORU_OLGU_DENETIMI, acik.map(girdi));
+      acik = acikUygula(acik, "olgu", gecis2.bulgular, ozet);
+
       acik = acik.slice(0, hedef.acik);
-      if (ozet.notlar.length) console.warn("[ders] denetim (açık uçlu):", ozet.notlar);
+      if (ozet.kayitlar.length) {
+        console.warn("[ders] denetim (açık uçlu):", ozet.kayitlar.map(logSatiri));
+      }
+
+      // Ham çıktı yalnızca bir şey ters gittiyse saklanıyor: her derste saklamak
+      // oturum başına ~25 KB demekti. Ters giden = soru elendi ya da valf devrede.
+      const acikTers =
+        ozet.elenen > 0 || gecis1.gecis.valf || gecis2.gecis.valf;
+      const acikAdimi: DenetimAdimi = {
+        adim: "acik",
+        uretilen: hamAcik,
+        hedef: hedef.acik,
+        nihai: acik.length,
+        uretimSn: uretimOlcum.sn,
+        uretimGirdiToken: uretimOlcum.girdiToken,
+        uretimCiktiToken: uretimOlcum.ciktiToken,
+        uretimModeli: uretimOlcum.model,
+        hamUretim: acikTers ? hamKirp(uretimHam) : undefined,
+        gecisler: [gecis1.gecis, gecis2.gecis],
+        kayitlar: ozet.kayitlar,
+      };
 
       const { data: oturum, error: oturumHatasi } = await supabase
         .from("ders_sessions")
@@ -575,7 +738,7 @@ export async function POST(request: Request) {
 
       // Denetim özeti şeffaflık için; kolon henüz eklenmemişse ders üretimi
       // bundan etkilenmesin diye ayrı ve hatası yutulan bir güncelleme.
-      await denetimOzetiYaz(supabase, oturum.id, ozet, false);
+      await denetimOzetiYaz(supabase, oturum.id, ozet, acikAdimi, false);
 
       if (acik.length) {
         const { error } = await supabase
@@ -616,7 +779,13 @@ export async function POST(request: Request) {
       const acikSorular = (mevcut ?? []).filter((s) => s.kind === "acik").map((s) => s.question);
       const sonrakiPozisyon = (mevcut ?? []).length;
 
-      const uretilen = await chatJson<{ coktan_secmeli?: UretilenCoktan[] }>({
+      const {
+        veri: uretilen,
+        olcum: uretimOlcum,
+        ham: uretimHam,
+      } = await chatJsonOlculu<{
+        coktan_secmeli?: UretilenCoktan[];
+      }>({
         mesajlar: [
           {
             role: "system",
@@ -631,7 +800,7 @@ export async function POST(request: Request) {
         maxTokens: 32000,
       });
 
-      const ozet: DenetimOzeti = { duzeltilen: 0, elenen: 0, notlar: [] };
+      const ozet: DenetimBirikimi = { duzeltilen: 0, elenen: 0, kayitlar: [] };
       // Şıkların TAMAMI ve hangisinin işaretlendiği gönderiliyor; şık metni ile
       // açıklama yine ayrı etiketli, çünkü denetimin hangisini düzelttiğini
       // söyleyebilmesi gerekiyor. Çeldiricilerin de gönderilme sebebi
@@ -653,21 +822,47 @@ export async function POST(request: Request) {
       // ikinci geçiş de itiraz ederse hakem yok demektir, o soru elenir.
       const anahtariDuzeltilen = new Set<unknown>();
 
-      let coktan = coktanDogrula(uretilen.coktan_secmeli ?? [], sure, dizin);
-      coktan = coktanUygula(
-        coktan,
-        await denetimCalistir(SORU_TRANSKRIPT_DENETIMI, coktan.map(girdi), transkript),
-        ozet,
-        anahtariDuzeltilen
+      const dogrulama = coktanDogrula(uretilen.coktan_secmeli ?? [], sure, dizin);
+      let coktan = dogrulama.sorular;
+
+      const gecis1 = await denetimCalistir(
+        "transkript", SORU_TRANSKRIPT_DENETIMI, coktan.map(girdi), transkript
       );
-      coktan = coktanUygula(
-        coktan,
-        await denetimCalistir(SORU_OLGU_DENETIMI, coktan.map(girdi)),
-        ozet,
-        anahtariDuzeltilen
-      );
+      coktan = coktanUygula(coktan, "transkript", gecis1.bulgular, ozet, anahtariDuzeltilen);
+
+      const gecis2 = await denetimCalistir("olgu", SORU_OLGU_DENETIMI, coktan.map(girdi));
+      coktan = coktanUygula(coktan, "olgu", gecis2.bulgular, ozet, anahtariDuzeltilen);
+
       coktan = coktan.slice(0, hedef.coktan);
-      if (ozet.notlar.length) console.warn("[ders] denetim (çoktan seçmeli):", ozet.notlar);
+      if (ozet.kayitlar.length) {
+        console.warn("[ders] denetim (çoktan seçmeli):", ozet.kayitlar.map(logSatiri));
+      }
+
+      // Biçim şartına takılanlar denetime hiç girmedi; aiview'de görünmeleri için
+      // kayıt listesine sebep etiketleriyle ekleniyor.
+      for (const [sebep, adet] of Object.entries(dogrulama.bicimElenen)) {
+        kaydet(ozet, "bicim", `${adet} soru`, { islem: "bicim-elendi", sebep });
+      }
+
+      const coktanTers =
+        ozet.elenen > 0 ||
+        Object.keys(dogrulama.bicimElenen).length > 0 ||
+        gecis1.gecis.valf ||
+        gecis2.gecis.valf;
+      const coktanAdimi: DenetimAdimi = {
+        adim: "coktan",
+        uretilen: dogrulama.uretilen,
+        bicimElenen: dogrulama.bicimElenen,
+        hedef: hedef.coktan,
+        nihai: coktan.length,
+        uretimSn: uretimOlcum.sn,
+        uretimGirdiToken: uretimOlcum.girdiToken,
+        uretimCiktiToken: uretimOlcum.ciktiToken,
+        uretimModeli: uretimOlcum.model,
+        hamUretim: coktanTers ? hamKirp(uretimHam) : undefined,
+        gecisler: [gecis1.gecis, gecis2.gecis],
+        kayitlar: ozet.kayitlar,
+      };
 
       if (coktan.length) {
         const { error } = await supabase.from("ders_questions").insert(
@@ -691,7 +886,7 @@ export async function POST(request: Request) {
       }
 
       await supabase.from("ders_sessions").update({ status: "hazir" }).eq("id", sessionId);
-      await denetimOzetiYaz(supabase, sessionId, ozet, true);
+      await denetimOzetiYaz(supabase, sessionId, ozet, coktanAdimi, true);
 
       return NextResponse.json({ sessionId, soruSayisi: toplam, coktanSayisi: coktan.length });
     }

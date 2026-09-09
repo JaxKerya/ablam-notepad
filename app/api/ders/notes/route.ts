@@ -1,7 +1,22 @@
 import { NextResponse } from "next/server";
-import { chatJson } from "@/lib/ai";
-import { kavramVurgulariniSuz } from "@/lib/ders";
-import type { DersNotIcerigi, NotBolumu, NotTerimi, Segment } from "@/lib/ders";
+import { chatJsonOlculu } from "@/lib/ai";
+import {
+  DENETIM_KAYIT_SINIRI,
+  gerekceKirp,
+  hamKirp,
+  kavramVurgulariniSuz,
+  soruKirp,
+} from "@/lib/ders";
+import type {
+  DenetimAdimi,
+  DenetimGecisi,
+  DenetimKaydi,
+  DenetimOzeti,
+  DersNotIcerigi,
+  NotBolumu,
+  NotTerimi,
+  Segment,
+} from "@/lib/ders";
 import { hataCevabi, kapiKontrol } from "@/lib/ders-server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { damgaBelirle, kelimeDizini, transkriptMetni } from "@/lib/youtube";
@@ -32,15 +47,27 @@ interface DenetimYaniti {
  * Eleme yok — bir maddeyi atmak yerine düzeltiyoruz; düzeltme gelmediyse o madde
  * düşer, çünkü doğruluğundan şüphelenilen tek satırı bırakmanın anlamı yok.
  */
-async function maddeleriDenetle(
-  maddeler: string[]
-): Promise<{ sonuc: (string | null)[]; degisen: number; notlar: string[] }> {
-  const bos = { sonuc: maddeler as (string | null)[], degisen: 0, notlar: [] as string[] };
+interface NotDenetimSonucu {
+  sonuc: (string | null)[];
+  degisen: number;
+  kayitlar: DenetimKaydi[];
+  gecis: DenetimGecisi;
+}
+
+async function maddeleriDenetle(maddeler: string[]): Promise<NotDenetimSonucu> {
+  const bosGecis: DenetimGecisi = {
+    katman: "olgu", bulgu: 0, valf: false, sn: 0, girdiToken: 0, ciktiToken: 0,
+  };
+  const bos: NotDenetimSonucu = {
+    sonuc: maddeler as (string | null)[], degisen: 0, kayitlar: [], gecis: bosGecis,
+  };
   if (maddeler.length < 4) return bos;
 
   let yanit: DenetimYaniti;
+  let olcum = { girdiToken: 0, ciktiToken: 0, sn: 0, model: "" };
+  let hamCevap = "";
   try {
-    yanit = await chatJson<DenetimYaniti>({
+    const cevap = await chatJsonOlculu<DenetimYaniti>({
       mesajlar: [
         { role: "system", content: NOT_OLGU_DENETIMI },
         { role: "user", content: maddeler.map((m, i) => `${i + 1}. ${m}`).join("\n") },
@@ -48,6 +75,9 @@ async function maddeleriDenetle(
       maxTokens: 8000,
       rol: "denetim",
     });
+    yanit = cevap.veri;
+    olcum = cevap.olcum;
+    hamCevap = cevap.ham;
   } catch {
     return bos;
   }
@@ -62,21 +92,39 @@ async function maddeleriDenetle(
     });
   }
 
-  if (bulgular.size > maddeler.length / 2) return bos;
+  // Valf devreye girdiyse bulgular UYGULANMIYOR ama olay kaydediliyor: aksi hâlde
+  // "denetim temiz buldu" ile "denetim devre dışı kaldı" ayırt edilemiyor.
+  const valf = bulgular.size > maddeler.length / 2;
+  const gecis: DenetimGecisi = {
+    katman: "olgu",
+    bulgu: bulgular.size,
+    valf,
+    ...olcum,
+    // Atılan bulgular başka hiçbir yerde iz bırakmıyor
+    hamCevap: valf ? hamKirp(hamCevap) : undefined,
+  };
+  if (valf) return { ...bos, gecis };
 
-  const notlar: string[] = [];
+  const kayitlar: DenetimKaydi[] = [];
   const sonuc: (string | null)[] = maddeler.map((madde, i) => {
     const b = bulgular.get(i);
     if (!b) return madde;
-    if (b.duzeltilmis) {
-      notlar.push(`düzeltildi: ${madde.slice(0, 50)} — ${b.gerekce}`);
-      return b.duzeltilmis;
+    if (kayitlar.length < DENETIM_KAYIT_SINIRI) {
+      kayitlar.push({
+        katman: "olgu",
+        soru: soruKirp(madde),
+        islem: b.duzeltilmis ? "aciklama" : "elendi",
+        sebep: b.duzeltilmis ? undefined : "düzeltme gelmedi",
+        eski: b.duzeltilmis ? gerekceKirp(madde) : undefined,
+        yeni: gerekceKirp(b.duzeltilmis),
+        gerekce: gerekceKirp(b.gerekce),
+        tamMetin: b.duzeltilmis ? undefined : madde,
+      });
     }
-    notlar.push(`elendi (düzeltme gelmedi): ${madde.slice(0, 50)}`);
-    return null;
+    return b.duzeltilmis ? b.duzeltilmis : null;
   });
 
-  return { sonuc, degisen: bulgular.size, notlar };
+  return { sonuc, degisen: bulgular.size, kayitlar, gecis };
 }
 
 interface UretilenNot {
@@ -175,7 +223,11 @@ export async function POST(request: Request) {
     const segments = video.segments as Segment[];
     const sure = video.duration_seconds ?? 0;
 
-    const uretilen = await chatJson<UretilenNot>({
+    const {
+      veri: uretilen,
+      olcum: uretimOlcum,
+      ham: uretimHam,
+    } = await chatJsonOlculu<UretilenNot>({
       mesajlar: [
         { role: "system", content: NOT_PROMPT },
         {
@@ -202,7 +254,12 @@ export async function POST(request: Request) {
     // Olgu denetimi: bütün maddeler tek çağrıda, sonra bölümlerine geri dağıtılıyor
     const duz = bolumler.flatMap((b) => b.maddeler);
     const denetim = await maddeleriDenetle(duz);
-    if (denetim.notlar.length) console.warn("[ders] not denetimi:", denetim.notlar);
+    if (denetim.kayitlar.length) {
+      console.warn(
+        "[ders] not denetimi:",
+        denetim.kayitlar.map((k) => `${k.islem}: ${k.soru}${k.gerekce ? ` — ${k.gerekce}` : ""}`)
+      );
+    }
 
     let imlec = 0;
     bolumler = bolumler
@@ -229,6 +286,49 @@ export async function POST(request: Request) {
       await supabase.from("ders_sessions").update({ notlar }).eq("id", sessionId);
     } catch {
       // kolon yoksa sessizce geç — not yine döndü, sadece önbelleğe alınamadı
+    }
+
+    // Not çıkarmanın denetim kaydı da oturuma ekleniyor; /ders/aiview soru
+    // üretimiyle aynı yerden okuyor. Hatası yutuluyor: not zaten üretildi.
+    try {
+      const elenenNot = denetim.kayitlar.filter((k) => k.islem === "elendi").length;
+      const adim: DenetimAdimi = {
+        adim: "not",
+        uretilen: duz.length,
+        hedef: duz.length,
+        nihai: bolumler.reduce((a, b) => a + b.maddeler.length, 0),
+        uretimSn: uretimOlcum.sn,
+        uretimGirdiToken: uretimOlcum.girdiToken,
+        uretimCiktiToken: uretimOlcum.ciktiToken,
+        uretimModeli: uretimOlcum.model,
+        hamUretim:
+          elenenNot > 0 || denetim.gecis.valf ? hamKirp(uretimHam) : undefined,
+        gecisler: [denetim.gecis],
+        kayitlar: denetim.kayitlar,
+      };
+      const { data } = await supabase
+        .from("ders_sessions")
+        .select("denetim")
+        .eq("id", sessionId)
+        .maybeSingle();
+      const onceki = (data?.denetim ?? {}) as Partial<DenetimOzeti>;
+      await supabase
+        .from("ders_sessions")
+        .update({
+          denetim: {
+            duzeltilen: (onceki.duzeltilen ?? 0) + (denetim.kayitlar.length - elenenNot),
+            elenen: (onceki.elenen ?? 0) + elenenNot,
+            adimlar: [
+              ...(Array.isArray(onceki.adimlar) ? onceki.adimlar : []).filter(
+                (a) => a.adim !== "not"
+              ),
+              adim,
+            ],
+          },
+        })
+        .eq("id", sessionId);
+    } catch {
+      // kolon yoksa sessizce geç
     }
 
     return NextResponse.json({ notlar, onbellekten: false });

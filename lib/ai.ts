@@ -43,6 +43,37 @@ export interface ChatMesaj {
 
 export class AiHatasi extends Error {}
 
+/**
+ * Bir çağrının ölçümü. /ders/aiview sayfası bunu gösteriyor: denetimin ne
+ * yaptığını görmek maliyeti ve süreyi de görmeden yarım kalıyordu. Sağlayıcıdan
+ * bağımsız: OpenAI uyumlu her uç `usage` döndürüyor, dönmeyende sıfır kalır.
+ */
+export interface AiOlcum {
+  girdiToken: number;
+  ciktiToken: number;
+  sn: number;
+  /** İsteği hangi modelin karşıladığı. Model env'den geldiği için kayıtta
+   *  durmazsa eski kayıtlar hangi modele ait olduğunu söyleyemez — bu projede
+   *  model karşılaştırması yöntemin kendisi olduğu için önemli. */
+  model: string;
+}
+
+const olcumTopla = (a: AiOlcum, b: AiOlcum): AiOlcum => ({
+  girdiToken: a.girdiToken + b.girdiToken,
+  ciktiToken: a.ciktiToken + b.ciktiToken,
+  sn: a.sn + b.sn,
+  model: b.model || a.model,
+});
+
+/** Rol -> model. Hem istek gövdesi hem ölçüm aynı yerden okusun diye ayrıldı. */
+function rolModeli(rol: ChatSecenekleri["rol"]): string {
+  return rol === "degerlendirme"
+    ? DEGERLENDIRME_MODELI
+    : rol === "denetim"
+      ? DENETIM_MODELI
+      : URETIM_MODELI;
+}
+
 /** Yeniden denemeye değer geçici hata */
 class GeciciHata extends AiHatasi {}
 
@@ -86,13 +117,15 @@ async function chatOnce({
   maxTokens = 8000,
   timeoutMs = 240_000,
   rol = "uretim",
-}: ChatSecenekleri): Promise<string> {
+}: ChatSecenekleri): Promise<{ icerik: string; olcum: AiOlcum }> {
   if (!BASE_URL || !API_KEY) {
     throw new AiHatasi("AI_BASE_URL ve AI_API_KEY ortam değişkenleri tanımlı değil.");
   }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const baslangic = Date.now();
+  const model = rolModeli(rol);
 
   try {
     const res = await fetch(`${BASE_URL}/chat/completions`, {
@@ -102,12 +135,7 @@ async function chatOnce({
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model:
-          rol === "degerlendirme"
-            ? DEGERLENDIRME_MODELI
-            : rol === "denetim"
-              ? DENETIM_MODELI
-              : URETIM_MODELI,
+        model,
         response_format: { type: "json_object" },
         max_tokens: maxTokens,
         messages: mesajlar,
@@ -126,7 +154,15 @@ async function chatOnce({
     const data = await res.json();
     const icerik: string | undefined = data?.choices?.[0]?.message?.content;
     if (!icerik) throw new GeciciHata("Sağlayıcı boş cevap döndürdü.");
-    return icerik;
+    return {
+      icerik,
+      olcum: {
+        girdiToken: Number(data?.usage?.prompt_tokens) || 0,
+        ciktiToken: Number(data?.usage?.completion_tokens) || 0,
+        sn: (Date.now() - baslangic) / 1000,
+        model,
+      },
+    };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new GeciciHata("Sağlayıcı zaman aşımına uğradı.");
@@ -142,7 +178,10 @@ async function chatOnce({
 const bekle = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Geçici hatalarda artan gecikmeyle yeniden dener */
-async function chatDayanikli(secenekler: ChatSecenekleri, deneme = 3): Promise<string> {
+async function chatDayanikli(
+  secenekler: ChatSecenekleri,
+  deneme = 3
+): Promise<{ icerik: string; olcum: AiOlcum }> {
   let sonHata: unknown;
 
   for (let i = 0; i < deneme; i++) {
@@ -159,15 +198,20 @@ async function chatDayanikli(secenekler: ChatSecenekleri, deneme = 3): Promise<s
 }
 
 /**
- * JSON bekleyen bir istek atar.
+ * JSON bekleyen bir istek atar; veriyle birlikte ölçümü de döndürür.
  * - Geçici sağlayıcı hatalarında (429/5xx/zaman aşımı) yeniden dener.
  * - Çıktı ayrıştırılamazsa düz JSON isteyerek bir kez daha dener.
+ *
+ * İkinci deneme yapılırsa ölçümler TOPLANIR — o istek de para harcadı, aiview'de
+ * görünmezse "bu ders neden pahalıya geldi" sorusunun cevabı eksik kalır.
  */
-export async function chatJson<T = unknown>(secenekler: ChatSecenekleri): Promise<T> {
-  const ham = await chatDayanikli(secenekler);
+export async function chatJsonOlculu<T = unknown>(
+  secenekler: ChatSecenekleri
+): Promise<{ veri: T; olcum: AiOlcum; ham: string }> {
+  const ilk = await chatDayanikli(secenekler);
 
   try {
-    return parseJsonLoose<T>(ham);
+    return { veri: parseJsonLoose<T>(ilk.icerik), olcum: ilk.olcum, ham: ilk.icerik };
   } catch (ilkHata) {
     if (!(ilkHata instanceof AiHatasi)) throw ilkHata;
 
@@ -175,7 +219,7 @@ export async function chatJson<T = unknown>(secenekler: ChatSecenekleri): Promis
       ...secenekler,
       mesajlar: [
         ...secenekler.mesajlar,
-        { role: "assistant", content: ham.slice(0, 500) },
+        { role: "assistant", content: ilk.icerik.slice(0, 500) },
         {
           role: "user",
           content:
@@ -184,6 +228,15 @@ export async function chatJson<T = unknown>(secenekler: ChatSecenekleri): Promis
         },
       ],
     });
-    return parseJsonLoose<T>(ikinci);
+    return {
+      veri: parseJsonLoose<T>(ikinci.icerik),
+      olcum: olcumTopla(ilk.olcum, ikinci.olcum),
+      ham: ikinci.icerik,
+    };
   }
+}
+
+/** Ölçüme ihtiyacı olmayan çağrılar için sade sarmalayıcı. */
+export async function chatJson<T = unknown>(secenekler: ChatSecenekleri): Promise<T> {
+  return (await chatJsonOlculu<T>(secenekler)).veri;
 }
