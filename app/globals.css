@@ -428,6 +428,22 @@ body::before {
   color: rgba(255, 255, 255, 0.3);
 }
 
+/* --- Dikey kaydırma çubuğu yeri ------------------------------------------
+ * Sayfa içeriği kısayken çubuk yok, uzayınca çıkıyor ve çubuğun genişliği
+ * kadar görüntü alanı daralıyordu; ortalanmış içerik ve sağ/sol köşedeki
+ * sabit (fixed) düğmeler her seferinde yana kayıyordu. Kayma sayfalar arası
+ * geçişte de oluyordu: kısa sayfadan uzun sayfaya geçince her şey zıplıyordu.
+ *
+ * `scrollbar-gutter: stable` çubuğun yerini HER ZAMAN ayırıyor: çubuk yokken de
+ * o boşluk duruyor, dolayısıyla görüntü alanının genişliği sabit kalıyor.
+ * Çubuğu sürekli görünür yapmıyor (overflow-y: scroll öyle yapardı), sadece
+ * yerini saklı tutuyor. html üzerinde tanımlı olduğu için bütün sayfalar
+ * kapsanıyor; modal açılıp gövde kilitlense bile boşluk kaybolmuyor.
+ */
+html {
+  scrollbar-gutter: stable;
+}
+
 /* Scrollbar styling */
 * {
   scrollbar-width: thin;

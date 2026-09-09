@@ -23,7 +23,7 @@ export default async function AiViewSayfasi() {
 
   const { data: oturumVerisi } = await supabase
     .from("ders_sessions")
-    .select("id, title, created_at, status, video_id, denetim")
+    .select("id, title, created_at, status, video_id, tur, denetim")
     .order("created_at", { ascending: false })
     .limit(50);
 

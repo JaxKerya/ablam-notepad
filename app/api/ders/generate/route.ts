@@ -5,10 +5,12 @@ import {
   EN_AZ_SORU,
   gerekceKirp,
   hamKirp,
+  KATEGORI_DIGER,
+  kategoriDogrula,
+  KATEGORILER,
   hedefSoruSayisi,
   hukumOneksizAciklama,
-  siklariKaristir,
-  sikOnekiniAt,
+  sikSetiniDogrula,
   soruKirp,
   type DenetimAdimi,
   type DenetimGecisi,
@@ -491,24 +493,17 @@ function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
     bicimElenen[sebep] = (bicimElenen[sebep] ?? 0) + 1;
     return false;
   };
+  // Şık kuralının kendisi lib/ders.ts'te (sikSetiniDogrula) — tekrar varyantları
+  // da aynı kapıdan geçiyor, kural iki yere kopyalanmasın diye.
+  const karisiklar = new Map<UretilenCoktan, { secenekler: string[]; dogruIndeks: number }>();
   const gecerli = gelen.filter((s) => {
-    // Harf öneki temizlendikten SONRA sayılıyor. Önce sayılırsa "A)" gibi tek
-    // başına önekten ibaret bir şık geçerli görünür, temizlenince boşalır ve
-    // ortada beş şık değil, dört şık artı bir boşluk kalır.
-    const sec = dizi(s.secenekler).map(sikOnekiniAt);
     if (!metin(s.soru)) return dus("soru metni boş");
-    // KPSS beş şıklıdır; eksik ya da fazla şıklı soru sınav pratiği sayılmaz.
-    // Arayüz de şıkları A-E diye harfliyor, altıncısı harfsiz kalırdı.
-    if (sec.length !== SIK_SAYISI) return dus(`şık sayısı ${sec.length}`);
-    // Beş TANE değil, beş AYRI ve DOLU şık. Boş bir şık ekranda harfi olan ama
-    // metni olmayan bir satır bırakır; aynı metinli iki şık ise hem soruyu iki
-    // doğru cevaplı yapar hem de siklariKaristir'daki indexOf'u belirsiz hâle
-    // getirir (aynı metnin ilk kopyasını bulur).
-    if (!sec.every((o) => o.length > 0)) return dus("boş şık");
-    if (new Set(sec.map(sadelestir)).size !== SIK_SAYISI) return dus("tekrar eden şık");
-    if (!(typeof s.dogru === "number" && s.dogru >= 0 && s.dogru < sec.length)) {
-      return dus("doğru şık indeksi geçersiz");
+    const k = sikSetiniDogrula(s.secenekler, s.dogru, SIK_SAYISI);
+    if (!k) {
+      const ham = dizi(s.secenekler).length;
+      return dus(ham !== SIK_SAYISI ? `şık sayısı ${ham}` : "boş/tekrar eden şık ya da geçersiz indeks");
     }
+    karisiklar.set(s, k);
     return true;
   });
 
@@ -525,7 +520,7 @@ function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
   const sorular = gecerli
     .map((s) => {
       // Doğru şıkkın konumu modele bırakılmıyor — bkz. siklariKaristir
-      const karisik = siklariKaristir(dizi(s.secenekler).map(sikOnekiniAt), s.dogru!);
+      const karisik = karisiklar.get(s)!;
       return {
         kind: "coktan" as const,
         question: metin(s.soru),
@@ -663,12 +658,19 @@ export async function POST(request: Request) {
         ham: uretimHam,
       } = await chatJsonOlculu<{
         baslik?: string;
+        kategori?: string;
         ozet?: string;
         konular?: string[];
         acik_uclu?: UretilenAcik[];
       }>({
         mesajlar: [
-          { role: "system", content: acikPrompt(hedef.acik) },
+          {
+            role: "system",
+            // Kategori listesi lib/ders.ts'te tek kaynak; prompt'a parametre
+            // olarak giriyor ki prompts.ts hiçbir şey import etmesin
+            // (ölçüm betikleri onu doğrudan Node ile açıyor).
+            content: acikPrompt(hedef.acik, KATEGORILER, KATEGORI_DIGER),
+          },
           { role: "user", content: transkript },
         ],
         // Akıl yürüten modellerde düşünme tokenları da bu bütçeden düşüyor.
@@ -725,6 +727,9 @@ export async function POST(request: Request) {
         .insert({
           video_id: videoId,
           title: metin(uretilen.baslik) || video.title || "Ders",
+          // Kapalı listeye oturtuluyor; model liste dışı bir ad verirse "Diğer"
+          kategori: kategoriDogrula(uretilen.kategori),
+          tur: "ders",
           summary: metin(uretilen.ozet) || null,
           topics: dizi(uretilen.konular),
           status: "hazirlaniyor",
@@ -743,7 +748,9 @@ export async function POST(request: Request) {
       if (acik.length) {
         const { error } = await supabase
           .from("ders_questions")
-          .insert(acik.map((s, i) => ({ ...s, session_id: oturum.id, position: i })));
+          .insert(
+            acik.map((s, i) => ({ ...s, session_id: oturum.id, video_id: videoId, position: i }))
+          );
         if (error) throw new Error(`Sorular kaydedilemedi: ${error.message}`);
       }
 
@@ -869,6 +876,7 @@ export async function POST(request: Request) {
           coktan.map((s, i) => ({
             ...s,
             session_id: sessionId,
+            video_id: videoId,
             position: sonrakiPozisyon + i,
           }))
         );

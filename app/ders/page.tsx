@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -18,16 +18,27 @@ import {
   Clock,
   NotebookPen,
   FileText,
+  Dices,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
-import { DERS_NOTLARI_KLASORU, formatSure, tarihMetni } from "@/lib/ders";
+import {
+  DERS_NOTLARI_KLASORU,
+  formatSure,
+  KATEGORI_DIGER,
+  tarihMetni,
+} from "@/lib/ders";
 
 interface OturumOzeti {
   id: string;
   title: string | null;
   created_at: string;
   video_id: string;
+  kategori: string;
+  /** 'tekrar' oturumları bir videodan üretilmedi, kategoriden karıştırıldı */
+  tekrarMi: boolean;
   sure: number;
   soruSayisi: number;
   cevapSayisi: number;
@@ -60,6 +71,7 @@ export default function DersAnaSayfa() {
   const [elleMetin, setElleMetin] = useState("");
   const [silinecek, setSilinecek] = useState<string | null>(null);
   const [tamamlanan, setTamamlanan] = useState<string | null>(null);
+  const [tekrarKuruluyor, setTekrarKuruluyor] = useState<string | null>(null);
   const [notlarAcik, setNotlarAcik] = useState(false);
   const [dersNotlari, setDersNotlari] = useState<{ id: string; updated_at: string }[] | null>(null);
   // Transkript ~4 sn'de geliyor ve içinde başlık var. Soru üretimi beklenirken
@@ -77,7 +89,7 @@ export default function DersAnaSayfa() {
       // ders_answers kırılımı ayrı sorguda alınıyor: PostgREST'te aynı gömülü
       // seçimde count ile sütun birlikte istenemiyor.
       .select(
-        "id, title, created_at, video_id, status, ders_videos(duration_seconds), ders_questions(count)"
+        "id, title, created_at, video_id, status, kategori, tur, ders_videos(duration_seconds), ders_questions(count)"
       )
       // Yarım kalanlar da listeleniyor: ikinci adım düşerse ya da sekme
       // kapanırsa oturum "hazirlaniyor"da kalıyordu ve tamamen görünmez
@@ -127,6 +139,9 @@ export default function DersAnaSayfa() {
           title: o.title,
           created_at: o.created_at,
           video_id: o.video_id,
+          // Kategori sütunu eklenmeden önce üretilmiş dersler null taşıyor
+          kategori: (o.kategori as string | null)?.trim() || KATEGORI_DIGER,
+          tekrarMi: o.tur === "tekrar",
           sure: video?.duration_seconds ?? 0,
           soruSayisi,
           cevapSayisi: toplamlar.get(o.id) ?? 0,
@@ -245,6 +260,84 @@ export default function DersAnaSayfa() {
     } catch (err) {
       addToast((err as Error).message, "error");
       setTamamlanan(null);
+    }
+  };
+
+  /**
+   * Dersleri kategoriye göre gruplar. Sıralama, kategorideki en yeni derse göre —
+   * ablam en son hangi derse çalıştıysa o grup üstte olsun.
+   *
+   * Tekrar oturumları kendi kategorilerinin içinde listeleniyor ama DERS
+   * SAYILMIYOR: "Soru Gönder" düğmesinin altındaki sayı gerçek ders sayısıdır,
+   * yoksa tekrar ürettikçe sayı şişer ve havuzun büyüdüğü sanılır.
+   */
+  const gruplar = useMemo(() => {
+    const harita = new Map<string, OturumOzeti[]>();
+    for (const o of oturumlar) {
+      const g = harita.get(o.kategori);
+      if (g) g.push(o);
+      else harita.set(o.kategori, [o]);
+    }
+    return [...harita.entries()].map(([kategori, liste]) => {
+      // Pratik oturumu ders listesinden ayrılıyor: o bir ders değil, kategorinin
+      // pratik durumu. Başlıkta gösterilince hem bir satır kazanıyoruz hem de
+      // "kaç soru çözdüm" bilgisi kaydırmadan görünüyor.
+      const dersler = liste.filter((o) => !o.tekrarMi);
+      const pratik = liste.find((o) => o.tekrarMi) ?? null;
+      return {
+        kategori,
+        dersler,
+        pratik,
+        dersSayisi: dersler.filter((o) => !o.yarim).length,
+        yarimSayisi: dersler.filter((o) => o.yarim).length,
+        soruSayisi: dersler.reduce((t, o) => t + o.soruSayisi, 0),
+      };
+    });
+  }, [oturumlar]);
+
+  /**
+   * Katlanır kategoriler. Kategori sayısı arttıkça sayfa 150 satırlık düz bir
+   * kaydırmaya dönüyordu ve "Soru Gönder" düğmeleri arada kayboluyordu.
+   *
+   * Varsayılan: en son ders eklenen kategori açık (gruplar zaten ona göre
+   * sıralı), diğerleri kapalı. `null` = "hiç dokunulmadı, varsayılanı uygula" —
+   * böylece açılışta setState eden bir effect'e gerek kalmıyor.
+   */
+  const [acikKategoriler, setAcikKategoriler] = useState<Set<string> | null>(null);
+  const kategoriAcikMi = (k: string) =>
+    acikKategoriler ? acikKategoriler.has(k) : k === gruplar[0]?.kategori;
+  const kategoriCevir = (k: string) =>
+    setAcikKategoriler((mevcut) => {
+      const taban = mevcut ?? new Set(gruplar[0] ? [gruplar[0].kategori] : []);
+      const yeni = new Set(taban);
+      if (yeni.has(k)) yeni.delete(k);
+      else yeni.add(k);
+      return yeni;
+    });
+
+  /**
+   * Kategoriden pratik. TEST HAZIRLAMIYOR: tek bir rastgele soru getirip soru
+   * ekranına atıyor, orada "başka soru" düğmesiyle döngü sürüyor.
+   *
+   * Kategorinin açık bir pratik oturumu varsa ona devam ediliyor; her basışta
+   * yeni oturum açsaydı liste şişer ve "kaç soru çözdüm" sayacı sıfırlanırdı.
+   * Model çağrısı yok, bedava ve anında.
+   */
+  const tekrarBaslat = async (kategori: string) => {
+    if (tekrarKuruluyor) return;
+    setTekrarKuruluyor(kategori);
+    try {
+      const res = await fetch("/api/ders/tekrar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kategori, adet: 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.hata ?? "Tekrar hazırlanamadı.");
+      router.push(`/ders/${data.sessionId}`);
+    } catch (err) {
+      addToast((err as Error).message, "error");
+      setTekrarKuruluyor(null);
     }
   };
 
@@ -456,68 +549,148 @@ export default function DersAnaSayfa() {
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {oturumlar.map((o, i) => (
+            <div className="space-y-5">
+              {gruplar.map((g) => {
+                const acik = kategoriAcikMi(g.kategori);
+                return (
                 <div
-                  key={o.id}
-                  className="animate-fade-in group glass relative flex items-center gap-3 rounded-xl border border-[var(--border)] p-2.5 transition-all hover:border-[var(--border-hover)]"
-                  style={{ animationDelay: `${Math.min(i * 35, 300)}ms` }}
+                  key={g.kategori}
+                  className="glass overflow-hidden rounded-2xl border border-[var(--border)]"
                 >
-                  <Link
-                    href={o.yarim ? "#" : `/ders/${o.id}`}
-                    onClick={(e) => {
-                      if (o.yarim) {
-                        e.preventDefault();
-                        tamamla(o);
-                      }
-                    }}
-                    className="flex min-w-0 flex-1 items-center gap-3"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`https://img.youtube.com/vi/${o.video_id}/mqdefault.jpg`}
-                      alt=""
-                      className="h-12 w-20 flex-shrink-0 rounded-lg border border-white/[0.06] object-cover"
-                      loading="lazy"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13.5px] font-medium text-white/90">
-                        {o.title ?? "Ders"}
-                      </p>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-white/35">
-                        <span>{tarihMetni(o.created_at)}</span>
-                        {o.sure > 0 && (
-                          <span className="flex items-center gap-1">
-                            <Clock size={10} />
-                            {formatSure(o.sure)}
+                  {/* Kategori başlığı: sol yarısı katlama, sağı pratik düğmesi.
+                      Düğme başlığın içinde olduğu için kategori kapalıyken de
+                      erişilebilir — asıl çözülen sorun buydu. */}
+                  <div className="flex items-center gap-3 p-3.5">
+                    <button
+                      onClick={() => kategoriCevir(g.kategori)}
+                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                    >
+                      {acik ? (
+                        <ChevronDown size={15} className="flex-shrink-0 text-white/35" />
+                      ) : (
+                        <ChevronRight size={15} className="flex-shrink-0 text-white/35" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-[12px] font-medium uppercase tracking-wider text-white/70">
+                            {g.kategori}
                           </span>
-                        )}
-                        {o.yarim ? (
-                          <span className="flex items-center gap-1 text-amber-300/80">
-                            <CircleAlert size={10} />
-                            {tamamlanan === o.id ? "Tamamlanıyor…" : "Tamamlanmadı — devam et"}
+                          <span className="text-[11.5px] text-white/30">
+                            {g.dersSayisi} ders · {g.soruSayisi} soru
                           </span>
-                        ) : o.cevapSayisi > 0 ? (
-                          <span className="flex items-center gap-1 text-[var(--accent)]/70">
-                            <CircleCheck size={10} />
-                            {o.dogruSayisi}/{o.cevapSayisi} doğru
-                          </span>
-                        ) : (
-                          <span>{o.soruSayisi} soru bekliyor</span>
-                        )}
+                          {g.yarimSayisi > 0 && (
+                            <span className="flex items-center gap-1 text-[11px] text-amber-300/80">
+                              <CircleAlert size={10} />
+                              {g.yarimSayisi} yarım
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-[11.5px] text-white/35">
+                          {g.pratik && g.pratik.cevapSayisi > 0
+                            ? `son pratik: ${g.pratik.cevapSayisi} soru · ${g.pratik.dogruSayisi} doğru`
+                            : "henüz pratik yok"}
+                        </p>
                       </div>
-                    </div>
-                  </Link>
+                    </button>
 
-                  <button
-                    onClick={() => setSilinecek(o.id)}
-                    aria-label="Dersi sil"
-                    className="flex-shrink-0 rounded-lg p-2 text-white/20 opacity-0 transition-all hover:bg-red-400/10 hover:text-red-400 group-hover:opacity-100"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                    <div className="flex flex-shrink-0 items-center gap-1.5">
+                      {/* Pratik için ayrı bir düğme yok: "Soru Gönder" zaten
+                          eskisini silip yenisini başlatıyor. Ayrı bir silme
+                          düğmesi yalnızca başlıktaki sayaç satırını temizlerdi,
+                          yani gerçek bir işi yoktu. */}
+                      {g.dersSayisi > 0 && (
+                        <button
+                          onClick={() => tekrarBaslat(g.kategori)}
+                          disabled={!!tekrarKuruluyor}
+                          title={`${g.kategori} derslerinden rastgele bir soru`}
+                          className="flex items-center gap-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/[0.07] px-2.5 py-1.5 text-[11.5px] text-[var(--accent-light)] transition-colors hover:border-[var(--accent)]/55 hover:bg-[var(--accent)]/[0.12] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {tekrarKuruluyor === g.kategori ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Dices size={12} />
+                          )}
+                          Soru Gönder
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {acik && (
+                  <div className="space-y-2 border-t border-[var(--border)] p-2.5">
+                    {g.dersler.map((o, i) => (
+                    <div
+                      key={o.id}
+                      className="animate-fade-in group relative flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2.5 transition-all hover:border-[var(--border-hover)]"
+                      style={{ animationDelay: `${Math.min(i * 35, 300)}ms` }}
+                    >
+                      <Link
+                        href={o.yarim ? "#" : `/ders/${o.id}`}
+                        onClick={(e) => {
+                          if (o.yarim) {
+                            e.preventDefault();
+                            tamamla(o);
+                          }
+                        }}
+                        className="flex min-w-0 flex-1 items-center gap-3"
+                      >
+                        {/* Bu liste yalnızca dersleri taşıyor — pratik oturumu
+                            kategori başlığında gösteriliyor, o yüzden küçük resim
+                            koşulsuz basılıyor. */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`https://img.youtube.com/vi/${o.video_id}/mqdefault.jpg`}
+                          alt=""
+                          className="h-12 w-20 flex-shrink-0 rounded-lg border border-white/[0.06] object-cover"
+                          loading="lazy"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13.5px] font-medium text-white/90">
+                            {o.title ?? "Ders"}
+                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-white/35">
+                            <span>{tarihMetni(o.created_at)}</span>
+                            {/* Süre yalnızca gerçek derste anlamlı. Pratik oturumunun
+                                sure alanı ilk kaynak videodan geliyor (oturumun
+                                video_id'si NOT NULL olduğu için orada duruyor), yani
+                                pratikte rastgele bir dersin süresini gösterirdi. */}
+                            {!o.tekrarMi && o.sure > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Clock size={10} />
+                                {formatSure(o.sure)}
+                              </span>
+                            )}
+                            {o.yarim ? (
+                              <span className="flex items-center gap-1 text-amber-300/80">
+                                <CircleAlert size={10} />
+                                {tamamlanan === o.id ? "Tamamlanıyor…" : "Tamamlanmadı — devam et"}
+                              </span>
+                            ) : o.cevapSayisi > 0 ? (
+                              <span className="flex items-center gap-1 text-[var(--accent)]/70">
+                                <CircleCheck size={10} />
+                                {o.dogruSayisi}/{o.cevapSayisi} doğru
+                              </span>
+                            ) : (
+                              <span>{o.soruSayisi} soru bekliyor</span>
+                            )}
+                          </div>
+                        </div>
+                      </Link>
+
+                      <button
+                        onClick={() => setSilinecek(o.id)}
+                        aria-label="Dersi sil"
+                        className="flex-shrink-0 rounded-lg p-2 text-white/20 opacity-0 transition-all hover:bg-red-400/10 hover:text-red-400 group-hover:opacity-100"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    ))}
+                  </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
 
               {oturumlar.length >= LISTE_TAVANI && (
                 <p className="px-1 pt-2 text-center text-[11.5px] text-white/25">

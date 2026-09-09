@@ -1,6 +1,7 @@
 // Ablam Ders — paylaşılan tipler, sabitler ve yardımcılar
 
 export type SessionStatus = "hazirlaniyor" | "hazir" | "hata";
+export type OturumTuru = "ders" | "tekrar";
 export type QuestionKind = "acik" | "coktan";
 export type Verdict = "dogru" | "eksik" | "yanlis" | "pas";
 
@@ -24,10 +25,19 @@ export interface DersVideo {
 
 export interface DersSession {
   id: string;
+  /**
+   * Oturumun videosu. TEKRAR oturumlarında bu alan yalnızca ilk kaynak videoyu
+   * gösterir ve soru düzeyinde hiçbir karar buna bakarak verilmez — soru-video
+   * ilişkisi ders_questions.video_id üzerinden kurulur.
+   */
   video_id: string;
   title: string | null;
   summary: string | null;
   topics: string[];
+  /** Tarih, Coğrafya, Vatandaşlık... Üretimde model belirler. */
+  kategori: string | null;
+  /** 'ders' bir videodan üretildi, 'tekrar' kategoriden karıştırıldı */
+  tur: OturumTuru;
   status: SessionStatus;
   error: string | null;
   /** Denetimin bu oturumda ne yaptığı — şeffaflık için sonuç ekranında gösterilir */
@@ -39,6 +49,10 @@ export interface DersSession {
 export interface DersQuestion {
   id: string;
   session_id: string;
+  /** Sorunun kendi videosu; tekrar oturumlarında oturumunkinden farklı olabilir */
+  video_id: string | null;
+  /** Tekrar kopyasıysa kaynak sorunun kimliği */
+  kaynak_soru_id: string | null;
   position: number;
   kind: QuestionKind;
   question: string;
@@ -205,6 +219,37 @@ export function hedefSoruSayisi(sureSaniye: number): {
 export const EN_AZ_SORU = 4;
 
 /**
+ * Kategoriler kapalı bir liste. Serbest bırakılsaydı model aynı dersi bir gün
+ * "Tarih", ertesi gün "T.C. İnkılap Tarihi" diye adlandırır, liste dağılır ve
+ * "Soru Gönder" havuzu bölünürdü. Prompt da doğrulama da bu listeyi kullanıyor.
+ */
+export const KATEGORILER = [
+  "Tarih",
+  "Coğrafya",
+  "Vatandaşlık",
+  "Türkçe",
+  "Matematik",
+  "Eğitim Bilimleri",
+  "Güncel Bilgiler",
+] as const;
+
+/** Listeye girmeyen ya da belirlenemeyen dersler burada toplanır */
+export const KATEGORI_DIGER = "Diğer";
+
+/** Modelden gelen kategoriyi kapalı listeye oturtur */
+export function kategoriDogrula(ham: unknown): string {
+  const t = typeof ham === "string" ? ham.trim() : "";
+  const eslesen = KATEGORILER.find((k) => k.toLocaleLowerCase("tr") === t.toLocaleLowerCase("tr"));
+  return eslesen ?? KATEGORI_DIGER;
+}
+
+/**
+ * Tekrar oturumuna kaç soru konur. Tek dersin 26 soruluk tavanının altında
+ * tutuldu: tekrar oturumu bir sınav değil, karışık bir gözden geçirme.
+ */
+export const TEKRAR_SORU_SAYISI = 20;
+
+/**
  * Ders özetlerinin kaydedildiği klasör. Mevcut klasör sistemi kullanılıyor:
  * özetler bu klasöre düşüyor, ana not listesinde görünmüyor, kendi
  * "Ders notlarını görüntüle" düğmesinin altında listeleniyor.
@@ -340,6 +385,93 @@ export function hukumOneksizAciklama(aciklama: string): string {
  * Not: "yukarıdakilerin hepsi" gibi konuma bağlı şıklar karıştırmayı bozardı;
  * coktanPrompt böyle şık istemiyor ve üretilenlerde de hiç görülmedi.
  */
+/**
+ * Türkçe/aksan duyarsız sadeleştirme. Şıkların birbirinin aynısı olup olmadığı
+ * buna göre karşılaştırılıyor.
+ *
+ * Projenin başka yerlerindeki altı harflik eşleme tablosu (slugla,
+ * icerikKelimeleri) şapkalı harfleri (â, î, û) tanımıyor ve onları "a-z değil"
+ * diye tamamen siliyor — "millî" -> "mill", "milli" -> "milli", karşılaştırma
+ * tutmuyor. Unicode ayrıştırması bütün aksanları katlıyor; ayrıca ele alınması
+ * gereken tek harf, ayrışmayan noktasız "ı".
+ */
+export function sikSadelestir(metin: string): string {
+  return metin
+    .toLowerCase()
+    .replace(/ı/g, "i")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * İki metin birbirinden yeterince farklı mı? Tekrar varyantlarında kullanılıyor.
+ *
+ * Ölçümle eklendi: ilk denemede açık uçlu varyantın soru kökü yeniden yazılmıştı
+ * ama CEVAP ANAHTARI kaynağınkinin kopyasıydı — ilk cümlesi değiştirilmiş, gerisi
+ * aynen alınmıştı. Çoktan seçmelide "çeldiricileri yeniden yaz" kuralı varyantı
+ * zaten değiştiriyor; açık uçluda böyle bir zorlama yok.
+ *
+ * ÖLÇÜT KELİME ÖRTÜŞMESİ, kapsama değil. Önce kapsama denendi ve motive eden
+ * vakayı YAKALAMADI: varyant kaynağın birebir alt dizesi değildi ("ciddi bir
+ * baskı" -> "baskı"). Örtüşme oranı (varyantın kelimelerinin kaçı kaynakta var)
+ * 20 gerçek çift üzerinde ölçüldü:
+ *   kabul edilebilir varyantlar : 0,14 - 0,67  (ortanca 0,30)
+ *   elenmesi istenen vaka       : 0,94
+ * Eşik 0,80: en yüksek kabul edilebilir değerin de, elenmesi gerekenin de
+ * uzağında. Takılan varyant düzeltilmiyor, o slot kaynağın kopyasına dönüyor.
+ */
+export function yeterinceFarkli(varyant: string, kaynak: string, esik = 0.8): boolean {
+  const kelimeler = (m: string) =>
+    new Set(
+      m
+        .toLowerCase()
+        .replace(/ı/g, "i")
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9 ]/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length >= 4)
+    );
+  const a = kelimeler(varyant);
+  if (a.size < 4) return true; // çok kısa metinde oran gürültülü
+  const b = kelimeler(kaynak);
+  let ortak = 0;
+  for (const w of a) if (b.has(w)) ortak++;
+  return ortak / a.size < esik;
+}
+
+/**
+ * Bir çoktan seçmeli soruyu şık kuralına göre doğrular ve şıkları karıştırır.
+ * Geçmezse null döner — çağıran soruyu eler.
+ *
+ * Beş TANE değil, beş AYRI ve DOLU şık aranıyor:
+ *   - Harf öneki temizlendikten SONRA sayılıyor; "A)" gibi tek başına önekten
+ *     ibaret bir şık temizlenince boşalır ve ortada dört şık artı bir boşluk kalır.
+ *   - Boş şık ekranda harfi olan ama metni olmayan bir satır bırakır.
+ *   - Aynı metinli iki şık hem soruyu iki doğru cevaplı yapar hem de
+ *     siklariKaristir'daki indexOf'u belirsizleştirir (ilk kopyayı bulur).
+ *
+ * Hem ders üretimi hem tekrar varyantları buradan geçiyor: kural tek yerde.
+ */
+export function sikSetiniDogrula(
+  hamSecenekler: unknown,
+  dogru: unknown,
+  sikSayisi: number
+): { secenekler: string[]; dogruIndeks: number } | null {
+  const sec = (Array.isArray(hamSecenekler) ? hamSecenekler : [])
+    .filter((x): x is string => typeof x === "string" && !!x.trim())
+    .map(sikOnekiniAt);
+
+  if (sec.length !== sikSayisi) return null;
+  if (!sec.every((o) => o.length > 0)) return null;
+  if (new Set(sec.map(sikSadelestir)).size !== sikSayisi) return null;
+  if (!(typeof dogru === "number" && Number.isInteger(dogru) && dogru >= 0 && dogru < sec.length)) {
+    return null;
+  }
+  return siklariKaristir(sec, dogru);
+}
+
 export function siklariKaristir(
   secenekler: string[],
   dogruIndeks: number

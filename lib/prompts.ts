@@ -52,7 +52,11 @@ SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti ku
  * fiil), gerçek hatalardan alınmış örnek çiftleri, ve yasak kalıp listesi en
  * sona. Modeller yasaktan çok örnekten öğreniyor.
  */
-export const acikPrompt = (adet: number) =>
+export const acikPrompt = (
+  adet: number,
+  kategoriler: readonly string[],
+  digerKategori: string
+) =>
   `Sen KPSS'ye hazırlanan bir öğrenciye ders videosundan ölçme soruları hazırlayan bir eğitmensin.
 
 ${ORTAK_KURALLAR}
@@ -60,6 +64,7 @@ ${ORTAK_KURALLAR}
 Şema:
 {
   "baslik": "dersin kısa başlığı",
+  "kategori": "dersin ait olduğu ders adı",
   "ozet": "3-4 cümlelik ders özeti",
   "konular": ["ana konu 1", "ana konu 2"],
   "acik_uclu": [
@@ -67,6 +72,11 @@ ${ORTAK_KURALLAR}
      "kilit_kavramlar": ["kavram1", "kavram2"], "konu": "hangi ana konu", "saniye": 123}
   ]
 }
+
+KATEGORİ — dersin hangi KPSS dersine ait olduğunu şu listeden SEÇ, yeni bir ad uydurma:
+${kategoriler.join(", ")}
+Hiçbirine uymuyorsa "${digerKategori}" yaz. Liste kapalı çünkü kategori, aynı dersin
+bütün videolarını bir arada tutmak için kullanılıyor; serbest yazılan ad havuzu böler.
 
 SORU BİÇİMİ — en önemli kural bu, ihlal eden soru işe yaramaz.
 Her soru TEK bir şey sorar. Ölçütü şudur: soruda tek bir soru kelimesi geçer
@@ -265,6 +275,81 @@ ${DENETIM_ORTAK}
 {"hatalar": [
   {"no": 1, "nerede": "anahtar", "gerekce": "1683 değil 1453", "duzeltilmis": "..."},
   {"no": 4, "nerede": "dogru_sik", "dogru": "C", "gerekce": "işaretli B doğru bir bilgi ama sorunun cevabı değil; cevap C"}
+]}`;
+
+// --- Tekrar varyantları -----------------------------------------------------
+//
+// Kategoriden karışık tekrar iki türlü kurulabiliyor: mevcut soruları KOPYALAMAK
+// (bedava, anında) ya da onlardan VARYANT üretmek (bir üretim çağrısı). Varyant
+// gerektiği an, havuzun tükendiği andır: ablam soruların çoğunu zaten cevaplamışsa
+// kopya, hatırlamayı ölçer, bilgiyi değil.
+//
+// Kaynak olarak TRANSKRİPT değil MEVCUT SORULAR kullanılıyor. Sebebi ölçüm:
+// bir dersin transkripti 21-42 bin karakter, özeti ise yalnızca 363-508 karakter
+// (kaynağın ~%1,3'ü) — özetten 20 soruluk malzeme çıkmıyor, model açığı kendi
+// bilgisiyle kapatıyor ve o sorular transkript denetiminde "derste yok" diye
+// eleniyor; para ödenip çıktı atılıyor. Mevcut sorular ise hem yoğun (110 sorunun
+// metni ~28 bin karakter, bir transkript kadar) hem de zaten iki katmanlı
+// denetimden geçmiş. Yani varyant, doğrulanmış malzemeden türüyor.
+//
+// Bu yüzden en sıkı kural "yeni bilgi ekleme": varyant, kaynağın ölçtüğü BİLGİYİ
+// ölçmeli, başka bir şeyi değil.
+
+export const tekrarVaryantPrompt = (sikSayisi: number) =>
+  `Sen KPSS'ye hazırlanan bir öğrenci için TEKRAR soruları hazırlayan bir eğitmensin.
+
+Sana daha önce sorulmuş sorular veriliyor; her biri için AYNI BİLGİYİ ölçen YENİ bir
+soru yazacaksın. Amaç, öğrencinin cevabı ezberlemiş olma ihtimalini ortadan kaldırmak.
+
+EN ÖNEMLİ KURAL — YENİ BİLGİ EKLEME:
+Varyant, kaynak sorunun ölçtüğü bilgiyi ölçer. Kaynakta olmayan bir tarih, isim, sayı
+ya da olay EKLEME. Emin olmadığın bir ayrıntıyı yazma. Kaynak ne kadarını söylüyorsa
+varyant da o kadarını sorabilir — daha fazlasını değil.
+
+VARYANTI KOLAYLAŞTIRMA:
+Cevabın tanımını soru köküne koyma. "Şehzadeler arasındaki taht mücadeleleri hangi
+dönemi başlattı?" diye sormak, cevabı yarı yarıya vermektir — kaynak soru bunu
+sormuyordu. Varyant kaynakla aynı zorlukta olmalı, daha kolay değil.
+
+VARYANT NE DEMEK:
+- Soru kökü YENİDEN YAZILIR, kaynağın cümlesi kopyalanmaz.
+- Mümkünse açı değişir: kaynak "neden oldu" diye soruyorsa varyant "neye yol açtı"
+  ya da "hangi ilkenin zayıfladığını gösterir" diye sorabilir.
+- Çoktan seçmelide ÇELDİRİCİLER YENİDEN YAZILIR. Aynı şıkları farklı sırayla vermek
+  varyant değildir.
+- Kaynağın türü korunur: çoktan seçmeli kaynaktan çoktan seçmeli, açık uçlu
+  kaynaktan açık uçlu varyant.
+
+ÇOKTAN SEÇMELİ KURALLARI:
+- HER SORUDA TAM ${sikSayisi} ŞIK olacak. Eksik ya da fazla şıklı soru kullanılmaz.
+- Şık metninin başına "A)", "B)" gibi harf öneki YAZMA — harfleri arayüz ekliyor.
+- Şıkların uzunlukları birbirine yakın olsun; en uzun ile en kısa arasındaki fark
+  4 kelimeyi geçmesin. Doğru şıkkı ayrıntı ekleyerek uzatma, ele verir.
+- Çeldiricilerde "tamamen", "yalnızca", "hiçbir", "asla" gibi mutlak sözler kullanma;
+  dersi bilmeyen bile onları eler.
+- Çeldiriciler konuyu yarım bilen birinin seçebileceği türden olsun; bariz saçma şık
+  soruyu değersizleştirir.
+- Tek doğru cevap net olsun; iki şık birden savunulabilir olmasın.
+- "aciklama" öğrenciye doğrudan gösterilecek: sen diliyle, 1-2 cümle, neden o şıkkın
+  doğru olduğunu söyle. "Doğru!", "Evet", "Tebrikler" gibi hüküm sözüyle BAŞLATMA —
+  öğrencinin doğru mu yanlış mı yaptığını arayüz zaten kendi cümlesiyle söylüyor.
+
+AÇIK UÇLU KURALLARI:
+- Soru TEK bir şey sorar: tek soru kelimesi, tek fiil. Virgülle ikinci bir soru ekleme,
+  "sırasıyla açıklayınız" gibi kompozisyon isteme.
+- "anahtar" beklenen cevaptır, 2-3 cümle.
+- ANAHTARI DA YENİDEN YAZ. Kaynağın beklenen cevabını kopyalama, bir cümlesini kırpıp
+  kalanını aynen kullanma. Aynı bilgiyi KENDİ cümlelerinle anlat. Çoktan seçmelide
+  çeldiricileri yeniden yazmak varyantı zaten değiştiriyor; açık uçluda varyantı
+  değiştiren şey budur.
+
+Her varyantta kaynak sorunun "no" değerini AYNEN geri ver — hangi soruya karşılık
+geldiği bundan anlaşılıyor.
+
+SADECE geçerli JSON döndür, kod bloğu işareti kullanma:
+{"varyantlar": [
+  {"no": 1, "soru": "...", "secenekler": ["...", "...", "...", "...", "..."], "dogru": 0, "aciklama": "..."},
+  {"no": 2, "soru": "...", "anahtar": "beklenen cevap", "kilit_kavramlar": ["kavram1", "kavram2"]}
 ]}`;
 
 // --- Cevap değerlendirme ----------------------------------------------------

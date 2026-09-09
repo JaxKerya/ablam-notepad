@@ -126,3 +126,35 @@ alter table ders_sessions add column if not exists denetim jsonb not null
 -- Dersten çıkarılmış çalışma notu. İstek üzerine üretilir (/api/ders/notes) ve
 -- burada saklanır; ablam notu silip yeniden kaydederse tekrar üretilmez.
 alter table ders_sessions add column if not exists notlar jsonb;
+
+-- Dersin konusu (Tarih, Coğrafya, Vatandaşlık...). Üretim sırasında modelin
+-- belirlediği değer yazılır; liste bu alana göre gruplanır ve her grubun
+-- "Soru Gönder" düğmesi bu alandan besleniyor.
+alter table ders_sessions add column if not exists kategori text;
+
+-- Oturum türü. 'ders' bir videodan üretilmiş normal oturum; 'tekrar' bir
+-- kategorideki derslerin sorularından karıştırılarak kurulmuş tekrar oturumu.
+-- Tekrar oturumları havuza dahil edilmez, yoksa kopyanın kopyası üretilir.
+alter table ders_sessions add column if not exists tur text not null default 'ders';
+
+-- Sorunun KENDİ videosu. Eskiden bir oturum tek videoya bağlıydı ve soru-video
+-- ilişkisi ders_sessions.video_id üzerinden kuruluyordu. Tekrar oturumları
+-- birden çok videodan soru taşıdığı için bu varsayım çöküyor: "videoda 12:43"
+-- bağlantısı yanlış videoya gider, açık uçlu değerlendirici de yanlış dersin
+-- transkriptini okurdu. İkisi de hata vermeden yanlış sonuç üretirdi.
+alter table ders_questions add column if not exists video_id text
+  references ders_videos(video_id) on delete set null;
+
+-- Tekrar oturumundaki kopyanın hangi sorudan türediği. Kopyalama sebebi:
+-- ders_answers'ta unique(question_id) var, aynı soru ikinci kez cevaplanamıyor.
+-- Kopya yeni bir kimlik alınca ablamın ilk denemedeki cevabı da bozulmadan kalıyor.
+alter table ders_questions add column if not exists kaynak_soru_id uuid;
+
+-- Mevcut satırları doldur (bu dosyayı yeniden çalıştırmak güvenlidir)
+update ders_questions q
+   set video_id = s.video_id
+  from ders_sessions s
+ where q.session_id = s.id and q.video_id is null;
+
+create index if not exists ders_sessions_kategori_idx
+  on ders_sessions (kategori, created_at desc);

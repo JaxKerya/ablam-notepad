@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     const { data: soru, error: soruHatasi } = await supabase
       .from("ders_questions")
       .select(
-        "id, session_id, kind, question, answer_key, key_points, choices, correct_index, explanation, start_seconds"
+        "id, session_id, video_id, kind, question, answer_key, key_points, choices, correct_index, explanation, start_seconds"
       )
       .eq("id", questionId)
       .maybeSingle();
@@ -106,12 +106,18 @@ export async function POST(request: Request) {
         .eq("id", soru.session_id)
         .maybeSingle();
 
+      // Transkript SORUNUN videosundan çekiliyor, oturumunkinden değil. Tekrar
+      // oturumları birden çok dersten soru taşıyor; oturumun video_id'si orada
+      // yalnızca ilk kaynağı gösterir ve buna güvenmek değerlendiriciye YANLIŞ
+      // dersin transkriptini okuturdu — hata vermeden yanlış hüküm üretirdi.
+      // Eski satırlarda soru düzeyinde video yoksa oturumunkine düşülüyor.
+      const soruVideoId = soru.video_id ?? oturum?.video_id ?? null;
       let bolum = "";
-      if (oturum?.video_id) {
+      if (soruVideoId) {
         const { data: video } = await supabase
           .from("ders_videos")
           .select("segments")
-          .eq("video_id", oturum.video_id)
+          .eq("video_id", soruVideoId)
           .maybeSingle();
 
         if (video && Array.isArray(video.segments)) {

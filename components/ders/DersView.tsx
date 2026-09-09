@@ -19,6 +19,7 @@ import {
   ThumbsDown,
   NotebookPen,
   Undo2,
+  Dices,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
@@ -52,27 +53,47 @@ const VERDICT_ICON: Record<Verdict, typeof CircleCheck> = {
   pas: MinusCircle,
 };
 
-export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
+export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: Props) {
   const { addToast } = useToast();
+
+  /**
+   * PRATİK MODU. Tekrar oturumları bir test değil, bitmeyen bir döngü: tek soru
+   * gelir, cevaplanır, "başka soru" denir, bir tane daha gelir. Bu yüzden burada
+   * ilerleme çubuğu ve "sonuçları gör" ile biten akış yok.
+   */
+  const pratik = oturum.tur === "tekrar";
+
+  /**
+   * Döngüde eklenen sorular. Sunucudan gelen liste bir prop olduğu için
+   * router.refresh() beklemek yerine yeni satırı doğrudan buraya ekliyoruz —
+   * böylece "başka soru" anında geçiyor, arada boş ekran olmuyor.
+   */
+  const [ekSorular, setEkSorular] = useState<DersQuestion[]>([]);
+  const sorular = useMemo(() => [...ilkSorular, ...ekSorular], [ilkSorular, ekSorular]);
+  const [soruGeliyor, setSoruGeliyor] = useState(false);
 
   const [cevaplar, setCevaplar] = useState<Map<string, DersAnswer>>(
     () => new Map(ilkCevaplar.map((c) => [c.question_id, c]))
   );
   const [mod, setMod] = useState<Mod>(() => {
+    // Pratikte özet ekranı yok — düğmeye basan zaten soru istiyor.
+    if (oturum.tur === "tekrar") return "soru";
     if (ilkCevaplar.length === 0) return "ozet";
-    return ilkCevaplar.length >= sorular.length ? "sonuc" : "soru";
+    return ilkCevaplar.length >= ilkSorular.length ? "sonuc" : "soru";
   });
   const [index, setIndex] = useState(() => {
     const cevaplananlar = new Set(ilkCevaplar.map((c) => c.question_id));
-    const i = sorular.findIndex((s) => !cevaplananlar.has(s.id));
-    return i === -1 ? 0 : i;
+    const i = ilkSorular.findIndex((s) => !cevaplananlar.has(s.id));
+    // Pratikte hepsi cevaplanmışsa sonuncuda kal; "başka soru" yenisini getirir.
+    if (i === -1) return oturum.tur === "tekrar" ? Math.max(0, ilkSorular.length - 1) : 0;
+    return i;
   });
 
   const [metin, setMetin] = useState("");
   const [secim, setSecim] = useState<number | null>(null);
   const [gonderiliyor, setGonderiliyor] = useState(false);
   const [isaretliler, setIsaretliler] = useState<Set<string>>(
-    () => new Set(sorular.filter((s) => s.flagged).map((s) => s.id))
+    () => new Set(ilkSorular.filter((s) => s.flagged).map((s) => s.id))
   );
   const [notKaydediliyor, setNotKaydediliyor] = useState(false);
   const [kaydedilenNot, setKaydedilenNot] = useState<string | null>(null);
@@ -83,6 +104,13 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
 
   const soru = sorular[index];
   const mevcutCevap = soru ? cevaplar.get(soru.id) : undefined;
+
+  /**
+   * Sorunun videosu. Tekrar oturumlarında sorular farklı derslerden geldiği için
+   * oturumun video_id'si soru düzeyinde geçerli değil; eski satırlarda soru
+   * düzeyinde video olmadığı için oturumunkine düşülüyor.
+   */
+  const soruVideosu = (s: DersQuestion) => s.video_id ?? oturum.video_id;
 
   /**
    * Çoktan seçmelide ablamın işaretlediği şıkkın indeksi; hiçbir şık
@@ -165,6 +193,35 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
       setMod("sonuc");
     } else {
       setIndex(index + 1);
+    }
+  };
+
+  /**
+   * Döngünün kendisi: kategoriden bir rastgele soru daha getirir ve ona geçer.
+   * Uç, eklenen satırı geri döndürüyor; sayfa yenilenmiyor.
+   */
+  const baskaSoru = async () => {
+    if (soruGeliyor) return;
+    setSoruGeliyor(true);
+    try {
+      const res = await fetch("/api/ders/tekrar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: oturum.id, adet: 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.hata ?? "Soru getirilemedi.");
+      const yeni = (data.sorular ?? []) as DersQuestion[];
+      if (!yeni.length) throw new Error("Bu kategoride başka soru kalmadı.");
+      setMetin("");
+      setSecim(null);
+      setEkSorular((e) => [...e, ...yeni]);
+      setIndex(sorular.length);
+      setMod("soru");
+    } catch (err) {
+      addToast((err as Error).message, "error");
+    } finally {
+      setSoruGeliyor(false);
     }
   };
 
@@ -515,7 +572,7 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
                       </p>
                     )}
                     <a
-                      href={videoLinki(oturum.video_id, s.start_seconds)}
+                      href={videoLinki(soruVideosu(s), s.start_seconds)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] text-[var(--accent)]/70 transition-colors hover:text-[var(--accent)]"
@@ -530,21 +587,30 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
           })}
         </div>
 
-        {notDugmesi("mt-6")}
+        {/* Ders notu YALNIZCA gerçek derste. Pratik oturumu birden çok dersten
+            soru taşıyor ve /api/ders/notes notu oturumun video_id'sinden üretiyor —
+            pratikte o alan rastgele bir kaynak videoyu gösterdiği için ortaya
+            "Tarih pratiği" başlıklı ama tek bir dersin içeriğini taşıyan bir not
+            çıkardı. Yani düğme sadece gereksiz değil, yanlış çalışıyordu. */}
+        {!pratik && notDugmesi("mt-6")}
 
         <div className="mt-2 flex gap-2">
-          <button
-            onClick={bastanBasla}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-4 py-3 text-[13px] text-white/65 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"
-          >
-            <RotateCcw size={14} />
-            Sorulara dön
-          </button>
+          {/* Pratikte "devam et" yok: bitiren bitirir, yeni pratik ders
+              listesindeki "Soru Gönder" ile baştan başlar. */}
+          {!pratik && (
+            <button
+              onClick={bastanBasla}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-4 py-3 text-[13px] text-white/65 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"
+            >
+              <RotateCcw size={14} />
+              Sorulara dön
+            </button>
+          )}
           <Link
             href="/ders"
             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 py-3 text-[13px] font-medium text-[var(--background)] transition-colors hover:bg-[var(--accent-light)]"
           >
-            Yeni ders
+            {pratik ? "Derslere dön" : "Yeni ders"}
             <ArrowRight size={14} />
           </Link>
         </div>
@@ -553,27 +619,68 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
   }
 
   // ---------------------------------------------------------------- soru
-  if (!soru) return kabuk(<p className="text-center text-white/40">Soru bulunamadı.</p>);
+  if (!soru) {
+    return kabuk(
+      <div className="flex flex-col items-center gap-3 py-10">
+        {soruGeliyor ? (
+          <>
+            <Loader2 size={20} className="animate-spin text-[var(--accent)]/60" />
+            <p className="text-[13px] text-white/40">Soru getiriliyor...</p>
+          </>
+        ) : (
+          <>
+            <p className="text-center text-[13px] text-white/40">Soru bulunamadı.</p>
+            {pratik && (
+              <button
+                onClick={baskaSoru}
+                className="flex items-center gap-2 rounded-xl border border-[var(--border)] px-4 py-2.5 text-[13px] text-white/65 transition-colors hover:border-[var(--border-hover)]"
+              >
+                <Dices size={14} />
+                Soru getir
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
 
   const verdict = mevcutCevap?.verdict as Verdict | undefined;
   const VerdictIkon = verdict ? VERDICT_ICON[verdict] : null;
 
   return kabuk(
     <div>
-      {/* İlerleme */}
+      {/* İlerleme — pratikte "kaçıncı soru" diye bir şey yok, sayaç var */}
       <div className="mb-6">
         <div className="mb-2 flex items-center justify-between text-[11.5px] text-white/35">
-          <span>
-            Soru {index + 1} / {sorular.length}
-          </span>
-          <span>{cevaplananSayisi} cevaplandı</span>
+          {pratik ? (
+            <>
+              <span className="flex items-center gap-1.5">
+                <Dices size={12} className="text-[var(--accent)]/60" />
+                {oturum.kategori ?? "Karışık"} pratiği
+              </span>
+              <span>
+                {cevaplananSayisi} soru çözüldü
+                {skor.toplam > 0 && ` · ${skor.dogru} doğru`}
+              </span>
+            </>
+          ) : (
+            <>
+              <span>
+                Soru {index + 1} / {sorular.length}
+              </span>
+              <span>{cevaplananSayisi} cevaplandı</span>
+            </>
+          )}
         </div>
-        <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.07]">
-          <div
-            className="h-full rounded-full bg-[var(--accent)]/70 transition-all duration-500"
-            style={{ width: `${((index + 1) / sorular.length) * 100}%` }}
-          />
-        </div>
+        {!pratik && (
+          <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.07]">
+            <div
+              className="h-full rounded-full bg-[var(--accent)]/70 transition-all duration-500"
+              style={{ width: `${((index + 1) / sorular.length) * 100}%` }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Soru kartı */}
@@ -736,7 +843,7 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
           )}
 
           <a
-            href={videoLinki(oturum.video_id, soru.start_seconds)}
+            href={videoLinki(soruVideosu(soru), soru.start_seconds)}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[var(--surface)] px-3 py-2 text-[12px] transition-colors hover:border-white/30"
@@ -745,13 +852,37 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
             Bu konu videonun {formatSure(soru.start_seconds)} anında anlatılıyor
           </a>
 
-          <button
-            onClick={sonraki}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-black/20 px-5 py-3 text-[13px] font-medium transition-colors hover:bg-[var(--surface-elevated)]"
-          >
-            {index + 1 >= sorular.length ? "Sonuçları gör" : "Sonraki soru"}
-            <ArrowRight size={14} />
-          </button>
+          {pratik ? (
+            // Döngü buradan dönüyor: her basışta kategoriden yeni bir rastgele soru
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={baskaSoru}
+                disabled={soruGeliyor}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/20 bg-black/20 px-5 py-3 text-[13px] font-medium transition-colors hover:bg-[var(--surface-elevated)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {soruGeliyor ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Dices size={14} />
+                )}
+                Başka soru
+              </button>
+              <button
+                onClick={() => setMod("sonuc")}
+                className="flex items-center justify-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-[13px] transition-colors hover:border-white/30"
+              >
+                Bitir
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={sonraki}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-black/20 px-5 py-3 text-[13px] font-medium transition-colors hover:bg-[var(--surface-elevated)]"
+            >
+              {index + 1 >= sorular.length ? "Sonuçları gör" : "Sonraki soru"}
+              <ArrowRight size={14} />
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -28,6 +28,8 @@ export interface AiViewOturum {
   created_at: string;
   status: string;
   video_id: string;
+  /** 'tekrar' oturumları üretilmedi, kopyalandı — denetim sekmesine girmezler */
+  tur?: string;
   denetim: DenetimOzeti | null;
 }
 
@@ -253,13 +255,17 @@ export default function AiView({ oturumlar, cevaplar, isaretliler }: Props) {
 
   const gosterilen = useMemo(
     () =>
-      hepsi
+      // Pratik oturumları denetim sekmesinde yok: onlarda üretim de denetim de
+      // olmadı, sorular mevcut derslerden kopyalandı. Listede görünselerdi
+      // "ayrıntılı kayıt eklenmeden önce üretilmiş" diye yanlış bir şey derlerdi.
+      (hepsi
         ? oturumlar
         : oturumlar.filter((o) =>
             (o.denetim?.adimlar ?? []).some(
               (a) => a.kayitlar.length > 0 || a.gecisler.some((g) => g.valf)
             )
-          ),
+          )
+      ).filter((o) => o.tur !== "tekrar"),
     [oturumlar, hepsi]
   );
 

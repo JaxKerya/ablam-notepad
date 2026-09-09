@@ -30,6 +30,9 @@ export async function gunlukLimitAsildiMi(): Promise<boolean> {
   const { count, error } = await supabase
     .from("ders_sessions")
     .select("id", { count: "exact", head: true })
+    // Yalnızca gerçek üretimler sayılıyor. Tekrar oturumları model çağırmıyor,
+    // maliyeti sıfır; sayıya katılsalardı 40 tekrar, ders üretimini kilitlerdi.
+    .eq("tur", "ders")
     .gte("created_at", gunBasi.toISOString());
 
   if (error) return false; // sayamıyorsak engelleme, sadece logla
