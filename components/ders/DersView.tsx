@@ -83,6 +83,23 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
 
   const soru = sorular[index];
   const mevcutCevap = soru ? cevaplar.get(soru.id) : undefined;
+
+  /**
+   * Çoktan seçmelide ablamın işaretlediği şıkkın indeksi; hiçbir şık
+   * işaretlenmediyse null.
+   *
+   * Burada `Number(user_answer)` DOĞRUDAN kullanılamaz: pas geçilen soruda
+   * user_answer null oluyor ve `Number(null)` JavaScript'te 0 — yani A şıkkı
+   * seçilmiş gibi görünüyordu. Ablam pas geçtiğinde altta "pas geçtin" yazarken
+   * A şıkkı kırmızı yanıyordu, sanki onu işaretleyip yanlış yapmış gibi.
+   */
+  const isaretlenenSik = (() => {
+    if (!mevcutCevap) return secim;
+    const ham = mevcutCevap.user_answer;
+    if (ham === null || ham === undefined || ham.trim() === "") return null;
+    const n = Number(ham);
+    return Number.isInteger(n) ? n : null;
+  })();
   const cevaplananSayisi = cevaplar.size;
 
   const skor = useMemo(() => skorHesapla([...cevaplar.values()]), [cevaplar]);
@@ -612,9 +629,7 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
         ) : (
           <div className="mt-4 space-y-2">
             {(soru.choices ?? []).map((sik, i) => {
-              const secili = mevcutCevap
-                ? Number(mevcutCevap.user_answer) === i
-                : secim === i;
+              const secili = isaretlenenSik === i;
               const dogruSik = !!mevcutCevap && soru.correct_index === i;
               return (
                 <button
