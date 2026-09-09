@@ -337,6 +337,28 @@ açmanız yeterli — ücretsiz katman ayda 100 transkript veriyor.
    TipTap belgesi olarak kaydedilir. Aynı kimlikte bir not zaten varsa içeriği önce
    saklanır: "geri al" o notu silmek yerine eski hâline döndürür.
 
+### Model yönergeleri nerede
+
+Bütün prompt'lar **`lib/prompts.ts`** içinde, her birinin altında neden öyle
+yazıldığını anlatan ölçüm notlarıyla. Route dosyaları yalnızca akışı taşır.
+
+Ayrı `.txt` dosyalarında tutulmuyorlar: yarısı çalışma anındaki değerlerle
+şablonlanan fonksiyon (`acikPrompt(adet)`, `coktanPrompt(adet, konular, ...)`),
+TypeScript şablonu bu işi derleme zamanı denetimiyle yapıyor — yer tutucu adı
+yanlış yazılırsa `tsc` söylüyor, `.txt`'de sessizce boş geçerdi. Ayrıca çalışma
+anında dosya okunmadığı için dağıtımda dosyanın pakete girip girmediği sorunu
+da yok.
+
+İki ders alındı ve ikisi de yorum olarak yazılı:
+
+- **Tutmayan kural zararsız değildir.** Açık uçlulardaki "tek konulu sor"
+  kuralı yasak listesi olarak yazılmıştı ve üretilen üç sorunun ikisi onu
+  çiğniyordu. Ölçülebilir bir yapı şartı (tek soru kelimesi, tek fiil) ve
+  gerçek hatalardan alınmış iyi/kötü örnek çiftleriyle değiştirilince tuttu.
+- **Bazen bozuk olan çıktı değil kuralın kendisidir.** Çoktan seçmelilerde
+  "...neyi gösterir" kalıbı yasaklıydı, model yasağı çiğniyordu ve çıkan
+  sorular iyiydi — çünkü o standart bir KPSS kalıbı. Kural kaldırıldı.
+
 ### Sağlayıcı notları
 
 Kod OpenAI uyumlu herhangi bir uca bağlanabilir; değişecek tek dosya `lib/ai.ts`.

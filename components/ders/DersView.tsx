@@ -278,9 +278,9 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
   };
 
   /**
-   * Not kaydetme düğmesi iki ekranda birden duruyor: derse başlamadan önce
-   * (özet ekranı) ve ders bittikten sonra (sonuç ekranı). İkincisi önemli —
-   * notu asıl isteyeceği an, soruları çözüp neyi bilmediğini gördükten sonra.
+   * Not kaydetme düğmesi yalnızca SONUÇ ekranında. Notu isteyeceği an, soruları
+   * çözüp neyi bilmediğini gördükten sonrasıdır; derse başlamadan önce sunmak
+   * hem erken hem de "kendini sına" düğmesiyle dikkat çekişiyordu.
    */
   const notDugmesi = (ekstraSinif = "") => (
     <button
@@ -375,8 +375,6 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
           Kendini sına
           <ArrowRight size={15} />
         </button>
-
-        {notDugmesi("mt-2")}
 
         <p className="mt-3 text-center text-[11.5px] text-white/30">
           {sorular.length} soru · her cevaptan sonra hemen geri bildirim alacaksın

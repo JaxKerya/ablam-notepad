@@ -4,38 +4,10 @@ import type { Segment, Verdict } from "@/lib/ders";
 import { hataCevabi, kapiKontrol } from "@/lib/ders-server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { cevresindekiBolum } from "@/lib/youtube";
+import { DEGERLENDIRME_PROMPT } from "@/lib/prompts";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
-
-// Bu prompt ölçülerek yazıldı. Önceki sürümde model "eksik" kademesini hiç
-// kullanmıyor, yarım doğru cevaplara "yanlis" veriyordu. Ayırt etme ölçütünün
-// tek soruya indirgenmesi ("yanlış mı söyledi, eksik mi bıraktı") 5 vakalık
-// testte isabeti 5/5'e çıkardı.
-const SISTEM = `Sen KPSS'ye hazırlanan bir öğrencinin açık uçlu cevabını değerlendiren bir öğretmensin.
-
-Sana dersin ilgili bölümü, soru, beklenen cevap ve kilit kavramlar veriliyor.
-
-Temel kurallar:
-- ANLAM doğruysa doğrudur; cevabın kelimesi kelimesine aynı olması gerekmez.
-- Yazım ve imla hatalarını asla cezalandırma.
-
-Üç kademe var ve "eksik" kademesini gerçekten kullan:
-- "dogru"  : Beklenen cevabın ANA FİKRİNİ veriyor. Örnek vermemiş olması ya da daha kısa
-             anlatmış olması doğruluğu bozmaz.
-- "eksik"  : Söyledikleri DOĞRU ama yetersiz. Beklenen cevabın istediği parçalardan birini
-             atlamış, ya da iki yönlü bir soruda tek yönü cevaplamış.
-- "yanlis" : Yanlış bilgi veriyor, kavramları birbirine karıştırıyor, konuyla ilgisiz,
-             ya da boş / "bilmiyorum" türünde.
-
-Ayırt etme ölçütü şu tek soru: öğrenci YANLIŞ bir şey mi söyledi, yoksa EKSİK mi bıraktı?
-Yanlış bir şey söylemediyse ve ana fikir doğruysa asla "yanlis" verme — "eksik" ya da "dogru" ver.
-
-Geri bildirimi öğrenciye doğrudan hitap ederek yaz (sen dili), 2-3 cümle, dürüst ama cesaret
-kırmayan bir tonda. Eksik ya da yanlışsa doğrusunu kısaca söyle.
-
-SADECE geçerli JSON döndür, kod bloğu işareti kullanma:
-{"sonuc": "dogru | eksik | yanlis", "geri_bildirim": "...", "eksik_kavramlar": ["..."]}`;
 
 interface Degerlendirme {
   sonuc?: string;
@@ -151,7 +123,7 @@ export async function POST(request: Request) {
 
       const sonuc = await chatJson<Degerlendirme>({
         mesajlar: [
-          { role: "system", content: SISTEM },
+          { role: "system", content: DEGERLENDIRME_PROMPT },
           {
             role: "user",
             content: [

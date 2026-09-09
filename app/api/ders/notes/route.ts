@@ -5,6 +5,7 @@ import type { DersNotIcerigi, NotBolumu, NotTerimi, Segment } from "@/lib/ders";
 import { hataCevabi, kapiKontrol } from "@/lib/ders-server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { damgaBelirle, kelimeDizini, transkriptMetni } from "@/lib/youtube";
+import { NOT_OLGU_DENETIMI, NOT_PROMPT } from "@/lib/prompts";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -17,93 +18,6 @@ export const maxDuration = 300;
 // Üretilen not oturuma yazılıyor (ders_sessions.notlar). Kolon yoksa istek yine
 // çalışır, sadece her kaydetmede yeniden üretilir — SQL'i çalıştırmayı unutmak
 // özelliği bozmasın diye.
-
-const NOT_PROMPT = `Sen bir ders videosunun transkriptinden ÇALIŞMA NOTU çıkaran bir asistansın.
-
-Transkript YouTube'un otomatik altyazısından geliyor:
-- İmla hataları, bozuk özel isimler ve yanlış yazılmış terimler içerebilir.
-- Eğitmenin tahtaya yazdıkları metinde görünmez.
-
-Bu bir ÖZET DEĞİL, ÇALIŞMA NOTU. Öğrenci sınav öncesi bu nota bakıp konuyu hatırlayabilmeli.
-
-BİÇİM — kısa tut, göz yormasın:
-- Maddeler CÜMLE DEĞİL, NOT olsun. "Şehzadeler sancağa gönderilmemeye başlandı ve sarayda
-  kafes denilen bölümde tutuldu" değil; "Sancak yerine kafes: şehzade sarayda tutuluyor" gibi.
-- Her madde en fazla 15 kelime ve TEK bir bilgi taşısın.
-- Her bölümde 3-6 madde olsun; daha fazlasına bölme, önemsizi at.
-- Bölüm sayısını ders belirlesin, 4-8 arası doğaldır.
-- Başlıklar kısa olsun (2-5 kelime).
-
-VURGULAMA — notun asıl işi bu, öğrenci sayfaya bakınca ezberleyeceğini görsün.
-Üç işaret var, her biri bir renge dönüşüyor:
-- [t]...[/t]  tarih, sayı, süre, yüzde     -> "[t]1683[/t] Viyana Kuşatması"
-- [i]...[/i]  kişi, yer, kurum, eser adı   -> "[i]Kösem Sultan[/i] yönetimde etkili"
-- [k]...[/k]  dersin anahtar kavramı       -> "Tımar bozulunca [k]iltizam[/k] yayıldı"
-
-Vurgulama kuralları:
-- SADECE ezberlenecek parçayı işaretle, cümlenin tamamını değil. Vurgu 1-3 kelime olsun.
-- Bir maddede en fazla 2 vurgu olsun. Her şey vurguluysa hiçbir şey vurgulu değildir.
-- [k] YALNIZCA aşağıdaki "terimler" listesine koyacağın kavramlar için kullanılır.
-  Vurguladığın kavramlarla sözlüğün aynı küme olmalı. "israf", "rüşvet", "liyakat" gibi
-  sıradan kelimeleri [k] ile işaretleme — onlar kavram değil.
-- İşaretleri her zaman kapat; açtığın etiketle aynısıyla kapat ([t]...[/t]).
-- Vurgu işaretleri yalnızca "maddeler" içinde kullanılır; başlıkta, girişte ve
-  terim açıklamalarında KULLANMA.
-
-İÇERİK:
-- Somut ol: tarihleri, isimleri, sayıları, kavramları yaz.
-- Neden-sonuç ilişkilerini koru: ne, neden oldu; neye yol açtı.
-- Dersin kendi anlatım sırasını koru.
-- Derste geçmeyen hiçbir bilgiyi ekleme; kendi bilgini karıştırma.
-- Bir sayıdan ya da özel isimden emin değilsen o ayrıntıyı yazma.
-
-"saniye": o bölümün videoda anlatılmaya BAŞLADIĞI an (transkriptteki [dk:sn] işaretinden).
-"giris": tek cümle, dersin ne anlattığı.
-"terimler": derste TANIMI VERİLEN kavramlar, en fazla 8 tane, açıklaması tek cümle.
-Herkesin bildiği kelimeleri (ziraat, zanaat gibi) yazma. Böyle kavram yoksa boş bırak.
-
-TEKRAR ETME: Sözlükte tanımladığın bir kavramı maddede yeniden TANIMLAMA. Madde o kavramın
-ne yaptığını, neye yol açtığını ya da neyle ilişkili olduğunu söylesin; tanım sözlükte kalsın.
-Yanlış: "[k]Büyük Kaçgun[/k]: halkın köyleri bırakıp şehirlere göçmesi" (bu zaten sözlükte)
-Doğru:  "[k]Büyük Kaçgun[/k] köyleri boşalttı, tımar geliri kesildi"
-
-Şema:
-{
-  "giris": "tek cümle",
-  "bolumler": [{"baslik": "kısa başlık", "maddeler": ["...", "..."], "saniye": 123}],
-  "terimler": [{"terim": "...", "aciklama": "tek cümle"}]
-}
-
-SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti kullanma.`;
-
-// Notun olgu denetimi. Sorulardaki denetimin (bkz. generate/route.ts) not
-// karşılığı; paylaşılmıyor çünkü denetlenen birim farklı — orada bir sorunun
-// cevap parçaları, burada tek tek maddeler.
-//
-// Not, soruya göre DAHA yüksek riskli: soru bir kez cevaplanıp geçiliyor, not
-// ezberleniyor. Bozuk bir altyazı tarihi ("1453" yerine "1683") nota girerse
-// ablam onu öğreniyor. Denetim ucuz modelle tek çağrı, ~5 saniye.
-const OLGU_DENETIMI = `Sen bir KPSS ders notu olgu denetçisisin. Sana bir dersten çıkarılmış
-not maddeleri veriliyor. Görevin: maddede GERÇEKTE YANLIŞ olan bir bilgi var mı bulmak.
-
-Bu notlar ders videolarının otomatik altyazısından üretiliyor. Öğretmen doğru söylemiş olsa
-bile altyazı tarihleri, sayıları ve özel isimleri bozabiliyor. En sık bozulan yerler bunlardır.
-
-Kurallar:
-- Tarihler, kişi adları, yer adları ve sayılar özellikle şüpheli noktalardır.
-- Yalnızca gerçekten yanlış olduğundan EMİN olduğun maddeleri bildir.
-- Eksik ya da basitleştirilmiş anlatım yanlış DEĞİLDİR; bildirme.
-- Yorum farkı ya da üslup yanlış DEĞİLDİR; bildirme.
-- ŞÜPHE YETERLİ DEĞİLDİR. Emin değilsen bildirme. Boş liste dönmek tamamen normaldir.
-
-Maddelerde [t]...[/t], [i]...[/i], [k]...[/k] biçiminde vurgu işaretleri var.
-Düzeltilmiş metinde bu işaretleri AYNEN KORU, yerlerini değiştirme.
-
-Her hata için maddenin DÜZELTİLMİŞ tam hâlini yaz: yalnızca hatalı bilgiyi düzelt,
-maddenin geri kalanını olduğu gibi bırak.
-
-SADECE geçerli JSON döndür, kod bloğu işareti kullanma:
-{"hatalar": [{"no": 3, "gerekce": "1683 değil 1453", "duzeltilmis": "..."}]}`;
 
 interface DenetimYaniti {
   hatalar?: { no?: unknown; gerekce?: unknown; duzeltilmis?: unknown }[];
@@ -128,7 +42,7 @@ async function maddeleriDenetle(
   try {
     yanit = await chatJson<DenetimYaniti>({
       mesajlar: [
-        { role: "system", content: OLGU_DENETIMI },
+        { role: "system", content: NOT_OLGU_DENETIMI },
         { role: "user", content: maddeler.map((m, i) => `${i + 1}. ${m}`).join("\n") },
       ],
       maxTokens: 8000,

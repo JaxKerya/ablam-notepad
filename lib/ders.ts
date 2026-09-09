@@ -181,6 +181,38 @@ export interface DersNotIcerigi {
   terimler: NotTerimi[];
 }
 
+/**
+ * Şık metninin başındaki harf önekini temizler: "A) İltizam" -> "İltizam".
+ *
+ * Arayüz şıkları kendisi A-E diye harfliyor. Prompt'ta şık sayısını beşe
+ * çıkarıp harfleri (A, B, C, D, E) açıkça yazınca model harfleri şık
+ * METNİNE de koymaya başladı ve ekranda "A) A) İltizam" çıktı. Prompt'a
+ * yasak eklendi ama tek başına ona güvenmiyoruz — bu oturumda tutmayan
+ * prompt kuralı gördük, ucuz olan yerde kural kodda dursun.
+ */
+export function sikOnekiniAt(sik: string): string {
+  // Sınıf bilerek DAR: yalnızca A-E. Türkçe harfleri de kapsasaydı
+  // "İ. Ahmed dönemi" gibi bir şık "Ahmed dönemi"ne kırpılırdı. Roma
+  // rakamları (I., II., IV., V.) zaten A-E dışında kaldığı için güvende.
+  return sik.replace(/^[A-Ea-e][)\.\-:]\s*/, "").trim();
+}
+
+/**
+ * Açıklamanın başındaki hüküm sözünü atar: "Doğru! Avarız..." -> "Avarız...".
+ *
+ * Açıklama, öğrencinin cevabından BAĞIMSIZ olarak üretim sırasında yazılıyor;
+ * hükmü ise grade ucu cevaba bakarak veriyor. Model açıklamayı hüküm sözüyle
+ * başlatınca ikisi çakışıyor ve YANLIŞ cevap veren öğrenci
+ * "Doğru cevap B) ... Doğru! ..." okuyor. Ölçüldü: açıklamaların %26'sı böyle
+ * başlıyordu. Prompt'a yasak eklendi, ama tek başına ona güvenmiyoruz.
+ */
+export function hukumOneksizAciklama(aciklama: string): string {
+  const sade = aciklama
+    .replace(/^(doğru|yanlış|evet|hayır|tebrikler|maalesef)\s*[!.,;:—-]+\s*/i, "")
+    .trim();
+  return sade ? sade[0].toLocaleUpperCase("tr") + sade.slice(1) : aciklama;
+}
+
 // --- Vurgu renkleri ---------------------------------------------------------
 
 /**

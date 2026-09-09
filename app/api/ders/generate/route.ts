@@ -1,9 +1,22 @@
 import { NextResponse } from "next/server";
 import { chatJson } from "@/lib/ai";
-import { EN_AZ_SORU, hedefSoruSayisi, type Segment } from "@/lib/ders";
+import {
+  EN_AZ_SORU,
+  hedefSoruSayisi,
+  hukumOneksizAciklama,
+  sikOnekiniAt,
+  type Segment,
+} from "@/lib/ders";
 import { gunlukLimitAsildiMi, hataCevabi, kapiKontrol } from "@/lib/ders-server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { damgaBelirle, kelimeDizini, transkriptMetni } from "@/lib/youtube";
+import {
+  acikPrompt,
+  coktanPrompt,
+  SIK_SAYISI,
+  SORU_OLGU_DENETIMI,
+  SORU_TRANSKRIPT_DENETIMI,
+} from "@/lib/prompts";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -17,114 +30,10 @@ export const maxDuration = 300;
 //   adim "acik"   -> oturumu açar, özet + konular + açık uçlu sorular
 //   adim "coktan" -> çoktan seçmelileri ekler, oturumu "hazir" yapar
 
-const ORTAK_KURALLAR = `Sana bir ders videosunun transkripti veriliyor. Transkript YouTube'un otomatik
-altyazısından geliyor:
-- İmla hataları, bozuk özel isimler ve yanlış yazılmış terimler içerebilir.
-- Eğitmenin tahtaya yazdıkları metinde görünmez ("burayı şöyle yazalım" gibi ifadeler boş kalır).
-
-Bu yüzden: EMİN OLMADIĞIN bir ayrıntıdan soru sorma. Sadece transkriptte açıkça ve tekrar tekrar
-anlatılan, anlamı net olan konulardan soru üret. Sayılar ve özel isimler şüpheliyse o noktadan
-soru sorma.
-
-"saniye" alanı, o sorunun cevabının videoda anlatıldığı anı gösterir (transkriptteki [dk:sn]
-işaretinden hesapla).
-
-SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti kullanma.`;
-
-const acikPrompt = (adet: number) =>
-  `Sen KPSS'ye hazırlanan bir öğrenciye ders videosundan ölçme soruları hazırlayan bir eğitmensin.
-
-${ORTAK_KURALLAR}
-
-Şema:
-{
-  "baslik": "dersin kısa başlığı",
-  "ozet": "3-4 cümlelik ders özeti",
-  "konular": ["ana konu 1", "ana konu 2"],
-  "acik_uclu": [
-    {"soru": "...", "anahtar": "beklenen cevap, 2-3 cümle",
-     "kilit_kavramlar": ["kavram1", "kavram2"], "konu": "hangi ana konu", "saniye": 123}
-  ]
-}
-
-SORULARIN ZORLUĞU — gerçek KPSS seviyesinde olsun, ama DOLAMBAÇLI olmasın. Zorluk sorunun
-derinliğinden gelsin, kaç parçadan oluştuğundan değil:
-- TEK KONULU sor. "X ile Y'yi karşılaştırınız", "hem ... hem ...", "üç yönüyle değerlendiriniz"
-  gibi birden çok şeyi aynı anda isteyen kalıplar KULLANMA. Öğrenci neyin sorulduğunu okur
-  okumaz anlamalı.
-- Soru kökü tek cümle ve net olsun; uzun senaryolu kurgu yazma.
-- Ezber sorusu da sorma. Yalın tanım istemek yerine anlayıp anlamadığını gösterecek şekilde
-  sor: neden böyle olduğu, nasıl işlediği, hangi sonucu doğurduğu.
-- Beklenen cevap 2-3 cümle olsun — ne tek kelimelik ne de kompozisyon.
-- Cevap derste anlatılanlara dayansın; derste hiç geçmemiş bir bilgiyi çıkarmasını isteme.
-
-SORU SAYISI — en fazla ${adet} açık uçlu soru üret:
-- Bu bir ÜST SINIR, doldurulması zorunlu bir kota değil. Ders bu kadar soruyu taşımıyorsa daha
-  az üret. Sayıyı tutturmak için zayıf, tekrar eden ya da transkriptte net anlatılmayan konudan
-  soru üretme — az ama sağlam soru, çok ama gevşek sorudan iyidir.
-- Soruları derste anlatılan farklı ana konulara yay; tek konudan üst üste sorma.
-- İki soru aynı bilgiyi ölçmesin.`;
-
-const coktanPrompt = (adet: number, konular: string[], acikSorular: string[]) =>
-  `Sen KPSS'ye hazırlanan bir öğrenciye ders videosundan ÇOKTAN SEÇMELİ sorular hazırlayan bir
-eğitmensin.
-
-BU BÖLÜMÜN AMACI: gerçek sınav pratiği. Sorular GERÇEK KPSS ZORLUĞUNDA olsun — ne
-ezber sorusu kadar kolay, ne de bilmece gibi karmaşık.
-
-- Zorluk ÇELDİRİCİLERDEN gelsin, soru kökünün karmaşıklığından değil. İyi bir çeldirici,
-  konuyu yarım bilen birinin seçebileceği şeydir; bariz saçma şık soruyu değersizleştirir.
-- Soru TEK ODAKLI olsun: tek bir kavramı, olayı ya da ayrımı sınasın. İki üç şeyi aynı anda
-  ölçmeye çalışma.
-- Çok adımlı çıkarım zinciri kurma. Şu kalıplardan kaçın: "...ortak amacı nedir",
-  "...neyi gösterir", "hangi stratejik düşünceyle", uzun senaryolu neden-sonuç kurguları.
-- Soru kökü tek cümle, en fazla iki satır olsun. Uzun paragraflı kök yazma.
-- "Aşağıdakilerden hangisi ... değildir/yer almaz" gibi klasik KPSS kalıplarını kullanabilirsin.
-- Kavramların birbirine karıştığı noktaları hedefle — sınavda ayırt edilmesi gereken yerler
-  oralardır.
-- Tek doğru cevap net olsun; iki şık birden savunulabilir olmasın.
-
-${ORTAK_KURALLAR}
-
-Şema:
-{
-  "coktan_secmeli": [
-    {"soru": "...", "secenekler": ["A şıkkı", "B şıkkı", "C şıkkı", "D şıkkı"],
-     "dogru": 0, "aciklama": "neden doğru", "konu": "...", "saniye": 123}
-  ]
-}
-
-"aciklama" alanı öğrenciye DOĞRUDAN GERİ BİLDİRİM olarak gösterilecek. Bu yüzden ansiklopedi
-maddesi gibi değil, öğrenciye hitap ederek yaz (sen dili), 1-2 cümle, sıcak ama dürüst bir tonda.
-Neden o şıkkın doğru olduğunu açıkla. "...değerlendirilmiştir", "...açıklanmıştır" gibi edilgen
-ve kişisiz yapılar kullanma.
-
-SORU SAYISI — en fazla ${adet} çoktan seçmeli soru üret. Bu bir ÜST SINIR; ders taşımıyorsa daha
-az üret, sayıyı doldurmak için zayıf soru üretme.
-
-Dersin ana konuları: ${konular.join(", ") || "(belirtilmedi)"}
-Soruları bu konulara yay, tek konuda yığılma.
-
-Bu öğrenciye AYNI derste şu açık uçlu sorular zaten soruldu. Aynı bilgiyi tekrar ölçme, farklı
-noktalara odaklan:
-${acikSorular.map((s, i) => `${i + 1}. ${s}`).join("\n") || "(yok)"}`;
-
 /**
- * İki denetim katmanı, tek ortak mekanizma.
- *
- * Bu sistemin en büyük riski yanlış bir cevap anahtarı: ablama doğrudan yanlış
- * bilgi öğretir ve değerlendirici de o anahtara baktığı için doğru cevabına
- * "yanlış" der — hata çoğalarak ilerler. Üretim modelinin kendi çıktısını
- * denetlemesi zayıf kalacağı için ayrı ve ucuz bir modelle, tek çağrıda, bütün
- * sorular birden denetleniyor.
- *
- *   1. TRANSKRİPT denetimi — bu iddia derste var mı?
- *   2. OLGU denetimi       — bu iddia gerçekte doğru mu?
- *
- * İkinci katman birincinin tanımı gereği göremediği hata sınıfı için: hoca
- * "1453" der, otomatik altyazı "1683" yazar, üretim modeli transkripte sadık
- * kalıp onu tekrarlar. İddia transkriptle TUTARLI olduğu için birinci katman
- * geçirir; ikinci katman transkripte hiç bakmadan yakalar.
+ * Denetim bulgularının UYGULANMASI. Denetim yönergelerinin kendisi ve iki
+ * katmanın neden ayrı olduğu lib/prompts.ts'te (SORU_TRANSKRIPT_DENETIMI,
+ * SORU_OLGU_DENETIMI); burada yalnızca bulguyla ne yapıldığı var.
  *
  * ELEME SON ÇARE. Bir soruyu atmak ablamı bir soru eksik bırakır; oysa çoğu
  * durumda bozuk olan soru değil, içindeki tek bir değer. O yüzden varsayılan
@@ -134,52 +43,6 @@ ${acikSorular.map((s, i) => `${i + 1}. ${s}`).join("\n") || "(yok)"}`;
  *   - Çoktan seçmelide düzeltilmiş şık başka bir şıkla çakışıyor; soru artık
  *     iki doğru cevaplı olur, kurtarılamaz.
  */
-
-const DENETIM_ORTAK = `Her sorunun cevabı iki parçadan oluşabilir ve hangi parçada sorun olduğunu
-belirtmen gerekir:
-- Açık uçlu sorularda tek parça vardır: "anahtar" (beklenen cevap).
-- Çoktan seçmeli sorularda iki parça vardır: "sik" (doğru şıkkın metni) ve "aciklama".
-
-Her bulduğun sorun için o parçanın DÜZELTİLMİŞ tam hâlini de yaz: yalnızca hatalı bilgiyi
-düzelt, metnin geri kalanını olduğu gibi koru.
-
-ŞÜPHE YETERLİ DEĞİLDİR. Emin değilsen bildirme. Boş liste dönmek tamamen normaldir.
-
-SADECE geçerli JSON döndür, kod bloğu işareti kullanma.`;
-
-const TRANSKRIPT_DENETIMI = `Sen bir ders materyali denetçisisin. Elinde bir dersin transkripti ve
-o dersten üretilmiş sorular var. Görevin: cevapta derste HİÇ GEÇMEYEN ya da derste söylenenle
-ÇELİŞEN bir iddia olup olmadığını bulmak.
-
-İki tür sorun ayırt et:
-- "yok"     : Ders bu konuyu hiç anlatmamış. Bilgi doğru olsa bile derste geçmiyor.
-- "celiski" : Ders bu konuyu anlatmış ama BAŞKA türlü söylüyor.
-
-Kurallar:
-- Aynı şeyin farklı kelimelerle ifade edilmesi sorun DEĞİLDİR.
-- Derste kısaca değinilen bir konunun cevapta biraz ayrıntılandırılması sorun DEĞİLDİR.
-- Sorunun zor ya da kötü kurulmuş olması senin işin değil; sadece içeriğe bak.
-- "celiski" için düzeltilmiş metin DERSİN SÖYLEDİĞİNE uymalı, kendi bilgine değil.
-
-${DENETIM_ORTAK}
-
-{"sorunlular": [{"no": 1, "tur": "celiski", "nerede": "anahtar", "gerekce": "derste 1453 deniyor", "duzeltilmis": "..."}]}`;
-
-const OLGU_DENETIMI = `Sen bir KPSS ders materyali olgu denetçisisin. Sana soru–cevap çiftleri
-veriliyor. Görevin: cevapta GERÇEKTE YANLIŞ olan bir bilgi var mı bulmak.
-
-Bu materyal ders videolarının otomatik altyazısından üretiliyor. Öğretmen doğru söylemiş olsa
-bile altyazı tarihleri, sayıları ve özel isimleri bozabiliyor. En sık bozulan yerler bunlardır.
-
-Kurallar:
-- Tarihler, kişi adları, yer adları ve sayılar özellikle şüpheli noktalardır.
-- Yalnızca gerçekten yanlış olduğundan EMİN olduğun bilgileri bildir.
-- Eksik ya da basitleştirilmiş anlatım yanlış DEĞİLDİR; bildirme.
-- Yorum farkı yanlış DEĞİLDİR; bildirme.
-
-${DENETIM_ORTAK}
-
-{"hatalar": [{"no": 1, "nerede": "anahtar", "gerekce": "1683 değil 1453", "duzeltilmis": "..."}]}`;
 
 type Nerede = "anahtar" | "sik" | "aciklama";
 
@@ -386,26 +249,39 @@ function acikDogrula(ham: UretilenAcik[], adet: number, sure: number, dizin: Diz
 }
 
 function coktanDogrula(ham: UretilenCoktan[], adet: number, sure: number, dizin: Dizin) {
-  return (ham ?? [])
-    .filter((s) => {
-      const sec = dizi(s.secenekler);
-      return (
-        metin(s.soru) &&
-        sec.length >= 2 &&
-        typeof s.dogru === "number" &&
-        s.dogru >= 0 &&
-        s.dogru < sec.length
-      );
-    })
+  const gelen = ham ?? [];
+  const gecerli = gelen.filter((s) => {
+    const sec = dizi(s.secenekler);
+    return (
+      metin(s.soru) &&
+      // KPSS beş şıklıdır; eksik ya da fazla şıklı soru sınav pratiği sayılmaz.
+      // Arayüz de şıkları A-E diye harfliyor, altıncısı harfsiz kalırdı.
+      sec.length === SIK_SAYISI &&
+      typeof s.dogru === "number" &&
+      s.dogru >= 0 &&
+      s.dogru < sec.length
+    );
+  });
+
+  // Şık sayısı şartı yeni; kaç soruyu düşürdüğü görünmezse soru sayısındaki
+  // düşüş sebebi bilinmez kalır. Sessiz kayıp bırakmıyoruz.
+  if (gecerli.length < gelen.length) {
+    console.warn(
+      `[ders] ${gelen.length - gecerli.length} çoktan seçmeli elendi ` +
+        `(şık sayısı ${SIK_SAYISI} değil ya da doğru şık geçersiz)`
+    );
+  }
+
+  return gecerli
     .slice(0, adet)
     .map((s) => ({
       kind: "coktan" as const,
       question: metin(s.soru),
       answer_key: null,
       key_points: [] as string[],
-      choices: dizi(s.secenekler),
+      choices: dizi(s.secenekler).map(sikOnekiniAt),
       correct_index: s.dogru!,
-      explanation: metin(s.aciklama) || null,
+      explanation: metin(s.aciklama) ? hukumOneksizAciklama(metin(s.aciklama)) : null,
       topic: metin(s.konu) || null,
       start_seconds: damgaBelirle(
         [metin(s.soru), dizi(s.secenekler).join(" "), metin(s.aciklama)].join(" "),
@@ -552,10 +428,10 @@ export async function POST(request: Request) {
       let acik = acikDogrula(uretilen.acik_uclu ?? [], hedef.acik, sure, dizin);
       acik = acikUygula(
         acik,
-        await denetimCalistir(TRANSKRIPT_DENETIMI, acik.map(girdi), transkript),
+        await denetimCalistir(SORU_TRANSKRIPT_DENETIMI, acik.map(girdi), transkript),
         ozet
       );
-      acik = acikUygula(acik, await denetimCalistir(OLGU_DENETIMI, acik.map(girdi)), ozet);
+      acik = acikUygula(acik, await denetimCalistir(SORU_OLGU_DENETIMI, acik.map(girdi)), ozet);
       if (ozet.notlar.length) console.warn("[ders] denetim (açık uçlu):", ozet.notlar);
 
       const { data: oturum, error: oturumHatasi } = await supabase
@@ -650,10 +526,10 @@ export async function POST(request: Request) {
       let coktan = coktanDogrula(uretilen.coktan_secmeli ?? [], hedef.coktan, sure, dizin);
       coktan = coktanUygula(
         coktan,
-        await denetimCalistir(TRANSKRIPT_DENETIMI, coktan.map(girdi), transkript),
+        await denetimCalistir(SORU_TRANSKRIPT_DENETIMI, coktan.map(girdi), transkript),
         ozet
       );
-      coktan = coktanUygula(coktan, await denetimCalistir(OLGU_DENETIMI, coktan.map(girdi)), ozet);
+      coktan = coktanUygula(coktan, await denetimCalistir(SORU_OLGU_DENETIMI, coktan.map(girdi)), ozet);
       if (ozet.notlar.length) console.warn("[ders] denetim (çoktan seçmeli):", ozet.notlar);
 
       if (coktan.length) {
