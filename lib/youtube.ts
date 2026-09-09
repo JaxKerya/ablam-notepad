@@ -305,9 +305,21 @@ export function cevresindekiBolum(
 // süresini 2-15 kat aştı. Bu değeri kırpmak hatayı gizliyor (link videonun
 // sonuna gidiyor), düzeltmiyor.
 //
-// Çözüm: modele hiç güvenmeden, sorunun kavramlarının transkriptte en yoğun
-// geçtiği anı kendimiz buluyoruz. Böylece damga doğruluğu model seçiminden
-// bağımsız hale geliyor.
+// Çözüm bir GÜVENLİK AĞI: sorunun kavramlarının transkriptte en yoğun geçtiği
+// anı kendimiz hesaplıyoruz, ama modelin değerini otomatik olarak atmıyoruz —
+// makul olduğu sürece (kendi tepemizin %75'i kadar skor alıyorsa) onu
+// kullanıyoruz. Yani mekanizma modelin değerini DEĞİŞTİREN değil, ONAYLAYAN
+// bir süzgeç; yalnızca değer bariz biçimde kötüyse devreye giriyor.
+//
+// Ölçüldü (gerçek bir ders, 11 soru, üretim modeli sol): 11'inde de modelin
+// değeri kabul edildi, hesabımız hiç devreye girmedi. Yani sağlam bir modelle
+// süzgeç sessizce bekliyor; sonuç doğruluğunu model sağlıyor, süzgeç yalnızca
+// felaketi engelliyor. Bunu "damga modelden alınmıyor" diye anlatmak yanlış
+// olur.
+//
+// Süzgeç devreye girdiğinde iyi bir değer koyabilsin diye dolgu kelimeleri
+// diziden atılıyor (bkz. kelimeDizini): atılmazsa hocanın bütün konuları
+// önizlediği giriş bölümü her soru için en yoğun an gibi görünüyor.
 
 const TR_HARFLER: Record<string, string> = {
   ç: "c", ğ: "g", ı: "i", ö: "o", ş: "s", ü: "u",
@@ -320,7 +332,36 @@ export function icerikKelimeleri(metin: string): Set<string> {
   return new Set(sade.match(/[a-z]{5,}/g) ?? []);
 }
 
-/** kelime -> transkriptte geçtiği saniyeler. Video başına bir kez kurulur. */
+/**
+ * Bir kelimenin "her yerde geçiyor" sayılması için gereken pencere oranı.
+ *
+ * Değer taranarak seçildi (gerçek bir ders, 11 soru; ölçüt: hesaplanan tepenin
+ * modelin değerine ortalama uzaklığı):
+ *   süzgeç yok  3,7 dk | 0,5 -> 3,6 | 0,4 -> 3,5 | 0,3 -> 2,2 | 0,2 -> 1,5 | 0,12 -> 7,4
+ * 0,2-0,3 aralığı bir plato, 0,12 uçurum (anlamlı kelimeler de atılıyor).
+ * Ortasını aldık.
+ *
+ * SINIRLARI: tek video, n=11, ve hedef ölçüt "modelin değerine yakınlık" —
+ * gerçek doğruluk değil, vekil bir ölçüt. Bu yüzden platonun en iyi noktasına
+ * değil ortasına oturtuldu. Elde 10-20 ders birikince yeniden taranmalı.
+ */
+const DOLGU_ESIGI = 0.25;
+const PENCERE = 180; // saniye — damga aramasındaki ±90'lık pencereyle aynı
+
+/**
+ * kelime -> transkriptte geçtiği saniyeler. Video başına bir kez kurulur.
+ *
+ * Videonun pencerelerinin yarısından fazlasında geçen kelimeler ATILIYOR.
+ * icerikKelimeleri 5+ harfli her kelimeyi alıyor; bu, konuşma dilindeki
+ * dolguları da içeriye sokuyor. Gerçek bir derste ölçüldü: "şimdi", "mesela",
+ * "böyle", "burada", "tamam", "zaten", "osmanlı" gibi 15 kelime videonun
+ * %50'sinden fazlasında geçiyordu. Bunlar kalınca, hocanın bütün konu
+ * başlıklarını önizlediği GİRİŞ bölümü her soru için en yoğun an gibi
+ * görünüyor: ölçümde bir sorunun hesaplanan tepesi 2:30 çıktı, doğrusu 26:43'tü.
+ *
+ * Liste elle tutulmuyor, her video için kendi metninden çıkarılıyor — ders
+ * konusu değişince kendiliğinden uyum sağlıyor.
+ */
 export function kelimeDizini(segments: Segment[]): Map<string, number[]> {
   const dizin = new Map<string, number[]>();
   for (const s of segments) {
@@ -333,6 +374,15 @@ export function kelimeDizini(segments: Segment[]): Map<string, number[]> {
         dizin.set(k, [sn]);
       }
     }
+  }
+
+  const son = segments.length
+    ? Math.round((segments[segments.length - 1].o + segments[segments.length - 1].d) / 1000)
+    : 0;
+  const toplamPencere = Math.max(1, Math.ceil(son / PENCERE));
+  for (const [kelime, yerler] of dizin) {
+    const pencereler = new Set(yerler.map((sn) => Math.floor(sn / PENCERE)));
+    if (pencereler.size / toplamPencere > DOLGU_ESIGI) dizin.delete(kelime);
   }
   return dizin;
 }

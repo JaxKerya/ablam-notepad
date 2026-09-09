@@ -4,6 +4,7 @@ import {
   EN_AZ_SORU,
   hedefSoruSayisi,
   hukumOneksizAciklama,
+  siklariKaristir,
   sikOnekiniAt,
   type Segment,
 } from "@/lib/ders";
@@ -274,22 +275,26 @@ function coktanDogrula(ham: UretilenCoktan[], adet: number, sure: number, dizin:
 
   return gecerli
     .slice(0, adet)
-    .map((s) => ({
-      kind: "coktan" as const,
-      question: metin(s.soru),
-      answer_key: null,
-      key_points: [] as string[],
-      choices: dizi(s.secenekler).map(sikOnekiniAt),
-      correct_index: s.dogru!,
-      explanation: metin(s.aciklama) ? hukumOneksizAciklama(metin(s.aciklama)) : null,
-      topic: metin(s.konu) || null,
-      start_seconds: damgaBelirle(
-        [metin(s.soru), dizi(s.secenekler).join(" "), metin(s.aciklama)].join(" "),
-        dizin,
-        s.saniye,
-        sure
-      ),
-    }));
+    .map((s) => {
+      // Doğru şıkkın konumu modele bırakılmıyor — bkz. siklariKaristir
+      const karisik = siklariKaristir(dizi(s.secenekler).map(sikOnekiniAt), s.dogru!);
+      return {
+        kind: "coktan" as const,
+        question: metin(s.soru),
+        answer_key: null,
+        key_points: [] as string[],
+        choices: karisik.secenekler,
+        correct_index: karisik.dogruIndeks,
+        explanation: metin(s.aciklama) ? hukumOneksizAciklama(metin(s.aciklama)) : null,
+        topic: metin(s.konu) || null,
+        start_seconds: damgaBelirle(
+          [metin(s.soru), karisik.secenekler.join(" "), metin(s.aciklama)].join(" "),
+          dizin,
+          s.saniye,
+          sure
+        ),
+      };
+    });
 }
 
 /**

@@ -84,10 +84,17 @@ export default function DersAnaSayfa() {
       return;
     }
 
-    // Doğru sayısı için ayrı, hafif bir sorgu (verdict kırılımı gerekiyor)
-    const { data: cevaplar } = await supabase
-      .from("ders_answers")
-      .select("session_id, verdict");
+    // Doğru sayısı için ayrı, hafif bir sorgu (verdict kırılımı gerekiyor).
+    // YALNIZCA listelenen oturumlar için: filtresiz çekilince PostgREST'in satır
+    // tavanına takılıp sessizce eksik veri dönüyordu ve eski derslerin kartında
+    // "0 doğru" yazıyordu — hata değil, yanlış sayı.
+    const kimlikler = (data ?? []).map((o) => o.id);
+    const { data: cevaplar } = kimlikler.length
+      ? await supabase
+          .from("ders_answers")
+          .select("session_id, verdict")
+          .in("session_id", kimlikler)
+      : { data: [] as { session_id: string; verdict: string | null }[] };
 
     const dogrular = new Map<string, number>();
     const toplamlar = new Map<string, number>();

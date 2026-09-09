@@ -213,6 +213,33 @@ export function hukumOneksizAciklama(aciklama: string): string {
   return sade ? sade[0].toLocaleUpperCase("tr") + sade.slice(1) : aciklama;
 }
 
+/**
+ * Şıkları karıştırır ve doğru şıkkın yeni indeksini döndürür.
+ *
+ * Ölçüldü: modeller doğru şıkkı A'ya koymaya eğilimli. 26 üretilmiş soruda
+ * dağılım A:19 B:3 C:2 D:1 E:1 çıktı — beklenen her biri ~5. Model bazında
+ * daha da net: luna 8/8, opus-5 9/9 hep A; sol dağıtıyor (A:2 B:3 C:2 D:1 E:1).
+ * Yani şu anki modelimizde sorun görünmüyor, ama bu modelin huyuna bağlı bir
+ * güvence ve model değişince sessizce kaybolur. Kodda karıştırınca sınav
+ * geçerliliği modelden bağımsız hâle geliyor: ablam soruyu okumadan A
+ * işaretleyerek puan alamaz.
+ *
+ * Not: "yukarıdakilerin hepsi" gibi konuma bağlı şıklar karıştırmayı bozardı;
+ * coktanPrompt böyle şık istemiyor ve üretilenlerde de hiç görülmedi.
+ */
+export function siklariKaristir(
+  secenekler: string[],
+  dogruIndeks: number
+): { secenekler: string[]; dogruIndeks: number } {
+  const dogruMetin = secenekler[dogruIndeks];
+  const kopya = [...secenekler];
+  for (let i = kopya.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [kopya[i], kopya[j]] = [kopya[j], kopya[i]];
+  }
+  return { secenekler: kopya, dogruIndeks: kopya.indexOf(dogruMetin) };
+}
+
 // --- Vurgu renkleri ---------------------------------------------------------
 
 /**

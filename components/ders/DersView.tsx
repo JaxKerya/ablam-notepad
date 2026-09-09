@@ -76,9 +76,10 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
   );
   const [notKaydediliyor, setNotKaydediliyor] = useState(false);
   const [kaydedilenNot, setKaydedilenNot] = useState<string | null>(null);
-  // Aynı kimlikte bir not zaten varsa içeriğini saklıyoruz: "geri al" o notu
-  // silmek yerine eski hâline döndürsün, ablamın kendi yazdıkları uçmasın.
-  const [oncekiIcerik, setOncekiIcerik] = useState<unknown | null>(null);
+  // Aynı kimlikte bir not zaten varsa içeriğini VE klasörünü saklıyoruz:
+  // "geri al" o notu silmek yerine eski hâline döndürsün, ablamın kendi
+  // yazdıkları da taşıdığı klasör de uçmasın.
+  const [onceki, setOnceki] = useState<{ content: unknown; folder_id: string | null } | null>(null);
 
   const soru = sorular[index];
   const mevcutCevap = soru ? cevaplar.get(soru.id) : undefined;
@@ -194,7 +195,12 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
     setNotKaydediliyor(true);
 
     const baslik = oturum.title ?? "Ders";
-    const notId = `ders-${slugla(baslik)}`;
+    // Kimliğe video kimliği de giriyor: başlık tek başına yetmiyor. Aynı
+    // serinin 48. ve 49. bölümü için model aynı kısa başlığı ("Fatih Sultan
+    // Mehmed Dönemi") üretebilir ve ikinci ders birincinin notunu sessizce
+    // ezerdi. Aynı videoyu tekrar çalışıp kaydetmek yine üstüne yazar —
+    // istenen davranış bu.
+    const notId = `ders-${slugla(baslik)}-${oturum.video_id}`;
 
     try {
       const res = await fetch("/api/ders/notes", {
@@ -206,11 +212,15 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
       if (!res.ok) throw new Error(data?.hata ?? "Ders notu çıkarılamadı.");
 
       // Klasör yoksa oluştur, varsa onu kullan
-      const { data: mevcut } = await supabase
+      // maybeSingle aynı adda iki klasör varsa HATA döner; kontrol edilmezse
+      // mevcut boş kalır ve her kaydetmede yeni bir klasör daha açılırdı.
+      const { data: mevcut, error: klasorHatasi } = await supabase
         .from("folders")
         .select("id")
         .eq("name", DERS_NOTLARI_KLASORU)
+        .limit(1)
         .maybeSingle();
+      if (klasorHatasi) throw new Error(klasorHatasi.message);
 
       let klasorId: string | null = mevcut?.id ?? null;
       if (!klasorId) {
@@ -223,10 +233,13 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
         klasorId = yeni.id;
       }
 
-      // Üzerine yazmadan önce eskisini al — geri alma bunu geri koyacak
+      // Üzerine yazmadan önce eskisini al — geri alma bunu geri koyacak.
+      // folder_id de saklanıyor: upsert onu da yazıyor, geri alma yalnızca
+      // content'i döndürseydi ablamın başka klasöre taşıdığı not
+      // "Ders Notları"nda kalırdı.
       const { data: eskiNot } = await supabase
         .from("notes")
-        .select("content")
+        .select("content, folder_id")
         .eq("id", notId)
         .maybeSingle();
 
@@ -240,7 +253,7 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
       );
       if (notHatasi) throw new Error(notHatasi.message);
 
-      setOncekiIcerik(eskiNot?.content ?? null);
+      setOnceki(eskiNot ? { content: eskiNot.content, folder_id: eskiNot.folder_id } : null);
       setKaydedilenNot(notId);
       addToast("Ders notu kaydedildi", "success");
     } catch (err) {
@@ -255,8 +268,11 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
     if (!kaydedilenNot || notKaydediliyor) return;
     setNotKaydediliyor(true);
 
-    const { error } = oncekiIcerik
-      ? await supabase.from("notes").update({ content: oncekiIcerik }).eq("id", kaydedilenNot)
+    const { error } = onceki
+      ? await supabase
+          .from("notes")
+          .update({ content: onceki.content, folder_id: onceki.folder_id })
+          .eq("id", kaydedilenNot)
       : await supabase.from("notes").delete().eq("id", kaydedilenNot);
     setNotKaydediliyor(false);
 
@@ -265,8 +281,8 @@ export default function DersView({ oturum, sorular, ilkCevaplar }: Props) {
       return;
     }
     setKaydedilenNot(null);
-    setOncekiIcerik(null);
-    addToast(oncekiIcerik ? "Not eski hâline döndürüldü" : "Kaydetme geri alındı", "delete");
+    setOnceki(null);
+    addToast(onceki ? "Not eski hâline döndürüldü" : "Kaydetme geri alındı", "delete");
   };
 
   const bastanBasla = () => {
