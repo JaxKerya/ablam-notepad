@@ -14,6 +14,7 @@ import {
   formatSure,
   tarihMetni,
   videoLinki,
+  SUPADATA_AYLIK_KOTA,
   VERDICT_LABEL,
   VERDICT_STYLE,
   type DenetimAdimi,
@@ -65,6 +66,10 @@ interface Props {
   oturumlar: AiViewOturum[];
   cevaplar: AiViewCevap[];
   isaretliler: AiViewIsaretli[];
+  /** Bu ayın başı (ISO) — harcama şeridi bu tarihten sonrasını topluyor */
+  ayBasi: string;
+  buAyCekilen: number;
+  buAyElle: number;
 }
 
 const ADIM_ADI: Record<string, string> = {
@@ -230,7 +235,14 @@ function AdimBlogu({ a }: { a: DenetimAdimi }) {
 
 type Sekme = "denetim" | "degerlendirme" | "isaretli";
 
-export default function AiView({ oturumlar, cevaplar, isaretliler }: Props) {
+export default function AiView({
+  oturumlar,
+  cevaplar,
+  isaretliler,
+  ayBasi,
+  buAyCekilen,
+  buAyElle,
+}: Props) {
   const [sekme, setSekme] = useState<Sekme>("denetim");
   const [acik, setAcik] = useState<Set<string>>(new Set());
   const [hepsi, setHepsi] = useState(false);
@@ -252,6 +264,29 @@ export default function AiView({ oturumlar, cevaplar, isaretliler }: Props) {
     }
     return { duzeltilen, elenen, valf, token };
   }, [oturumlar]);
+
+  /**
+   * Bu ayın harcaması. Token sayıları zaten her adımın kaydında duruyor ama
+   * hiçbir yerde toplanmıyordu — ders başına bakılabiliyor, aya bakılamıyordu.
+   *
+   * PARA GÖSTERİLMİYOR, bilerek: fiyat tablosu tutmak gerekir, sağlayıcı
+   * fiyatı değişince tablo bayatlar ve ekranda yanlış bir sayı durur. Token
+   * dürüst; oran değişmediği sürece karşılaştırma yapmaya da yeter.
+   */
+  const buAy = useMemo(() => {
+    const esik = new Date(ayBasi).getTime();
+    let ders = 0, uretim = 0, denetim = 0;
+    for (const o of oturumlar) {
+      if (o.tur === "tekrar") continue; // pratik model çağırmıyor
+      if (new Date(o.created_at).getTime() < esik) continue;
+      ders++;
+      for (const a of o.denetim?.adimlar ?? []) {
+        uretim += (a.uretimGirdiToken ?? 0) + (a.uretimCiktiToken ?? 0);
+        for (const g of a.gecisler) denetim += g.girdiToken + g.ciktiToken;
+      }
+    }
+    return { ders, uretim, denetim, toplam: uretim + denetim };
+  }, [oturumlar, ayBasi]);
 
   const gosterilen = useMemo(
     () =>
@@ -355,6 +390,32 @@ export default function AiView({ oturumlar, cevaplar, isaretliler }: Props) {
               <div className="mt-0.5 text-[11px] text-white/35">{ad as string}</div>
             </div>
           ))}
+        </div>
+
+        {/* Bu ay: harcama ve kota tek satırda */}
+        <div className="glass mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-[var(--border)] px-3.5 py-2.5 text-[11.5px] text-white/40">
+          <span className="text-white/25">bu ay</span>
+          <span>
+            <span className="text-white/70">{buAy.ders}</span> ders
+          </span>
+          <span>
+            <span className="text-white/70">{sayi(buAy.toplam)}</span> token
+            <span className="text-white/25">
+              {" "}
+              (üretim {sayi(buAy.uretim)} · denetim {sayi(buAy.denetim)})
+            </span>
+          </span>
+          <span
+            className={
+              buAyCekilen >= SUPADATA_AYLIK_KOTA * 0.8 ? "text-amber-300/80" : undefined
+            }
+          >
+            Supadata{" "}
+            <span className={buAyCekilen >= SUPADATA_AYLIK_KOTA * 0.8 ? "" : "text-white/70"}>
+              {buAyCekilen}/{SUPADATA_AYLIK_KOTA}
+            </span>
+            {buAyElle > 0 && <span className="text-white/25"> · {buAyElle} elle</span>}
+          </span>
         </div>
 
         {toplam.valf > 0 && (

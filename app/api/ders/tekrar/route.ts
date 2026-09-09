@@ -93,7 +93,12 @@ function karistir<T>(dizi: T[]): T[] {
  * bu özellik onların yerine geçmiyor, sadece karışık tekrar sağlıyor.
  */
 function derslereYayarakSec(gruplar: KaynakSoru[][], adet: number): KaynakSoru[] {
-  const kuyruklar = gruplar.map((g) => karistir(g));
+  // GRUP SIRASI DA KARIŞTIRILIYOR. Fonksiyon 20 soruluk bir test için yazılmıştı;
+  // orada sıra önemsizdi çünkü zaten her gruptan alınıyordu. Akış tek soruya
+  // dönünce (adet = 1) döngü yalnızca kuyruklar[0][0]'ı alır oldu — yani ders
+  // seçilmiyor, havuzun sırası neyse o belirliyordu. Grup sırası karışınca
+  // adet = 1'de de her ders eşit şansa sahip oluyor.
+  const kuyruklar = karistir(gruplar).map((g) => karistir(g));
   const secilen: KaynakSoru[] = [];
   let tur = 0;
   while (secilen.length < adet) {
@@ -464,12 +469,18 @@ export async function POST(request: Request) {
     const pay = Math.max(adet * 10, Math.ceil(sirayaGore.length * TAZELIK_PAYI));
     havuz = sirayaGore.slice(0, Math.max(adet, Math.min(pay, sirayaGore.length)));
 
-    // Ders başına grupla, sonra derslere yayarak seç
+    // VİDEOYA göre grupla, oturuma göre değil. Aynı video iki kez işlenmişse
+    // (ilk denemede bir şey ters gittiyse) iki oturum oluyor ve o ders havuzda
+    // iki pay alıyordu — ölçüldü: 10 oturum ama 9 video, biri 8+7=15 soruyla
+    // en büyük ikinci ders görünüyordu. Video başına gruplayınca her ders bir
+    // pay alıyor; ayrıca uzun ders (20 soru) ile kısa ders (5 soru) arasındaki
+    // dört kat fark da kapanıyor, çünkü seçim gruplar arasında eşit dağılıyor.
     const gruplar = new Map<string, KaynakSoru[]>();
     for (const s of havuz) {
-      const g = gruplar.get(s.session_id);
+      const anahtar = s.video_id ?? s.session_id;
+      const g = gruplar.get(anahtar);
       if (g) g.push(s);
-      else gruplar.set(s.session_id, [s]);
+      else gruplar.set(anahtar, [s]);
     }
     const secilen = derslereYayarakSec([...gruplar.values()], adet);
 
@@ -481,7 +492,8 @@ export async function POST(request: Request) {
     const varyantlar =
       mod === "varyant" ? await varyantUret(sirali) : new Map<string, Varyant>();
 
-    const kaynakDersler = new Set(sirali.map((s) => s.session_id));
+    // Ders sayısı da videoya göre: aynı videonun iki oturumu tek ders sayılmalı
+    const kaynakDersler = new Set(sirali.map((s) => s.video_id ?? s.session_id));
     const konular = [
       ...new Set(
         dersler

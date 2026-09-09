@@ -8,10 +8,8 @@ import {
   Plus,
   Trash2,
   ArrowRight,
-  X,
   Loader2,
   LayoutGrid,
-  CornerDownLeft,
   ArrowLeft,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
@@ -123,154 +121,169 @@ export default function SheetsHome() {
   };
 
   return (
-    <div className="min-h-screen px-4 py-10 sm:px-8 sm:py-16">
-      <div className="mx-auto w-full max-w-3xl">
-        {/* Header */}
-        <div className="animate-fade-in mb-10">
-          <Link
-            href="/"
-            className="mb-6 inline-flex items-center gap-1.5 text-[13px] text-white/45 transition-colors hover:text-white/80"
+    // Kabuk Ablam Ders'ten devralındı: aynı arka plan katmanı, aynı sabit geri
+    // düğmesi, aynı ortalanmış başlık ve aynı kapsayıcı ölçüleri. İki bölüm
+    // arasında gidip gelirken sayfa değişmiş gibi durmasın diye.
+    <main className="relative min-h-screen overflow-x-hidden">
+      {/* Arka plan derinliği */}
+      <div
+        className="pointer-events-none fixed inset-0"
+        style={{
+          background: [
+            "radial-gradient(ellipse 80% 50% at 50% 0%, rgb(var(--accent-rgb) / 0.07) 0%, transparent 60%)",
+            "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.15) 100%)",
+          ].join(", "),
+        }}
+      />
+
+      <Link
+        href="/"
+        className="glass fixed top-5 left-5 z-20 animate-fade-in flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85 sm:top-6 sm:left-7"
+      >
+        <ArrowLeft size={14} />
+        <span>Ana sayfa</span>
+      </Link>
+
+      <div className="relative z-10 mx-auto max-w-3xl px-5 pb-20 pt-24 sm:pt-28">
+        {/* Başlık */}
+        <div className="animate-fade-in mb-10 flex flex-col items-center text-center">
+          <div className="glow-sm mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent)]/10">
+            <Clapperboard size={26} className="text-[var(--accent)]" />
+          </div>
+          <h1 className="text-2xl font-semibold text-white/95">Ablam Sheets</h1>
+          <p className="mt-2 max-w-md text-[13px] leading-relaxed text-white/45">
+            Animasyon shot&apos;larını takip et, yönet, senkronize et.
+          </p>
+        </div>
+
+        {/* Yeni proje */}
+        <div
+          className="animate-slide-up glass rounded-2xl border border-[var(--border)] p-5"
+          style={{ animationDelay: "80ms" }}
+        >
+          <div className="relative">
+            <LayoutGrid
+              size={16}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30"
+            />
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && createProject()}
+              disabled={creating}
+              placeholder="Yeni proje adı"
+              className="focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] py-3.5 pl-10 pr-4 text-sm text-white/95 placeholder-white/25 transition-all disabled:opacity-50"
+              autoFocus
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={createProject}
+            disabled={!newName.trim() || creating}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3.5 text-sm font-medium text-[var(--background)] shadow-lg shadow-[var(--accent)]/10 transition-all hover:bg-[var(--accent-light)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none"
           >
-            <ArrowLeft size={14} /> Ana sayfa
-          </Link>
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--accent)]/15 text-[var(--accent)] glow-sm">
-              <Clapperboard size={22} />
+            {creating ? (
+              <>
+                <Loader2 size={15} className="animate-spin" />
+                Oluşturuluyor...
+              </>
+            ) : (
+              <>
+                <Plus size={15} />
+                Proje oluştur
+              </>
+            )}
+          </button>
+
+          <p className="mt-3 text-center text-[11px] text-white/25">
+            <kbd className="rounded border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px]">
+              Enter
+            </kbd>
+            {" ile de oluşturabilirsin"}
+          </p>
+        </div>
+
+        {/* Projeler */}
+        <div className="mt-10">
+          <h2 className="mb-3 px-1 text-[12px] font-medium uppercase tracking-wider text-white/30">
+            Projeler
+          </h2>
+
+          {loading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 size={18} className="animate-spin text-[var(--accent)]/50" />
             </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-white">
-                Ablam Sheets
-              </h1>
-              <p className="text-[13px] text-white/50">
-                Animasyon shot&apos;larını takip et, yönet, senkronize et.
+          ) : projects.length === 0 ? (
+            <div className="glass rounded-2xl border border-[var(--border)] px-5 py-10 text-center">
+              <p className="text-[13px] text-white/35">
+                Henüz proje yok. Yukarıdan ilk projeni oluştur.
               </p>
             </div>
-          </div>
-        </div>
-
-        {/* New project input */}
-        <div className="animate-slide-up glass-strong mb-8 rounded-2xl border border-[var(--border)] p-4">
-          <div className="flex items-center gap-2.5">
-            <div className="relative flex-1">
-              <LayoutGrid
-                size={16}
-                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-white/35"
-              />
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && createProject()}
-                placeholder="Yeni proje adı"
-                className="focus-ring w-full rounded-xl border border-[var(--border)] bg-black/20 py-2.5 pl-10 pr-4 text-[14px] text-white placeholder:text-white/30"
-                autoFocus
-              />
-            </div>
-            <button
-              type="button"
-              onClick={createProject}
-              disabled={!newName.trim() || creating}
-              className="flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-[13px] font-medium text-[#2a3329] transition-all hover:bg-[var(--accent-light)] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {creating ? (
-                <Loader2 size={15} className="animate-spin" />
-              ) : (
-                <Plus size={15} />
-              )}
-              Oluştur
-            </button>
-          </div>
-        </div>
-
-        {/* Project list */}
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <Loader2 size={22} className="animate-spin text-[var(--accent)]/60" />
-          </div>
-        ) : projects.length === 0 ? (
-          <div className="animate-fade-in rounded-2xl border border-dashed border-[var(--border)] py-16 text-center">
-            <Clapperboard size={28} className="mx-auto mb-3 text-white/20" />
-            <p className="text-[14px] text-white/45">Henüz proje yok.</p>
-            <p className="mt-1 text-[12.5px] text-white/30">
-              Yukarıdan ilk projeni oluştur.
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {projects.map((p, i) => (
-              <div
-                key={p.id}
-                className="animate-fade-in group relative flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 transition-all hover:border-[var(--border-hover)] hover:bg-black/25"
-                style={{ animationDelay: `${i * 40}ms` }}
-              >
-                <Link href={`/sheets/${p.id}`} className="flex flex-1 items-center gap-3.5">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)]/12 text-[var(--accent)]">
-                    <Clapperboard size={18} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-medium text-white">
-                      {p.name}
-                    </p>
-                    <p className="text-[12px] text-white/40">
-                      {p.shot_count} shot
-                    </p>
-                  </div>
-                  <ArrowRight
-                    size={16}
-                    className="text-white/25 transition-all group-hover:translate-x-0.5 group-hover:text-white/60"
-                  />
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirm(p.id)}
-                  className="rounded-lg p-2 text-white/25 opacity-0 transition-all hover:bg-red-500/15 hover:text-red-400 group-hover:opacity-100"
-                  title="Projeyi sil"
+          ) : (
+            <div className="space-y-2">
+              {projects.map((p, i) => (
+                <div
+                  key={p.id}
+                  className="animate-fade-in group relative flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2.5 transition-all hover:border-[var(--border-hover)]"
+                  style={{ animationDelay: `${Math.min(i * 35, 300)}ms` }}
                 >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+                  <Link
+                    href={`/sheets/${p.id}`}
+                    className="flex min-w-0 flex-1 items-center gap-3"
+                  >
+                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--accent)]/20 bg-[var(--accent)]/[0.07]">
+                      <Clapperboard size={18} className="text-[var(--accent)]/80" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13.5px] font-medium text-white/90">
+                        {p.name}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-white/35">
+                        <span>{p.shot_count} shot</span>
+                      </div>
+                    </div>
+                    <ArrowRight
+                      size={15}
+                      className="flex-shrink-0 text-white/20 transition-all group-hover:translate-x-0.5 group-hover:text-white/50"
+                    />
+                  </Link>
 
-        <p className="mt-8 flex items-center justify-center gap-1.5 text-center text-[11.5px] text-white/25">
-          <CornerDownLeft size={12} /> Enter ile hızlıca proje oluştur
-        </p>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirm(p.id)}
+                    aria-label="Projeyi sil"
+                    className="flex-shrink-0 rounded-lg p-2 text-white/20 opacity-0 transition-all hover:bg-red-400/10 hover:text-red-400 group-hover:opacity-100"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Delete confirm modal */}
+      {/* Silme onayı — Ders'teki kutunun aynısı */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-[var(--z-panel)]">
+        <div
+          className="animate-overlay fixed inset-0 z-[var(--z-panel)] flex items-center justify-center bg-black/40 px-5"
+          onClick={() => !deleting && setDeleteConfirm(null)}
+        >
           <div
-            className="absolute inset-0 bg-black/40 animate-overlay"
-            onClick={() => !deleting && setDeleteConfirm(null)}
-          />
-          <div className="pointer-events-none relative flex h-full items-center justify-center p-4">
-          <div
-            className="pointer-events-auto animate-fade-in-scale w-full max-w-sm rounded-2xl border border-[var(--border)] glass-modal p-6 shadow-2xl shadow-black/40"
+            className="animate-fade-in-scale w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-popup)] p-6 shadow-2xl shadow-black/40"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-[15px] font-semibold text-white">
-                Projeyi sil?
-              </h3>
-              <button
-                type="button"
-                onClick={() => !deleting && setDeleteConfirm(null)}
-                className="rounded-md p-1 text-white/35 hover:text-white/80"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <p className="mb-5 text-[13px] leading-relaxed text-white/55">
-              Bu proje ve içindeki tüm shot&apos;lar, animatörler ve durumlar kalıcı
-              olarak silinecek. Bu işlem geri alınamaz.
+            <p className="text-[14px] font-medium text-white/90">Bu proje silinsin mi?</p>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/45">
+              İçindeki tüm shot&apos;lar, animatörler ve durumlar da silinir. Geri alınamaz.
             </p>
-            <div className="flex gap-2.5">
+            <div className="mt-5 flex gap-2">
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(null)}
                 disabled={deleting}
-                className="flex-1 rounded-xl border border-[var(--border)] py-2.5 text-[13px] text-white/70 transition-colors hover:bg-white/5"
+                className="flex-1 rounded-xl border border-[var(--border)] px-4 py-2.5 text-[13px] text-white/60 transition-colors hover:text-white/90 disabled:opacity-50"
               >
                 Vazgeç
               </button>
@@ -278,16 +291,15 @@ export default function SheetsHome() {
                 type="button"
                 onClick={() => deleteProject(deleteConfirm)}
                 disabled={deleting}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-500/90 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-50"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-500/85 px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-50"
               >
-                {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                {deleting && <Loader2 size={14} className="animate-spin" />}
                 Sil
               </button>
             </div>
           </div>
-          </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }

@@ -256,6 +256,13 @@ export const TEKRAR_SORU_SAYISI = 20;
  */
 export const DERS_NOTLARI_KLASORU = "Ders Notları";
 
+/**
+ * Supadata ücretsiz katmanının aylık transkript kotası. Kota dolunca transkript
+ * elle yapıştırmaya kalıyor; aiview'deki sayaç bunu ayın ortasında görünür
+ * kılmak için var, ay sonunda sürpriz olmasın diye.
+ */
+export const SUPADATA_AYLIK_KOTA = 100;
+
 /** Günlük soru üretimi tavanı — sızan bir linkin faturayı şişirmesini engeller */
 export const GUNLUK_URETIM_LIMITI = 40;
 

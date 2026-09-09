@@ -28,6 +28,25 @@ export default async function AiViewSayfasi() {
     .limit(50);
 
   const oturumlar = (oturumVerisi ?? []) as AiViewOturum[];
+
+  // Supadata kotası ay başında sıfırlanıyor; bu ay eklenen video sayısı
+  // harcanan krediye eşit sayılıyor. Elle yapıştırılanlar kredi harcamıyor,
+  // o yüzden kaynağa göre ayrı sayılıyorlar.
+  const ayBasi = new Date();
+  ayBasi.setDate(1);
+  ayBasi.setHours(0, 0, 0, 0);
+  const [{ count: buAyCekilen }, { count: buAyElle }] = await Promise.all([
+    supabase
+      .from("ders_videos")
+      .select("video_id", { count: "exact", head: true })
+      .eq("source", "supadata")
+      .gte("created_at", ayBasi.toISOString()),
+    supabase
+      .from("ders_videos")
+      .select("video_id", { count: "exact", head: true })
+      .eq("source", "manuel")
+      .gte("created_at", ayBasi.toISOString()),
+  ]);
   const kimlikler = oturumlar.map((o) => o.id);
   const videoIdleri = new Map(oturumlar.map((o) => [o.id, o.video_id]));
 
@@ -97,5 +116,14 @@ export default async function AiViewSayfasi() {
     start_seconds: q.start_seconds ?? 0,
   }));
 
-  return <AiView oturumlar={oturumlar} cevaplar={cevaplar} isaretliler={isaretliler} />;
+  return (
+    <AiView
+      oturumlar={oturumlar}
+      cevaplar={cevaplar}
+      isaretliler={isaretliler}
+      ayBasi={ayBasi.toISOString()}
+      buAyCekilen={buAyCekilen ?? 0}
+      buAyElle={buAyElle ?? 0}
+    />
+  );
 }
