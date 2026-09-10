@@ -9,6 +9,17 @@ interface PageProps {
   params: Promise<{ sessionId: string }>;
 }
 
+/** Sekmede dersin kendi adı görünsün — birden çok ders açıkken ayırt edilebilsin */
+export async function generateMetadata({ params }: PageProps) {
+  const { sessionId } = await params;
+  const { data } = await createServerSupabaseClient()
+    .from("ders_sessions")
+    .select("title")
+    .eq("id", sessionId)
+    .maybeSingle();
+  return { title: data?.title ?? "Ders" };
+}
+
 export default async function DersOturumSayfasi({ params }: PageProps) {
   const { sessionId } = await params;
   const supabase = createServerSupabaseClient();

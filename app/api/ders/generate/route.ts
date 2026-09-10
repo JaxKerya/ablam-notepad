@@ -645,12 +645,20 @@ export async function POST(request: Request) {
         );
       }
 
-      // Yarım kalmış eski denemeleri temizle
+      // Yarım kalmış ESKİ denemeleri temizle.
+      //
+      // "Eski" şartı paralel üretim için şart: artık aynı anda birden çok ders
+      // hazırlanabiliyor ve ablam aynı linki iki kez sıraya alabilir. Zaman
+      // sınırı olmasaydı ikinci deneme, o an 2. adımı çalışan oturumu silerdi —
+      // birincinin soruları sahipsiz kalır, üretim boşa giderdi. Gerçek çöp
+      // (sekme kapanmış, istek düşmüş) zaten dakikalar öncesinden kalıyor.
+      const TAZE_SAYILAN_DK = 15;
       await supabase
         .from("ders_sessions")
         .delete()
         .eq("video_id", videoId)
-        .eq("status", "hazirlaniyor");
+        .eq("status", "hazirlaniyor")
+        .lt("created_at", new Date(Date.now() - TAZE_SAYILAN_DK * 60_000).toISOString());
 
       const {
         veri: uretilen,

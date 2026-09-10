@@ -428,6 +428,20 @@ body::before {
   color: rgba(255, 255, 255, 0.3);
 }
 
+/* --- Arama alanının temizle (×) düğmesi ----------------------------------
+ * type="search" alanlarında tarayıcı kendi × ikonunu basıyor; Chrome'da koyu
+ * mavimsi bir simge ve karanlık temayla uyuşmuyor. Temaya boyamak yerine
+ * tamamen kaldırıldı: alan zaten sola hizalı bir büyüteç ikonu ve sağda
+ * yükleniyor çarkı taşıyor, üçüncü bir simge kalabalık yapıyordu.
+ * Temizlemek için metni seçip silmek yeterli.
+ */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
 /* --- Dikey kaydırma çubuğu yeri ------------------------------------------
  * Sayfa içeriği kısayken çubuk yok, uzayınca çıkıyor ve çubuğun genişliği
  * kadar görüntü alanı daralıyordu; ortalanmış içerik ve sağ/sol köşedeki

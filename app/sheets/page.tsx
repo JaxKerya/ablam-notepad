@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
+import { useModal } from "@/components/useModal";
 import {
   DEFAULT_STATUSES,
   DEFAULT_PIPELINE_COLUMNS,
@@ -28,12 +29,19 @@ interface ProjectWithStats extends SheetProject {
 export default function SheetsHome() {
   const [projects, setProjects] = useState<ProjectWithStats[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Bkz. /ders: boş liste ile yüklenememiş liste ayırt edilebilsin */
+  const [listeHatasi, setListeHatasi] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const router = useRouter();
   const { addToast } = useToast();
+
+  // Esc ile kapanma ve odak tuzağı — bkz. useModal
+  const silmeRef = useModal<HTMLDivElement>(!!deleteConfirm, () => {
+    if (!deleting) setDeleteConfirm(null);
+  });
 
   const fetchProjects = useCallback(async () => {
     const { data, error } = await supabase
@@ -43,9 +51,12 @@ export default function SheetsHome() {
 
     if (error) {
       console.error("Projeler yüklenemedi:", error.message);
+      setListeHatasi(error.message);
+      addToast("Projeler yüklenemedi.", "error");
       setLoading(false);
       return;
     }
+    setListeHatasi(null);
 
     setProjects(
       (data ?? []).map((p) => {
@@ -61,9 +72,12 @@ export default function SheetsHome() {
       })
     );
     setLoading(false);
-  }, []);
+  }, [addToast]);
 
+  // Bkz. app/page.tsx'teki aynı not: setState'ler await sonrası çalışıyor,
+  // kural muhafazakâr davranıyor. Gerçek çözüm sunucu bileşenine taşımak.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchProjects();
   }, [fetchProjects]);
 
@@ -214,6 +228,23 @@ export default function SheetsHome() {
             <div className="flex justify-center py-10">
               <Loader2 size={18} className="animate-spin text-[var(--accent)]/50" />
             </div>
+          ) : listeHatasi ? (
+            <div className="glass rounded-2xl border border-red-400/25 bg-red-400/[0.04] px-5 py-8 text-center">
+              <p className="text-[13px] text-white/70">Projeler yüklenemedi.</p>
+              <p className="mt-1 text-[11.5px] text-white/35">
+                Bağlantı sorunu olabilir. Projelerin duruyor.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  fetchProjects();
+                }}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-4 py-2.5 text-[13px] text-white/65 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"
+              >
+                Tekrar dene
+              </button>
+            </div>
           ) : projects.length === 0 ? (
             <div className="glass rounded-2xl border border-[var(--border)] px-5 py-10 text-center">
               <p className="text-[13px] text-white/35">
@@ -271,10 +302,16 @@ export default function SheetsHome() {
           onClick={() => !deleting && setDeleteConfirm(null)}
         >
           <div
+            ref={silmeRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="proje-silme-basligi"
             className="animate-fade-in-scale w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-popup)] p-6 shadow-2xl shadow-black/40"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-[14px] font-medium text-white/90">Bu proje silinsin mi?</p>
+            <p id="proje-silme-basligi" className="text-[14px] font-medium text-white/90">
+              Bu proje silinsin mi?
+            </p>
             <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/45">
               İçindeki tüm shot&apos;lar, animatörler ve durumlar da silinir. Geri alınamaz.
             </p>

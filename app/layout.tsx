@@ -8,9 +8,19 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+/**
+ * Başlık ŞABLONLU: alt sayfalar yalnızca kendi adını veriyor, sonuna "· Ablam"
+ * ekleniyor. Önceden tek bir global başlık vardı ve üç ayrı uygulamanın
+ * (NotePad, Sheets, Ders) hepsi sekmede "Ablam NotePad" diye görünüyordu —
+ * açık sekmeler ayırt edilemiyor, yer imi anlamsız oluyordu.
+ */
 export const metadata: Metadata = {
-  title: "Ablam NotePad",
-  description: "Ablam için dijital bir defter.",
+  title: {
+    default: "Ablam NotePad",
+    template: "%s · Ablam NotePad",
+  },
+  description: "Ablam için not defteri, iş takibi ve ders çalışma aracı.",
+  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({

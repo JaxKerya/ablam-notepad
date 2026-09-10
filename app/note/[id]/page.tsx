@@ -9,6 +9,17 @@ interface NotePageProps {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * Notun kendi adı sekmede görünsün. Not kimliği zaten okunabilir bir slug
+ * ("ders-fatih-sultan-mehmed-donemi-..."), tirelerden arındırıp kullanıyoruz;
+ * içeriğe bakmıyoruz çünkü parolalı notların başlığı da sızmamalı.
+ */
+export async function generateMetadata({ params }: NotePageProps) {
+  const { id } = await params;
+  const ad = decodeURIComponent(id).replace(/-/g, " ").trim();
+  return { title: ad ? ad.charAt(0).toLocaleUpperCase("tr") + ad.slice(1) : "Not" };
+}
+
 const DEFAULT_CONTENT = { type: "doc", content: [{ type: "paragraph" }] };
 
 export default async function NotePage({ params }: NotePageProps) {

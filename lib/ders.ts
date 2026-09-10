@@ -266,6 +266,101 @@ export const SUPADATA_AYLIK_KOTA = 100;
 /** Günlük soru üretimi tavanı — sızan bir linkin faturayı şişirmesini engeller */
 export const GUNLUK_URETIM_LIMITI = 40;
 
+// --- Üretim kuyruğu ---------------------------------------------------------
+//
+// Ablam birkaç dersi arka arkaya izleyip hepsini birden işleme koymak istiyor;
+// önceki akışta ilk ders bitene kadar ikinci linki yapıştıramıyordu. Kuyruk
+// istemcide (bkz. components/ders/DersKuyrugu.tsx) yaşıyor, buradakiler ise
+// React dışında da ölçülebilsin diye ayrılmış saf parçalar.
+
+/**
+ * Aynı anda kaç ders üretimi çalışsın.
+ *
+ * 3, ÖLÇÜLEN tek sert tavana göre seçildi: tarayıcı bir kaynağa http/1.1
+ * üzerinden yalnızca 6 isteği aynı anda gönderiyor. (Ölçüm: 12 paralel istekten
+ * 6'sı yola çıktı, kalanı 1789 ms'ye kadar kuyrukta bekledi; yerel geliştirme
+ * sunucusu http/1.1 konuşuyor. Canlıda Vercel h2 verdiği için bu tavan orada
+ * yok.) Üretim dışındaki istekler — ders listesi, transkript araması, notlar —
+ * aynı 6'lık havuzu paylaştığı için 3 üretim üstü ablamın arama kutusunu
+ * takılmaya başlatır.
+ *
+ * BİLMEDİĞİM SINIR: sağlayıcının ani yükte 429 dönüp dönmediği ölçülmedi.
+ * OpenRouter anahtarında tanımlı bir istek sınırı yok (ücretli katman,
+ * limit: null); Vercel'in eşzamanlı fonksiyon tavanı da sorgulanamadı. 429
+ * gelirse iş "hata" kartında durur, "Tekrar dene" kurtarır — sessiz kayıp yok.
+ *
+ * Faydası (benzetim, ders başına 2-4 dk, 5 ders): sıralı 14:57 → 2 ile 8:29 →
+ * 3 ile 6:08. Yukarısı hızla doyuyor ve asıl önemli sayı olan "ilk ders hazır"
+ * süresi zaten eşzamanlılıktan bağımsız (~2,5 dk).
+ *
+ * MALİYETİ DEĞİŞTİRMİYOR: paralellik aynı işi daha kısa sürede yapıyor, ders
+ * başına ~$0,20 aynı kalıyor. Günlük tavan hâlâ GUNLUK_URETIM_LIMITI.
+ */
+export const ES_ZAMANLI_URETIM = 3;
+
+/** Kuyruktaki bir işin durumu */
+export type IsDurumu =
+  | "bekliyor"
+  | "transkript"
+  | "acik"
+  | "coktan"
+  | "hazir"
+  | "elle"
+  | "hata";
+
+/** Model çağıran, yani hem para hem süre harcayan durumlar */
+export const IS_CALISIYOR: IsDurumu[] = ["transkript", "acik", "coktan"];
+
+export interface UretimIsi {
+  id: string;
+  /** "yeni": linkten baştan üretim · "tamamla": yarım kalmış oturumun 2. adımı */
+  tur: "yeni" | "tamamla";
+  url: string;
+  videoId: string | null;
+  sessionId: string | null;
+  baslik: string | null;
+  sure: number;
+  durum: IsDurumu;
+  hata: string | null;
+  /** Otomatik transkript düşerse ablamın yapıştırdığı metin */
+  elleTranskript?: string;
+}
+
+/**
+ * Sırada başlatılabilecek ilk iş — yoksa null.
+ *
+ * İki kural var:
+ *   1. Aynı anda en fazla `sinir` kadar iş çalışır.
+ *   2. Video kimliği bilinen bir iş, aynı videoyu işleyen başka bir iş
+ *      çalışırken başlatılmaz. Sebebi para değil VERİ: generate ucu 1. adımda
+ *      aynı videonun yarım kalmış oturumlarını siliyor, aynı video iki kez
+ *      paralel işlenirse biri diğerinin oturumunu süpürebilir.
+ *
+ * "yeni" işlerin video kimliği transkript gelene kadar null olduğu için ikinci
+ * kural burada her şeyi yakalayamaz; transkript döndükten sonraki kontrol
+ * DersKuyrugu içinde.
+ */
+export function baslatilacakIs(isler: UretimIsi[], sinir = ES_ZAMANLI_URETIM): UretimIsi | null {
+  const calisan = isler.filter((i) => IS_CALISIYOR.includes(i.durum));
+  if (calisan.length >= sinir) return null;
+
+  const mesgul = new Set(calisan.map((i) => i.videoId).filter(Boolean));
+  return isler.find((i) => i.durum === "bekliyor" && !(i.videoId && mesgul.has(i.videoId))) ?? null;
+}
+
+/**
+ * Yapıştırılan metinden linkleri ayıklar. Ablam beş dersin linkini tek seferde
+ * yapıştırabilsin diye: satır, boşluk ya da virgülle ayrılmış her parça bir iş.
+ * Aynı link iki kez yazılmışsa bir kez alınıyor.
+ */
+export function linkleriAyikla(metin: string): string[] {
+  const parcalar = metin
+    .split(/[\s,;]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  return [...new Set(parcalar)];
+}
+
 export const VERDICT_LABEL: Record<Verdict, string> = {
   dogru: "Doğru",
   eksik: "Eksik",

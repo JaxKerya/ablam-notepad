@@ -21,7 +21,6 @@ import {
   Heading2,
   Heading3,
   Pilcrow,
-  Type,
   Link2,
   Unlink,
   ImagePlus,

@@ -8,7 +8,6 @@ import {
   FileText,
   Trash2,
   X,
-  ArrowRight,
   CornerDownLeft,
   Layers,
   PenLine,
@@ -22,10 +21,6 @@ import {
   FolderOpen,
   FolderPlus,
   ChevronDown,
-  Sun,
-  CloudSun,
-  Sunset,
-  Moon,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -36,6 +31,7 @@ import { supabase } from "@/lib/supabase-browser";
 import { verifyPassword } from "@/lib/crypto";
 import { DynamicIcon } from "@/components/IconPicker";
 import { useToast } from "@/components/Toast";
+import { useModal } from "@/components/useModal";
 import { DERS_NOTLARI_KLASORU } from "@/lib/ders";
 
 interface NoteItem {
@@ -92,6 +88,9 @@ export default function Home() {
   const [noteFolderMenuOpen, setNoteFolderMenuOpen] = useState<string | null>(null);
   const router = useRouter();
   const { addToast } = useToast();
+  /** Boş liste ile yüklenememiş listeyi ayırt etmek için */
+  const [listeHatasi, setListeHatasi] = useState<string | null>(null);
+  // Esc ile kapanma, odak tuzağı ve odağın geri verilmesi — bkz. useModal
 
   const resetDeleteState = () => {
     setDeleteConfirm(null);
@@ -100,6 +99,9 @@ export default function Home() {
     setDeleteShowPw(false);
     setDeleteLoading(false);
   };
+
+  // Esc ile kapanma, odak tuzağı ve odağın geri verilmesi — bkz. useModal
+  const silmeRef = useModal<HTMLDivElement>(!!deleteConfirm, resetDeleteState);
 
   const fetchNotes = useCallback(async () => {
     const { data, error } = await supabase
@@ -110,12 +112,17 @@ export default function Home() {
 
     if (error) {
       console.error("Notlar yüklenemedi:", error.message);
+      // Sessiz kalırsa "hiç not yok" ile "yükleyemedim" aynı ekrana çıkıyor
+      setListeHatasi(error.message);
+      addToast("Notlar yüklenemedi.", "error");
+    } else {
+      setListeHatasi(null);
     }
     setNotes(
       (data ?? []).map((n) => ({ ...n, pinned: n.pinned ?? false, has_password: !!n.password_hash, icon: n.icon ?? null, folder_id: n.folder_id ?? null }))
     );
     setLoading(false);
-  }, []);
+  }, [addToast]);
 
   const fetchFolders = useCallback(async () => {
     const { data } = await supabase
@@ -125,9 +132,17 @@ export default function Home() {
     setFolders(data ?? []);
   }, []);
 
+  // İlk yüklemede veriyi çek. react-hooks/set-state-in-effect burayı işaretliyor
+  // çünkü kural, effect'ten çağrılan ve setState'e ulaşan her fonksiyonu
+  // muhafazakâr biçimde uyarıyor — oysa buradaki setState'ler await'ten SONRA,
+  // yani senkron değil. Kuralı gerçekten kaldırmanın yolu bu sayfayı sunucu
+  // bileşenine çevirip veriyi prop olarak geçirmek; 800 satırlık not defteri
+  // arayüzü için ayrı ve riskli bir iş. Bilinçli olarak susturuluyor.
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     fetchNotes();
     fetchFolders();
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [fetchNotes, fetchFolders]);
 
   // Folder CRUD
@@ -376,7 +391,23 @@ export default function Home() {
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--accent)]/20 border-t-[var(--accent)]/60" />
             </div>
           )}
-          {!loading && notes.length === 0 && folders.length === 0 && (
+          {!loading && listeHatasi && (
+            <div className="mx-2 rounded-xl border border-red-400/25 bg-red-400/[0.04] px-4 py-6 text-center">
+              <p className="text-[12.5px] text-white/70">Notlar yüklenemedi.</p>
+              <p className="mt-1 text-[11px] text-white/35">Notların duruyor.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  fetchNotes();
+                }}
+                className="mt-3 rounded-lg border border-[var(--border)] px-3 py-1.5 text-[12px] text-white/60 transition-colors hover:text-white/90"
+              >
+                Tekrar dene
+              </button>
+            </div>
+          )}
+          {!loading && !listeHatasi && notes.length === 0 && folders.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs text-white/30">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06]">
                 <FileText size={18} className="text-white/20" />
@@ -711,6 +742,10 @@ export default function Home() {
           onClick={resetDeleteState}
         >
           <div
+            ref={silmeRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="not-silme-basligi"
             className="animate-fade-in-scale mx-4 w-full max-w-xs rounded-2xl border border-[var(--border)] bg-[var(--surface-popup)] p-6 shadow-2xl shadow-black/40"
             onClick={(e) => e.stopPropagation()}
           >
@@ -718,7 +753,7 @@ export default function Home() {
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10">
                 <Trash2 size={16} className="text-red-400" />
               </div>
-              <h3 className="text-sm font-semibold text-white/95">
+              <h3 id="not-silme-basligi" className="text-sm font-semibold text-white/95">
                 Notu Sil
               </h3>
             </div>

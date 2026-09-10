@@ -7,6 +7,8 @@ import AiView, {
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "AI görünümü" };
+
 /**
  * /ders/aiview — denetimin karar defteri.
  *

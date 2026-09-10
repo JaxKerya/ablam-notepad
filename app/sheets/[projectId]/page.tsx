@@ -15,6 +15,16 @@ interface PageProps {
   params: Promise<{ projectId: string }>;
 }
 
+export async function generateMetadata({ params }: PageProps) {
+  const { projectId } = await params;
+  const { data } = await createServerSupabaseClient()
+    .from("sheet_projects")
+    .select("name")
+    .eq("id", projectId)
+    .maybeSingle();
+  return { title: data?.name ?? "Proje" };
+}
+
 export default async function SheetProjectPage({ params }: PageProps) {
   const { projectId } = await params;
   const supabase = createServerSupabaseClient();
