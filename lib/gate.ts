@@ -6,8 +6,9 @@
 // /api/ders/* uçları da bu çerezi arar.
 //
 // Not: çok şahane kelime tarayıcı paketinde de geçtiği için bu, kararlı birine
-// karşı mutlak bir engel değil. Faturayı asıl sınırlayan şey ders.ts içindeki
-// GUNLUK_URETIM_LIMITI. İkisi birlikte çalışıyor.
+// karşı mutlak bir engel değil. Yanında çalışan ikinci koruma günlük üretim
+// tavanıydı; o KAPATILDI (bkz. ders.ts GUNLUK_URETIM_LIMITI = 0), çünkü ablamın
+// toplu çalışmasını kesiyordu. Yani fatura tarafında tek durak burası kaldı.
 
 import crypto from "node:crypto";
 

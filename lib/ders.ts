@@ -302,8 +302,24 @@ export function notBasligi(notId: string, videoId: string | null): string {
  */
 export const SUPADATA_AYLIK_KOTA = 100;
 
-/** Günlük soru üretimi tavanı — sızan bir linkin faturayı şişirmesini engeller */
-export const GUNLUK_URETIM_LIMITI = 40;
+/**
+ * Günlük ders üretimi tavanı. **0 = sınır yok.**
+ *
+ * 40'tı ve gerçek kullanımda yolu kesti: ablam biriken dersleri toplu işlemeye
+ * başlayınca bir günde 42 ders üretti, sınır tam ortasında "yarın devam et"
+ * dedi. Tavanın amacı ablamı durdurmak değildi, sızan bir linkin faturayı
+ * şişirmesini engellemekti; ama pratikte engellediği tek şey ablamın kendisi
+ * oldu, o yüzden kapatıldı.
+ *
+ * NE KAYBEDİLDİ: kalan tek koruma kapı çerezi (bkz. lib/gate.ts) ve o da mutlak
+ * değil — çok şahane kelime tarayıcı paketinde geçiyor. Yani adresi ve kelimeyi
+ * bilen biri fatura üretebilir. Karşılığında hız var; bu bilinçli bir takas.
+ *
+ * Geri açmak için buraya bir sayı yazmak yeterli, başka hiçbir yer değişmiyor.
+ * Kaçak bir döngüye karşı ablamı hiç rahatsız etmeyecek bir değer arıyorsan
+ * 150 civarı iş görür (en yoğun gün 42 ders / ~$5 idi).
+ */
+export const GUNLUK_URETIM_LIMITI = 0;
 
 // --- Üretim kuyruğu ---------------------------------------------------------
 //
@@ -333,7 +349,9 @@ export const GUNLUK_URETIM_LIMITI = 40;
  * süresi zaten eşzamanlılıktan bağımsız (~2,5 dk).
  *
  * MALİYETİ DEĞİŞTİRMİYOR: paralellik aynı işi daha kısa sürede yapıyor, ders
- * başına ~$0,20 aynı kalıyor. Günlük tavan hâlâ GUNLUK_URETIM_LIMITI.
+ * başına ~$0,09-0,20 aynı kalıyor. Günlük tavan ise artık yok
+ * (GUNLUK_URETIM_LIMITI = 0), yani harcamayı sınırlayan tek şey kaç ders
+ * sıraya alındığı.
  */
 export const ES_ZAMANLI_URETIM = 3;
 

@@ -21,8 +21,13 @@ export async function kapiKontrol(): Promise<NextResponse | null> {
 /**
  * Günlük soru üretimi tavanı. Bugün açılan oturumları sayar — ayrı bir sayaç
  * tablosu tutmaya gerek yok.
+ *
+ * Sınır kapalıyken (0) sayım hiç yapılmıyor: her ders üretiminin başındaki
+ * gereksiz bir veritabanı turu, hem de hiçbir şeye yaramayacak olan.
  */
 export async function gunlukLimitAsildiMi(): Promise<boolean> {
+  if (GUNLUK_URETIM_LIMITI <= 0) return false;
+
   const supabase = createServerSupabaseClient();
   const gunBasi = new Date();
   gunBasi.setHours(0, 0, 0, 0);
