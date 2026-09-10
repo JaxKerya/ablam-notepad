@@ -24,6 +24,7 @@ import {
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
 import SoruMetni from "@/components/ders/SoruMetni";
+import HocaNeDemisti from "@/components/ders/HocaNeDemisti";
 import {
   DERS_NOTLARI_KLASORU,
   formatSure,
@@ -700,6 +701,11 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
                       <PlayCircle size={12} />
                       Videoda {formatSure(s.start_seconds)}
                     </a>
+                    <HocaNeDemisti
+                      questionId={s.id}
+                      videoId={soruVideosu(s)}
+                      className="mt-1.5"
+                    />
                   </div>
                 </div>
               </div>
@@ -1011,6 +1017,14 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
               Eksik kalanlar: {mevcutCevap.missing.join(", ")}
             </p>
           )}
+
+          {/* Cevabın dersteki dayanağı. Cevap kutusunun içinde, çünkü ablamın
+              "gerçekten öyle mi?" diye sorduğu an tam burası. */}
+          <HocaNeDemisti
+            questionId={soru.id}
+            videoId={soruVideosu(soru)}
+            className="mt-3"
+          />
 
           {soru.kind === "acik" && verdict !== "dogru" && soru.answer_key && (
             <div className="mt-3 rounded-xl border border-white/10 bg-[var(--surface)] p-3.5">

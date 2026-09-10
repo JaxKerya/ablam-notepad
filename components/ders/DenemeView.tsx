@@ -13,6 +13,7 @@ import {
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
 import SoruMetni from "@/components/ders/SoruMetni";
+import HocaNeDemisti from "@/components/ders/HocaNeDemisti";
 import {
   DENEME_VARSAYILAN_TEMPO,
   formatSure,
@@ -404,6 +405,7 @@ export default function DenemeView({ oturum, sorular, ilkCevaplar }: Props) {
                   <PlayCircle size={12} />
                   Videoda {formatSure(s.start_seconds)}
                 </a>
+                <HocaNeDemisti questionId={s.id} videoId={soruVideosu(s)} className="mt-1.5" />
               </div>
             );
           })}
