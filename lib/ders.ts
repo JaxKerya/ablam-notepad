@@ -1,7 +1,7 @@
 // Ablam Ders — paylaşılan tipler, sabitler ve yardımcılar
 
 export type SessionStatus = "hazirlaniyor" | "hazir" | "hata";
-export type OturumTuru = "ders" | "tekrar";
+export type OturumTuru = "ders" | "tekrar" | "deneme";
 export type QuestionKind = "acik" | "coktan";
 export type Verdict = "dogru" | "eksik" | "yanlis" | "pas";
 
@@ -42,6 +42,14 @@ export interface DersSession {
   error: string | null;
   /** Denetimin bu oturumda ne yaptığı — şeffaflık için sonuç ekranında gösterilir */
   denetim: DenetimOzeti;
+  /**
+   * Denemenin toplam süresi (saniye). Deneme kurulurken seçilen değer; sabit
+   * bir formülden türetilmiyor çünkü soru sayısı da tempo da ablamın seçimi.
+   * Kolon yoksa ya da eski bir oturumsa DenemeView varsayılan tempoya düşüyor.
+   */
+  deneme_sure_sn?: number | null;
+  /** Deneme bitirildiği an; doluysa sınav kapanmıştır (süre dolmasa bile) */
+  deneme_bitti_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -89,6 +97,8 @@ export interface DersAnswer {
   feedback: string | null;
   missing: string[];
   created_at: string;
+  /** Denemede o soruya harcanan süre (ms) — normal derslerde yazılmıyor */
+  sure_ms?: number | null;
 }
 
 // --- Denetim kaydı ----------------------------------------------------------
@@ -261,6 +271,72 @@ export function kategoriDogrula(ham: unknown): string {
  * tutuldu: tekrar oturumu bir sınav değil, karışık bir gözden geçirme.
  */
 export const TEKRAR_SORU_SAYISI = 20;
+
+// --- Deneme sınavı ----------------------------------------------------------
+//
+// Ölçüm şunu gösterdi: 793 soru üretildi, 55'i çözüldü (%7). Darboğaz üretim
+// değil, o soruları çözmek için bir sebep. Deneme sınavı o sebebi veriyor —
+// pratikten farkı, geri bildirimin SONA saklanması ve sürenin işlemesi.
+//
+// SAYILAR SABİT DEĞİL. İlk sürümde ders başına KPSS soru sayıları koda
+// gömülmüştü (Tarih 27, Coğrafya 18...); yanlıştı, çünkü ablam aynı sistemi
+// hem KPSS hem YKS için kullanıyor ve aynı ders iki sınavda farklı ağırlıkta.
+// Artık soru sayısını ve tempoyu deneme kurulurken ablam seçiyor; buradaki
+// değerler yalnızca makul başlangıç noktaları ve sınırlar.
+
+/** Deneme kurulabilmesi için kategoride bulunması gereken en az çoktan seçmeli */
+export const DENEME_EN_AZ_HAVUZ = 15;
+
+export const DENEME_EN_AZ_SORU = 5;
+export const DENEME_EN_FAZLA_SORU = 80;
+export const DENEME_VARSAYILAN_SORU = 20;
+
+/**
+ * ÖSYM oturumlarının GERÇEK temposu: soru başına düşen saniye. Deneme
+ * kurulurken bunlardan biri seçiliyor, çünkü süre baskısı sınavdan sınava
+ * değişiyor ve ölçtüğü şey de değişiyor.
+ *
+ *   KPSS GY-GK        120 soru / 130 dk  -> 65 sn
+ *   TYT               120 soru / 165 dk  -> 82 sn
+ *   AYT               aday ~80 soru / 180 dk -> 135 sn
+ *
+ * YDT (yabancı dil) listede yok: ablamın çalıştığı dersler arasında değil ve
+ * olmayan bir sınavın temposu seçenekleri kalabalıklaştırmaktan başka bir şey
+ * yapmıyordu.
+ */
+export const DENEME_TEMPOLARI = [
+  { ad: "KPSS", sn: 65, aciklama: "120 soru / 130 dk" },
+  { ad: "TYT", sn: 82, aciklama: "120 soru / 165 dk" },
+  { ad: "AYT", sn: 135, aciklama: "~80 soru / 180 dk" },
+] as const;
+
+/** Tempo seçilmemişse kullanılan değer — ÖSYM'nin en sıkı oturumu */
+export const DENEME_VARSAYILAN_TEMPO = 65;
+
+/** Süre sınırları: 3 dakikanın altı da 4 saatin üstü de sınav olmaktan çıkar */
+export const DENEME_EN_AZ_SURE_SN = 180;
+export const DENEME_EN_FAZLA_SURE_SN = 4 * 60 * 60;
+
+export function denemeSoruSinirla(istenen: unknown, havuz: number): number {
+  const n = Math.round(Number(istenen) || DENEME_VARSAYILAN_SORU);
+  const tavan = Math.min(DENEME_EN_FAZLA_SORU, havuz);
+  return Math.max(DENEME_EN_AZ_SORU, Math.min(n, tavan));
+}
+
+export function denemeSureSinirla(istenen: unknown, soruSayisi: number): number {
+  const n = Math.round(Number(istenen) || soruSayisi * DENEME_VARSAYILAN_TEMPO);
+  return Math.max(DENEME_EN_AZ_SURE_SN, Math.min(n, DENEME_EN_FAZLA_SURE_SN));
+}
+
+export function netHesapla(dogru: number, yanlis: number): number {
+  return dogru - yanlis / 4;
+}
+
+/** 1755 -> "29:15" */
+export function sayacMetni(saniye: number): string {
+  const s = Math.max(0, Math.round(saniye));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
 /**
  * Ders özetlerinin kaydedildiği klasör. Mevcut klasör sistemi kullanılıyor:

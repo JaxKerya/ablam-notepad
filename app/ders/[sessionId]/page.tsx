@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import DersView from "@/components/ders/DersView";
+import DenemeView from "@/components/ders/DenemeView";
 import type { DersAnswer, DersQuestion, DersSession } from "@/lib/ders";
 
 export const dynamic = "force-dynamic";
@@ -44,11 +45,13 @@ export default async function DersOturumSayfasi({ params }: PageProps) {
     supabase.from("ders_answers").select("*").eq("session_id", sessionId),
   ]);
 
-  return (
-    <DersView
-      oturum={oturum as DersSession}
-      sorular={(sorularRes.data ?? []) as DersQuestion[]}
-      ilkCevaplar={(cevaplarRes.data ?? []) as DersAnswer[]}
-    />
-  );
+  // Deneme sınavının akışı bambaşka: süre işliyor, geri bildirim sona saklanıyor,
+  // sorular arasında gezilebiliyor. Aynı bileşene sığdırmak DersView'i üçüncü bir
+  // moda daha bölerdi; ayrı ekran hem okunur hem birbirini bozmaz.
+  const ortak = {
+    oturum: oturum as DersSession,
+    sorular: (sorularRes.data ?? []) as DersQuestion[],
+    ilkCevaplar: (cevaplarRes.data ?? []) as DersAnswer[],
+  };
+  return oturum.tur === "deneme" ? <DenemeView {...ortak} /> : <DersView {...ortak} />;
 }

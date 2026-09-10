@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { chatJsonOlculu } from "@/lib/ai";
 import {
+  DENEME_EN_AZ_HAVUZ,
+  DENEME_EN_FAZLA_SORU,
+  denemeSoruSinirla,
+  denemeSureSinirla,
   hukumOneksizAciklama,
   siklariKaristir,
   onculluSiklarMi,
@@ -303,8 +307,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ hata: "Geçersiz istek gövdesi." }, { status: 400 });
     }
     const sessionId = typeof govde.sessionId === "string" ? govde.sessionId : "";
-    const adet = Math.min(Math.max(Number(govde.adet) || 1, 1), TEKRAR_SORU_SAYISI);
     let kategori = typeof govde.kategori === "string" ? govde.kategori.trim() : "";
+
+    /**
+     * DENEME MODU. Aynı havuzdan besleniyor ama üç yerde ayrılıyor:
+     *   - soru sayısı KPSS'nin o dersteki gerçek sayısı (Tarih 27, Coğrafya 18…)
+     *   - yalnızca ÇOKTAN SEÇMELİ alınıyor: açık uçlu değerlendirmesi model
+     *     çağırıyor, yani süreli sınavda hem yavaş hem paralı olurdu. Deneme
+     *     tamamen yerel ve bedava değerlendiriliyor.
+     *   - eski denemeler SİLİNMİYOR. Pratikte son birkaçı yeter; denemede geçmiş
+     *     asıl üründür ("ilk denemem 14 net, üçüncüsü 19".)
+     */
+    const deneme = govde.tur === "deneme";
+    // Denemede soru sayısı ve süre ablamın seçimi. Havuz boyutu ancak aşağıda
+    // biliniyor; burada yalnızca kaba tavan uygulanıyor, kesin sınırlama havuz
+    // sayıldıktan sonra.
+    const istenenSoru = deneme ? Math.min(Number(govde.soruSayisi) || 0, DENEME_EN_FAZLA_SORU) : 0;
+    const istenenSure = deneme ? Number(govde.sureSn) || 0 : 0;
+    const adet = deneme
+      ? Math.max(istenenSoru || 20, 1)
+      : Math.min(Math.max(Number(govde.adet) || 1, 1), TEKRAR_SORU_SAYISI);
     // Varsayılan KOPYA: bedava ve anlık olan varsayılan olsun, para harcayan
     // bilinçli tercih olsun. Ölçüldü — varyant üretimi bir dersin kabaca %60'ı
     // kadar tutuyor (girdi düşüyor ama çıktı bir ders kadar metin üretiyor).
@@ -315,6 +337,12 @@ export async function POST(request: Request) {
     // Mevcut pratik oturumuna ekleme: kategori oturumdan okunuyor, çağıranın
     // göndermesine gerek yok.
     let mevcutOturum: { id: string; kategori: string | null } | null = null;
+    if (sessionId && deneme) {
+      return NextResponse.json(
+        { hata: "Denemeye soru eklenemez; deneme başladığı gibi biter." },
+        { status: 400 }
+      );
+    }
     if (sessionId) {
       const { data } = await supabase
         .from("ders_sessions")
@@ -344,7 +372,7 @@ export async function POST(request: Request) {
     // Arayüzde yine yalnızca EN SON pratik görünüyor (liste created_at'e göre
     // sıralı, başlık ilkini alıyor), yani "pratik bitince biter" davranışı
     // değişmiyor — saklanan şey ekranda değil, seçimde kullanılıyor.
-    if (!mevcutOturum) {
+    if (!mevcutOturum && !deneme) {
       const { data: eskiler } = await supabase
         .from("ders_sessions")
         .select("id")
@@ -393,6 +421,28 @@ export async function POST(request: Request) {
     if (soruHatasi) throw new Error(soruHatasi.message);
 
     let havuz = (sorular ?? []) as KaynakSoru[];
+
+    // Denemede yalnızca çoktan seçmeli: açık uçlu değerlendirmesi model çağırıyor,
+    // süreli bir sınavda hem beklemeye hem paraya mal olurdu.
+    let denemeSoru = adet;
+    let denemeSure = 0;
+    if (deneme) {
+      havuz = havuz.filter((s) => s.kind === "coktan");
+      // ALT SINIR: 8 sorudan kurulan bir "deneme" sınav deneyimi vermez, üstelik
+      // aynı sorular her denemede döner. Eşiğin altındaysa deneme kurulmuyor.
+      if (havuz.length < DENEME_EN_AZ_HAVUZ) {
+        return NextResponse.json(
+          {
+            hata:
+              `"${kategori}" kategorisinde deneme için yeterli soru yok: ` +
+              `${havuz.length}/${DENEME_EN_AZ_HAVUZ} çoktan seçmeli. Birkaç ders daha işlersen açılır.`,
+          },
+          { status: 400 }
+        );
+      }
+      denemeSoru = denemeSoruSinirla(istenenSoru, havuz.length);
+      denemeSure = denemeSureSinirla(istenenSure, denemeSoru);
+    }
 
     // Aynı soruyu bu pratikte ikinci kez sormayalım. Havuz tükenirse baştan
     // başlıyoruz — döngünün durmaması, tekrar etmemesinden önemli.
@@ -487,15 +537,17 @@ export async function POST(request: Request) {
       if (g) g.push(s);
       else gruplar.set(anahtar, [s]);
     }
-    const secilen = derslereYayarakSec([...gruplar.values()], adet);
+    const secilen = derslereYayarakSec([...gruplar.values()], deneme ? denemeSoru : adet);
 
     // Soru sırası da karışsın: derslere yayarak seçmek sırayı ders ders diziyor,
     // oysa istenen şey konuların birbirine karışması.
     const sirali = karistir(secilen);
 
     // ------------------------------------------------------------- varyant
+    // Deneme her zaman kopyayla kurulur: varyant üretimi para harcar ve sınavın
+    // ölçtüğü şeye bir katkısı yok.
     const varyantlar =
-      mod === "varyant" ? await varyantUret(sirali) : new Map<string, Varyant>();
+      mod === "varyant" && !deneme ? await varyantUret(sirali) : new Map<string, Varyant>();
 
     // Ders sayısı da videoya göre: aynı videonun iki oturumu tek ders sayılmalı
     const kaynakDersler = new Set(sirali.map((s) => s.video_id ?? s.session_id));
@@ -517,20 +569,52 @@ export async function POST(request: Request) {
           // kısıtını ve yabancı anahtarı karşılıyor. Soru-video ilişkisi
           // ders_questions.video_id üzerinden kuruluyor.
           video_id: sirali[0].video_id ?? dersler[0].video_id,
-          title: `${kategori} pratiği`,
+          title: deneme ? `${kategori} denemesi` : `${kategori} pratiği`,
           kategori,
-          tur: "tekrar",
-          summary: `${kategori} derslerinden karışık pratik. Sınırı yok; istediğin kadar soru çözebilirsin.`,
+          tur: deneme ? "deneme" : "tekrar",
+          // Denemenin süresi created_at'ten işliyor (bkz. DenemeView): sunucu
+          // saati tek doğru kaynak, sekme kapanıp açılınca sayaç kaldığı yerden
+          // devam ediyor ve durdurulamıyor.
+          summary: deneme
+            ? `${kategori} derslerinden ${denemeSoru} soruluk deneme. Süre ${Math.round(
+                denemeSure / 60
+              )} dakika; sonuçlar sınav bitince açılıyor.`
+            : `${kategori} derslerinden karışık pratik. Sınırı yok; istediğin kadar soru çözebilirsin.`,
+          ...(deneme ? { deneme_sure_sn: denemeSure } : {}),
           topics: konular,
           status: "hazir",
         })
         .select("id")
         .single();
 
-      if (oturumHatasi || !oturum) {
+      // deneme_sure_sn kolonu eklenmemişse deneme yine kurulsun: süre alanı
+      // düşürülüp yeniden deneniyor, ekran varsayılan tempoya düşüyor.
+      if (oturumHatasi && /deneme_sure_sn/.test(oturumHatasi.message)) {
+        console.warn("[ders] deneme_sure_sn kolonu yok, süre saklanmadan kuruluyor");
+        const { data: yedek, error: yedekHatasi } = await supabase
+          .from("ders_sessions")
+          .insert({
+            video_id: sirali[0].video_id ?? dersler[0].video_id,
+            title: deneme ? `${kategori} denemesi` : `${kategori} pratiği`,
+            kategori,
+            tur: deneme ? "deneme" : "tekrar",
+            summary: deneme
+              ? `${kategori} derslerinden ${denemeSoru} soruluk deneme.`
+              : `${kategori} derslerinden karışık pratik.`,
+            topics: konular,
+            status: "hazir",
+          })
+          .select("id")
+          .single();
+        if (yedekHatasi || !yedek) {
+          throw new Error(`Oturum oluşturulamadı: ${yedekHatasi?.message ?? "bilinmiyor"}`);
+        }
+        oturumId = yedek.id;
+      } else if (oturumHatasi || !oturum) {
         throw new Error(`Pratik oturumu oluşturulamadı: ${oturumHatasi?.message ?? "bilinmiyor"}`);
+      } else {
+        oturumId = oturum.id;
       }
-      oturumId = oturum.id;
     }
 
     // Ekleme modunda pozisyonlar mevcut sorulardan sonra devam etmeli

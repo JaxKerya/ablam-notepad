@@ -38,6 +38,14 @@ export async function POST(request: Request) {
     const cevap = typeof govde.cevap === "string" ? govde.cevap.trim() : "";
     const secim = typeof govde.secim === "number" ? govde.secim : null;
     const pas = govde.pas === true;
+    // Deneme alanları. Normal derste GÖNDERİLMİYOR ve o zaman kayda hiç
+    // yazılmıyor — böylece kolonlar eklenmeden de ders akışı çalışmaya devam
+    // ediyor (bkz. db/ders.sql sonundaki alter table satırları).
+    const sureMs =
+      typeof govde.sureMs === "number" && govde.sureMs >= 0
+        ? Math.min(Math.round(govde.sureMs), 3_600_000)
+        : null;
+    const denemeCevabi = typeof govde.deneme === "boolean" ? govde.deneme : sureMs !== null;
 
     if (!questionId) {
       return NextResponse.json({ hata: "questionId gerekli." }, { status: 400 });
@@ -164,19 +172,37 @@ export async function POST(request: Request) {
         : [];
     }
 
-    const { error: kayitHatasi } = await supabase.from("ders_answers").upsert(
-      {
-        session_id: soru.session_id,
-        question_id: soru.id,
-        user_answer: soru.kind === "coktan" ? (secim !== null ? String(secim) : null) : cevap,
-        verdict,
-        feedback,
-        missing,
-      },
-      { onConflict: "question_id" }
-    );
+    const kayit: Record<string, unknown> = {
+      session_id: soru.session_id,
+      question_id: soru.id,
+      user_answer: soru.kind === "coktan" ? (secim !== null ? String(secim) : null) : cevap,
+      verdict,
+      feedback,
+      missing,
+    };
+    if (denemeCevabi) kayit.sure_ms = sureMs;
+
+    let { error: kayitHatasi } = await supabase
+      .from("ders_answers")
+      .upsert(kayit, { onConflict: "question_id" });
+
+    // Deneme kolonları eklenmemişse cevabı kaybetmek yerine onlarsız yaz.
+    // Sınavın ortasında "cevap kaydedilemedi" demek, çözülmüş soruyu çöpe atmak
+    // olurdu; süre bilgisi kaybolur ama cevap durur.
+    if (kayitHatasi && /sure_ms/.test(kayitHatasi.message)) {
+      console.warn("[ders] sure_ms kolonu yok, cevap süresiz yazılıyor");
+      delete kayit.sure_ms;
+      ({ error: kayitHatasi } = await supabase
+        .from("ders_answers")
+        .upsert(kayit, { onConflict: "question_id" }));
+    }
 
     if (kayitHatasi) throw new Error(`Cevap kaydedilemedi: ${kayitHatasi.message}`);
+
+    // DENEMEDE CEVAP AÇILMIYOR. Sınav bitene kadar doğruyu göstermek, denemeyi
+    // pratiğe çevirir; sunucu da bu yüzden hiçbir ipucu döndürmüyor. Sonuçlar
+    // sınav bitince veritabanından okunuyor.
+    if (denemeCevabi) return NextResponse.json({ kaydedildi: true });
 
     return NextResponse.json({
       verdict,

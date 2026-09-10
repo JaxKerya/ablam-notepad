@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
+import SoruMetni from "@/components/ders/SoruMetni";
 import {
   DERS_NOTLARI_KLASORU,
   formatSure,
@@ -46,31 +47,6 @@ interface Props {
 }
 
 type Mod = "ozet" | "soru" | "sonuc";
-
-/**
- * Soru kökü. Olumsuzluk kelimeleri (değildir, söylenemez, yer almaz…) koyu ve
- * altı çizili basılıyor — ÖSYM'nin basılı kitapçıkta yaptığının aynısı. Sebebi
- * ölçme hatasını azaltmak: soruyu bilen ama "değildir"i atlayan öğrenci bildiği
- * soruyu kaybediyor.
- */
-function SoruMetni({ metin, className }: { metin: string; className?: string }) {
-  // whitespace-pre-line: öncüllü sorularda soru kökü üç yargıyı alt alta
-  // sıralıyor (I. … II. … III. …). Satır sonları korunmazsa hepsi tek paragrafa
-  // yapışıyor ve soru okunamaz hâle geliyor.
-  return (
-    <p className={`whitespace-pre-line ${className ?? ""}`}>
-      {soruParcalari(metin).map((p, i) =>
-        p.vurgulu ? (
-          <strong key={i} className="font-semibold text-white underline decoration-white/40 underline-offset-2">
-            {p.metin}
-          </strong>
-        ) : (
-          <span key={i}>{p.metin}</span>
-        )
-      )}
-    </p>
-  );
-}
 
 const VERDICT_ICON: Record<Verdict, typeof CircleCheck> = {
   dogru: CircleCheck,

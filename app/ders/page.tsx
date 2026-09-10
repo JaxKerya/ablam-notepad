@@ -20,6 +20,7 @@ import {
   FileText,
   Dices,
   Search,
+  Timer,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
@@ -32,6 +33,14 @@ import {
   ES_ZAMANLI_URETIM,
   formatSure,
   IS_CALISIYOR,
+  DENEME_EN_AZ_HAVUZ,
+  DENEME_EN_AZ_SORU,
+  DENEME_EN_FAZLA_SORU,
+  DENEME_TEMPOLARI,
+  DENEME_VARSAYILAN_SORU,
+  DENEME_VARSAYILAN_TEMPO,
+  netHesapla,
+  sayacMetni,
   KATEGORI_DIGER,
   linkleriAyikla,
   NOT_KATEGORISIZ,
@@ -48,13 +57,18 @@ interface OturumOzeti {
   created_at: string;
   video_id: string;
   kategori: string;
-  /** 'tekrar' oturumları bir videodan üretilmedi, kategoriden karıştırıldı */
+  /** 'ders' dışındakiler bir videodan üretilmedi: 'tekrar' pratik, 'deneme' sınav */
+  tur: string;
   tekrarMi: boolean;
   sure: number;
   /** Videonun YouTube'daki kendi adı — ders adı modelin verdiği addır */
   videoBaslik: string | null;
   /** Videonun YouTube'a yüklenme anı; liste bu alana göre sıralanıyor */
   yayin: string | null;
+  /** Yalnızca denemelerde: sınavın toplam süresi (saniye) */
+  denemeSure: number | null;
+  /** Deneme bitirildiyse o an; doluysa sınav kapanmıştır */
+  denemeBitti: string | null;
   soruSayisi: number;
   cevapSayisi: number;
   dogruSayisi: number;
@@ -102,6 +116,13 @@ const DURUM_METNI: Record<IsDurumu, string> = {
  */
 const LISTE_TAVANI = 200;
 
+/**
+ * Kategori kartında listelenen deneme sayısı. Net gelişimini görmeye yetecek
+ * kadar; daha fazlası kartı ders listesinden uzaklaştırıyor. Tavana çarpıldığı
+ * listenin altında yazıyor, sessiz kesme yok.
+ */
+const DENEME_LISTE_TAVANI = 5;
+
 
 export default function DersAnaSayfa() {
   const [link, setLink] = useState("");
@@ -116,7 +137,8 @@ export default function DersAnaSayfa() {
   /** Transkripti elle yapıştırma paneli hangi işe ait — kapalıysa null */
   const [elleIsId, setElleIsId] = useState<string | null>(null);
   const [elleMetin, setElleMetin] = useState("");
-  const [silinecek, setSilinecek] = useState<string | null>(null);
+  /** Silme onayı: yalnızca kimlik değil, ne silindiği de lazım (metin değişiyor) */
+  const [silinecek, setSilinecek] = useState<{ id: string; deneme: boolean } | null>(null);
   const [tekrarKuruluyor, setTekrarKuruluyor] = useState<string | null>(null);
 
   /**
@@ -199,6 +221,53 @@ export default function DersAnaSayfa() {
       }
     }
 
+    /**
+     * Kategori başına ÇOKTAN SEÇMELİ havuzu. Deneme yalnızca çoktan seçmeliden
+     * kuruluyor; kartlardaki toplam soru sayısı açık uçluları da içerdiği için
+     * "deneme kurulabilir mi" sorusunu cevaplamıyor. Yalnızca kimlik çekiliyor,
+     * sayım istemcide yapılıyor — PostgREST'te grup bazlı sayım yok.
+     */
+    const coktanHavuz = new Map<string, number>();
+    if (kimlikler.length) {
+      const { data: coktanlar } = await supabase
+        .from("ders_questions")
+        .select("session_id")
+        .eq("kind", "coktan")
+        .eq("flagged", false)
+        .in("session_id", kimlikler)
+        .limit(5000);
+      const oturumKategorisi = new Map(
+        (data ?? []).map((o) => [
+          o.id,
+          o.tur === "ders" ? (o.kategori as string | null)?.trim() || KATEGORI_DIGER : null,
+        ])
+      );
+      for (const q of coktanlar ?? []) {
+        const kat = oturumKategorisi.get(q.session_id);
+        if (kat) coktanHavuz.set(kat, (coktanHavuz.get(kat) ?? 0) + 1);
+      }
+    }
+    setHavuzlar(coktanHavuz);
+
+    /**
+     * Deneme süreleri. published_at ile aynı gerekçe: gömülü seçime koymak,
+     * kolon eklenmemişken bütün ders listesini 400'e düşürürdü. Hatası
+     * yutuluyor, süre bilinmezse varsayılan tempoya düşülüyor.
+     */
+    const denemeSureleri = new Map<string, number>();
+    const denemeBitisleri = new Map<string, string>();
+    const denemeKimlikleri = (data ?? []).filter((o) => o.tur === "deneme").map((o) => o.id);
+    if (denemeKimlikleri.length) {
+      const { data: denemeler } = await supabase
+        .from("ders_sessions")
+        .select("id, deneme_sure_sn, deneme_bitti_at")
+        .in("id", denemeKimlikleri);
+      for (const d of denemeler ?? []) {
+        if (d.deneme_sure_sn) denemeSureleri.set(d.id, d.deneme_sure_sn as number);
+        if (d.deneme_bitti_at) denemeBitisleri.set(d.id, d.deneme_bitti_at as string);
+      }
+    }
+
     const dogrular = new Map<string, number>();
     const toplamlar = new Map<string, number>();
     for (const c of cevaplar ?? []) {
@@ -224,10 +293,15 @@ export default function DersAnaSayfa() {
           video_id: o.video_id,
           // Kategori sütunu eklenmeden önce üretilmiş dersler null taşıyor
           kategori: (o.kategori as string | null)?.trim() || KATEGORI_DIGER,
-          tekrarMi: o.tur === "tekrar",
+          tur: (o.tur as string) ?? "ders",
+          // Ders listesinde yalnızca gerçek dersler var; pratik ve deneme
+          // oturumları kategori başlığında özetleniyor.
+          tekrarMi: o.tur !== "ders",
           sure: video?.duration_seconds ?? 0,
           videoBaslik: video?.title ?? null,
           yayin: yayinlar.get(o.video_id) ?? null,
+          denemeSure: denemeSureleri.get(o.id) ?? null,
+          denemeBitti: denemeBitisleri.get(o.id) ?? null,
           soruSayisi,
           cevapSayisi: toplamlar.get(o.id) ?? 0,
           dogruSayisi: dogrular.get(o.id) ?? 0,
@@ -376,11 +450,17 @@ export default function DersAnaSayfa() {
           if (b.yayin) return 1;
           return b.created_at.localeCompare(a.created_at);
         });
-      const pratik = liste.find((o) => o.tekrarMi) ?? null;
+      const pratik = liste.find((o) => o.tur === "tekrar") ?? null;
+      // Denemeler: net = D − Y/4. Liste created_at'e göre sıralı olduğu için
+      // ilk eleman en yeni deneme.
+      const denemeler = liste.filter((o) => o.tur === "deneme");
+      const deneme = denemeler[0] ?? null;
       return {
         kategori,
         dersler,
         pratik,
+        deneme,
+        denemeler,
         dersSayisi: dersler.filter((o) => !o.yarim).length,
         yarimSayisi: dersler.filter((o) => o.yarim).length,
         soruSayisi: dersler.reduce((t, o) => t + o.soruSayisi, 0),
@@ -444,6 +524,69 @@ export default function DersAnaSayfa() {
    * yeni oturum açsaydı liste şişer ve "kaç soru çözdüm" sayacı sıfırlanırdı.
    * Model çağrısı yok, bedava ve anında.
    */
+  /**
+   * Deneme sınavı başlatır. Aynı uç, aynı havuz — farkı tur:"deneme":
+   * yalnızca çoktan seçmeli, KPSS'nin o dersteki soru sayısı kadar, süreli.
+   * Model çağrısı yok, bedava.
+   */
+  const [denemeKuruluyor, setDenemeKuruluyor] = useState<string | null>(null);
+  /** Kategori -> o kategorideki çoktan seçmeli sayısı (deneme havuzu) */
+  const [havuzlar, setHavuzlar] = useState<Map<string, number>>(new Map());
+  /** Deneme kurulum penceresi hangi kategori için açık */
+  const [denemeKurulum, setDenemeKurulum] = useState<string | null>(null);
+  const [denemeSoru, setDenemeSoru] = useState(DENEME_VARSAYILAN_SORU);
+  const [denemeTempo, setDenemeTempo] = useState(DENEME_VARSAYILAN_TEMPO);
+  // Esc ile kapanma ve odak tuzağı. Çağrı state'lerin ALTINDA: yukarıda olsaydı
+  // denemeKurulum tanımlanmadan okunurdu (TDZ).
+  const denemeRef = useModal<HTMLDivElement>(denemeKurulum !== null, () => setDenemeKurulum(null));
+  /** Kurulum penceresini açar; son seçimler hatırlanıyor */
+  const denemeKurulumAc = (kategori: string) => {
+    const havuz = havuzlar.get(kategori) ?? 0;
+    let soru = Math.min(DENEME_VARSAYILAN_SORU, havuz);
+    let tempo = DENEME_VARSAYILAN_TEMPO;
+    try {
+      const kayit = JSON.parse(localStorage.getItem("ablam-deneme-ayar") ?? "{}");
+      if (kayit.soru) soru = Math.min(Number(kayit.soru), havuz);
+      if (kayit.tempo) tempo = Number(kayit.tempo);
+    } catch {
+      // Bozuk kayıt varsa varsayılanlarla devam
+    }
+    setDenemeSoru(Math.max(DENEME_EN_AZ_SORU, soru));
+    setDenemeTempo(tempo);
+    setDenemeKurulum(kategori);
+  };
+
+  const denemeBaslat = async (kategori: string) => {
+    if (denemeKuruluyor) return;
+    setDenemeKuruluyor(kategori);
+    try {
+      localStorage.setItem(
+        "ablam-deneme-ayar",
+        JSON.stringify({ soru: denemeSoru, tempo: denemeTempo })
+      );
+    } catch {
+      // Depolama kapalıysa ayar hatırlanmaz, deneme yine kurulur
+    }
+    try {
+      const res = await fetch("/api/ders/tekrar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kategori,
+          tur: "deneme",
+          soruSayisi: denemeSoru,
+          sureSn: denemeSoru * denemeTempo,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.hata ?? "Deneme hazırlanamadı.");
+      router.push(`/ders/${data.sessionId}`);
+    } catch (err) {
+      addToast((err as Error).message, "error");
+      setDenemeKuruluyor(null);
+    }
+  };
+
   const tekrarBaslat = async (kategori: string) => {
     if (tekrarKuruluyor) return;
     setTekrarKuruluyor(kategori);
@@ -502,7 +645,7 @@ export default function DersAnaSayfa() {
     return () => clearTimeout(z);
   }, [arama, araYap]);
 
-  const oturumSil = async (id: string) => {
+  const oturumSil = async (id: string, deneme = false) => {
     const { error } = await supabase.from("ders_sessions").delete().eq("id", id);
     if (error) {
       addToast("Silinemedi: " + error.message, "error");
@@ -510,12 +653,36 @@ export default function DersAnaSayfa() {
     }
     setOturumlar((o) => o.filter((x) => x.id !== id));
     setSilinecek(null);
-    addToast("Ders silindi", "delete");
+    addToast(deneme ? "Deneme silindi" : "Ders silindi", "delete");
     // Notu duruyorsa artık kategorisi çözülemez; "Kategorisiz" kovasına düşsün
     // diye eşleme yenileniyor. Not silinmiyor: ders gitti diye çalışma
     // materyalini de atmak ablamın istediği şey değil.
     dersNotlariniGetir();
   };
+
+  /**
+   * SÜREN DENEME. Denemenin sayacı ablam ekrana bakmasa da işliyor (sunucu
+   * saatinden hesaplanıyor, bkz. DenemeView). Bu, yenileyerek süre kazanmayı
+   * engelliyor ama bir açık bırakmıştı: sekmeyi kapatıp giden ablam denemenin
+   * hâlâ sürdüğünü hiçbir yerde görmüyordu. Şerit bunu görünür kılıyor.
+   */
+  const [simdi, setSimdi] = useState(() => Date.now());
+  const surenDeneme = useMemo(() => {
+    for (const o of oturumlar) {
+      if (o.tur !== "deneme" || o.denemeBitti) continue;
+      const sure = (o.denemeSure ?? o.soruSayisi * DENEME_VARSAYILAN_TEMPO) * 1000;
+      const kalan = new Date(o.created_at).getTime() + sure - simdi;
+      if (kalan > 0) return { oturum: o, kalanSn: Math.round(kalan / 1000) };
+    }
+    return null;
+  }, [oturumlar, simdi]);
+
+  // Sayaç yalnızca süren bir deneme varken işliyor; yoksa saniyelik render yok.
+  useEffect(() => {
+    if (!surenDeneme) return;
+    const z = setInterval(() => setSimdi(Date.now()), 1000);
+    return () => clearInterval(z);
+  }, [surenDeneme]);
 
   /** Yayın tarihi bilinmeyen ders sayısı — doldurma düğmesi buna bakıyor */
   const tarihsizSayisi = oturumlar.filter((o) => !o.tekrarMi && !o.yayin).length;
@@ -584,6 +751,32 @@ export default function DersAnaSayfa() {
             birlikte ölçelim.
           </p>
         </div>
+
+        {/* Süren deneme şeridi — sayaç ablam bakmasa da işlediği için en üstte */}
+        {surenDeneme && (
+          <Link
+            href={`/ders/${surenDeneme.oturum.id}`}
+            className="animate-fade-in mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-400/30 bg-amber-400/[0.06] px-4 py-3 transition-colors hover:border-amber-400/50"
+          >
+            <span className="flex min-w-0 items-center gap-2.5">
+              <Clock size={15} className="flex-shrink-0 animate-pulse text-amber-300" />
+              <span className="min-w-0">
+                <span className="block truncate text-[13px] font-medium text-amber-100/90">
+                  {surenDeneme.oturum.title ?? "Deneme"} sürüyor
+                </span>
+                <span className="block text-[11.5px] text-amber-200/50">
+                  sayaç sen bakmasan da işliyor
+                </span>
+              </span>
+            </span>
+            <span className="flex flex-shrink-0 items-center gap-2">
+              <span className="font-mono text-[16px] tabular-nums text-amber-100">
+                {sayacMetni(surenDeneme.kalanSn)}
+              </span>
+              <ArrowRight size={15} className="text-amber-200/60" />
+            </span>
+          </Link>
+        )}
 
         {/* Link girişi */}
         <div
@@ -956,9 +1149,21 @@ export default function DersAnaSayfa() {
                           )}
                         </div>
                         <p className="mt-1 text-[11.5px] text-white/35">
-                          {g.pratik && g.pratik.cevapSayisi > 0
-                            ? `son pratik: ${g.pratik.cevapSayisi} soru · ${g.pratik.dogruSayisi} doğru`
-                            : "henüz pratik yok"}
+                          {[
+                            g.deneme && g.deneme.cevapSayisi > 0
+                              ? `son deneme: ${netHesapla(
+                                  g.deneme.dogruSayisi,
+                                  g.deneme.cevapSayisi - g.deneme.dogruSayisi
+                                )
+                                  .toFixed(2)
+                                  .replace(".", ",")} net`
+                              : null,
+                            g.pratik && g.pratik.cevapSayisi > 0
+                              ? `son pratik: ${g.pratik.cevapSayisi} soru · ${g.pratik.dogruSayisi} doğru`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "henüz pratik yok"}
                         </p>
                       </div>
                     </button>
@@ -976,6 +1181,34 @@ export default function DersAnaSayfa() {
                         >
                           <NotebookPen size={12} className="text-[var(--accent)]/70" />
                           {g.notSayisi} not
+                        </button>
+                      )}
+
+                      {/* Deneme sınavı: KPSS'nin o dersteki gerçek soru sayısı
+                          ve süresiyle. Havuz yetmiyorsa uç anlamlı bir hata
+                          döndürüyor, düğmeyi burada gizlemeye gerek yok —
+                          soru sayısını istemci tarafında bilmiyoruz. */}
+                      {g.dersSayisi > 0 && (
+                        <button
+                          onClick={() => denemeKurulumAc(g.kategori)}
+                          disabled={
+                            !!denemeKuruluyor || (havuzlar.get(g.kategori) ?? 0) < DENEME_EN_AZ_HAVUZ
+                          }
+                          title={
+                            (havuzlar.get(g.kategori) ?? 0) < DENEME_EN_AZ_HAVUZ
+                              ? `Deneme için en az ${DENEME_EN_AZ_HAVUZ} çoktan seçmeli gerekiyor; bu kategoride ${
+                                  havuzlar.get(g.kategori) ?? 0
+                                } var.`
+                              : `${g.kategori}: süreli deneme kur`
+                          }
+                          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11.5px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {denemeKuruluyor === g.kategori ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Timer size={12} className="text-[var(--accent)]/70" />
+                          )}
+                          Deneme
                         </button>
                       )}
 
@@ -1003,6 +1236,61 @@ export default function DersAnaSayfa() {
 
                   {acik && (
                   <div className="space-y-2 border-t border-[var(--border)] p-2.5">
+                    {/* GEÇMİŞ DENEMELER. Denemeler bilerek silinmiyor ama bir
+                        açık bırakmıştım: kaydedilen sonuçlara ulaşmanın hiçbir
+                        yolu yoktu — başlıktaki net yalnızca metindi ve ders
+                        listesi denemeleri elemişti. Burada hem erişiliyorlar hem
+                        de netler alt alta gelince gelişim görünüyor. */}
+                    {g.denemeler.length > 0 && (
+                      <div className="mb-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2.5">
+                        <p className="mb-1.5 px-1 text-[11px] font-medium uppercase tracking-wider text-white/30">
+                          Denemeler
+                        </p>
+                        <div className="space-y-0.5">
+                          {g.denemeler.slice(0, DENEME_LISTE_TAVANI).map((d) => {
+                            const yanlis = d.cevapSayisi - d.dogruSayisi;
+                            const bos = Math.max(0, d.soruSayisi - d.cevapSayisi);
+                            return (
+                              // Silme düğmesi Link'in İÇİNDE değil KARDEŞİ:
+                              // iç içe olsaydı hem geçersiz HTML olurdu hem de
+                              // silmeye basınca denemeyi açardı.
+                              <div key={d.id} className="group/dn flex items-center gap-1">
+                                <Link
+                                  href={`/ders/${d.id}`}
+                                  className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/[0.04]"
+                                >
+                                  <Timer size={12} className="flex-shrink-0 text-white/25" />
+                                  <span className="min-w-0 flex-1 truncate text-[12px] text-white/60">
+                                    {tarihMetni(d.created_at)}
+                                    <span className="ml-2 text-white/30">
+                                      {d.soruSayisi} soru
+                                      {bos > 0 ? ` · ${bos} boş` : ""}
+                                    </span>
+                                  </span>
+                                  <span className="flex-shrink-0 font-mono text-[12px] tabular-nums text-[var(--accent-light)]">
+                                    {netHesapla(d.dogruSayisi, yanlis).toFixed(2).replace(".", ",")}
+                                    <span className="ml-1 text-[10px] text-white/30">net</span>
+                                  </span>
+                                </Link>
+                                <button
+                                  onClick={() => setSilinecek({ id: d.id, deneme: true })}
+                                  aria-label="Denemeyi sil"
+                                  className="flex-shrink-0 rounded-lg p-1.5 text-white/20 opacity-0 transition-all hover:bg-red-400/10 hover:text-red-400 focus:opacity-100 group-hover/dn:opacity-100"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {g.denemeler.length > DENEME_LISTE_TAVANI && (
+                          <p className="px-2 pt-1 text-[11px] text-white/25">
+                            en yeni {DENEME_LISTE_TAVANI} deneme gösteriliyor
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {g.dersler.map((o, i) => (
                     <div
                       key={o.id}
@@ -1066,7 +1354,7 @@ export default function DersAnaSayfa() {
                       </Link>
 
                       <button
-                        onClick={() => setSilinecek(o.id)}
+                        onClick={() => setSilinecek({ id: o.id, deneme: false })}
                         aria-label="Dersi sil"
                         className="flex-shrink-0 rounded-lg p-2 text-white/20 opacity-0 transition-all hover:bg-red-400/10 hover:text-red-400 group-hover:opacity-100"
                       >
@@ -1198,6 +1486,126 @@ export default function DersAnaSayfa() {
         </div>
       </aside>
 
+      {/* Deneme kurulumu. Soru sayısı ve tempo BURADA seçiliyor: ablam sistemi
+          hem KPSS hem YKS için kullanıyor, aynı ders iki sınavda farklı
+          ağırlıkta ve farklı tempoda. Sabit bir sayı ikisinden birine yanlış
+          gelirdi. */}
+      {denemeKurulum !== null && (
+        <div
+          className="animate-overlay fixed inset-0 z-[var(--z-panel)] flex items-center justify-center bg-black/40 px-5"
+          onClick={() => !denemeKuruluyor && setDenemeKurulum(null)}
+        >
+          <div
+            ref={denemeRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="deneme-kurulum-basligi"
+            className="animate-fade-in-scale w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--surface-popup)] p-5 shadow-2xl shadow-black/40"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]/10">
+                <Timer size={15} className="text-[var(--accent)]" />
+              </div>
+              <div>
+                <h2 id="deneme-kurulum-basligi" className="text-[14px] font-medium text-white/90">
+                  {denemeKurulum} denemesi
+                </h2>
+                <p className="text-[11.5px] text-white/35">
+                  havuzda {havuzlar.get(denemeKurulum) ?? 0} çoktan seçmeli var
+                </p>
+              </div>
+            </div>
+
+            <label className="mb-1.5 block text-[12px] font-medium text-white/55">
+              Soru sayısı
+            </label>
+            <div className="mb-1 flex items-center gap-3">
+              <input
+                type="range"
+                min={DENEME_EN_AZ_SORU}
+                max={Math.min(DENEME_EN_FAZLA_SORU, havuzlar.get(denemeKurulum) ?? DENEME_EN_AZ_SORU)}
+                value={denemeSoru}
+                onChange={(e) => setDenemeSoru(Number(e.target.value))}
+                className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-white/[0.08] accent-[var(--accent)]"
+              />
+              <span className="w-10 text-right font-mono text-[14px] tabular-nums text-white/85">
+                {denemeSoru}
+              </span>
+            </div>
+
+            <label className="mb-1.5 mt-4 block text-[12px] font-medium text-white/55">
+              Tempo — soru başına süre
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {DENEME_TEMPOLARI.map((t) => (
+                <button
+                  key={t.ad}
+                  onClick={() => setDenemeTempo(t.sn)}
+                  title={`${t.ad}: ${t.aciklama}`}
+                  className={`rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                    denemeTempo === t.sn
+                      ? "border-[var(--accent)]/45 bg-[var(--accent)]/[0.10]"
+                      : "border-[var(--border)] hover:border-[var(--border-hover)]"
+                  }`}
+                >
+                  <span
+                    className={`block text-[12.5px] ${
+                      denemeTempo === t.sn ? "text-[var(--accent-light)]" : "text-white/70"
+                    }`}
+                  >
+                    {t.ad}
+                  </span>
+                  <span className="text-[11px] text-white/30">{t.sn} sn/soru</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5">
+              <Clock size={13} className="text-white/30" />
+              <span className="text-[12.5px] text-white/60">
+                Toplam süre{" "}
+                <span className="font-mono text-white/90">
+                  {Math.floor((denemeSoru * denemeTempo) / 60)} dk{" "}
+                  {(denemeSoru * denemeTempo) % 60 > 0
+                    ? `${(denemeSoru * denemeTempo) % 60} sn`
+                    : ""}
+                </span>
+              </span>
+            </div>
+
+            <p className="mt-3 text-[11px] leading-relaxed text-white/35">
+              Süre deneme başlar başlamaz işlemeye başlar ve durdurulamaz. Sekmeyi
+              kapatsan da sayaç işlemeye devam eder.
+            </p>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => denemeBaslat(denemeKurulum)}
+                disabled={!!denemeKuruluyor}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 py-3 text-[13px] font-medium text-[var(--background)] transition-colors hover:bg-[var(--accent-light)] disabled:opacity-50"
+              >
+                {denemeKuruluyor ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Hazırlanıyor…
+                  </>
+                ) : (
+                  "Denemeyi başlat"
+                )}
+              </button>
+              <button
+                onClick={() => setDenemeKurulum(null)}
+                disabled={!!denemeKuruluyor}
+                className="rounded-xl border border-[var(--border)] px-4 py-3 text-[13px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/85 disabled:opacity-50"
+              >
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Silme onayı */}
       {silinecek && (
         <div
@@ -1213,10 +1621,12 @@ export default function DersAnaSayfa() {
             onClick={(e) => e.stopPropagation()}
           >
             <p id="ders-silme-basligi" className="text-[14px] font-medium text-white/90">
-              Bu ders silinsin mi?
+              {silinecek.deneme ? "Bu deneme silinsin mi?" : "Bu ders silinsin mi?"}
             </p>
             <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/45">
-              Sorular ve verdiğin cevaplar da silinir. Geri alınamaz.
+              {silinecek.deneme
+                ? "Denemenin soruları, cevapların ve neti silinir. Sorular kaynak derslerden kopyalandığı için dersler etkilenmez. Geri alınamaz."
+                : "Sorular ve verdiğin cevaplar da silinir. Geri alınamaz."}
             </p>
             <div className="mt-5 flex gap-2">
               <button
@@ -1226,7 +1636,7 @@ export default function DersAnaSayfa() {
                 Vazgeç
               </button>
               <button
-                onClick={() => oturumSil(silinecek)}
+                onClick={() => oturumSil(silinecek.id, silinecek.deneme)}
                 className="flex-1 rounded-xl bg-red-500/85 px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-red-500"
               >
                 Sil

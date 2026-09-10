@@ -173,3 +173,18 @@ alter table ders_questions add column if not exists geri_bildirim_gerekce text;
 -- çalışıyor. Boş kalırsa ders listenin sonuna düşer, başka bir şey bozulmaz.
 alter table ders_videos add column if not exists published_at timestamptz;
 create index if not exists ders_videos_published_idx on ders_videos (published_at);
+
+-- Deneme sınavında soru başına harcanan süre. Normal derslerde yazılmıyor
+-- (grade ucu yalnızca deneme modunda gönderiyor), o yüzden kolon eklenmeden de
+-- sistem çalışmaya devam eder — yalnızca süre analizi görünmez.
+alter table ders_answers add column if not exists sure_ms integer;
+
+-- Denemenin toplam süresi (saniye). Soru sayısı ve tempo deneme kurulurken
+-- seçildiği için süre sabit bir formülden türetilemiyor; oturumla birlikte
+-- saklanıyor. Kolon yoksa ekran varsayılan tempoya (65 sn/soru) düşer.
+alter table ders_sessions add column if not exists deneme_sure_sn integer;
+
+-- Denemenin BİTİRİLDİĞİ an. Süre dolmadan "bitir" denince yazılıyor ve iki işi
+-- var: bitmiş deneme "sürüyor" şeridinde görünmüyor, bir de sonuçları görüp geri
+-- dönen ablam sınava geri sokulmuyor (süre dolmamışsa cevap değiştirebilirdi).
+alter table ders_sessions add column if not exists deneme_bitti_at timestamptz;
