@@ -8,6 +8,7 @@ import {
   toplamSure,
   transkriptGetir,
   videoIdCozumle,
+  yayinTarihleriGetir,
 } from "@/lib/youtube";
 
 export const runtime = "nodejs";
@@ -106,6 +107,10 @@ export async function POST(request: Request) {
 
     const baslik = await baslikGetir(videoId);
     const sure = toplamSure(segments);
+    // Videonun YouTube'a yüklendiği an. Ders listesi bu alana göre sıralanıyor:
+    // ablam seriyi baştan sona çalışıyor, doğru sıra ekleme sırası değil yayın
+    // sırası. Anahtar yoksa null kalır ve ders listenin sonuna düşer.
+    const yayin = (await yayinTarihleriGetir([videoId])).get(videoId) ?? null;
 
     const { error } = await supabase.from("ders_videos").upsert(
       {
@@ -116,6 +121,7 @@ export async function POST(request: Request) {
         lang: "tr",
         source: kaynak,
         segments,
+        published_at: yayin,
       },
       { onConflict: "video_id" }
     );

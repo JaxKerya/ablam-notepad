@@ -36,6 +36,9 @@ export default async function DersOturumSayfasi({ params }: PageProps) {
     supabase
       .from("ders_questions")
       .select("*")
+      // İşaretli soru = ablamın itiraz ettiği ve düzeltilemeyen soru. Bir daha
+      // karşısına çıkmaması gerekiyor; oturumu yeniden açtığında da çıkmasın.
+      .eq("flagged", false)
       .eq("session_id", sessionId)
       .order("position", { ascending: true }),
     supabase.from("ders_answers").select("*").eq("session_id", sessionId),

@@ -63,6 +63,60 @@ export function oynatmaListesiMi(girdi: string): boolean {
   }
 }
 
+/**
+ * Videoların YouTube'a YÜKLENME tarihi (ISO 8601), video kimliğine göre.
+ *
+ * Neden gerekli: ders listesi "en son eklediğim üstte" diye sıralıydı, oysa
+ * ablam 65 bölümlük bir seriyi baştan sona çalışıyor. Doğru sıra videoların
+ * yayın sırası; ölçtüm, bu seride yükleme tarihi bölüm numarasıyla birebir
+ * örtüşüyor (#1 2023-09-05 → #65 2025-07-28).
+ *
+ * Neden Data API: projenin başlık için kullandığı oEmbed ucu tarih döndürmüyor
+ * (alanları: title, author_name, thumbnail…). Watch sayfasının HTML'inde tarih
+ * geçiyor ama video başına 1,2 MB indirmek gerekiyor ve YouTube sunucu
+ * IP'lerine sık sık onay duvarı çıkarıyor — projede timedtext'te tam olarak bu
+ * yaşandı. Data API belgeli, tek istekte 50 video veriyor ve günlük 10.000
+ * birimlik ücretsiz kotanın yalnızca 1 birimini harcıyor.
+ *
+ * ANAHTAR YOKSA SESSİZCE BOŞ DÖNER. Tarih bilinmeyen video listenin sonuna
+ * düşer, başka hiçbir şey bozulmaz — anahtarı kurmayı unutmak dersleri
+ * kaybettirmez.
+ */
+export async function yayinTarihleriGetir(
+  videoIdleri: string[]
+): Promise<Map<string, string>> {
+  const sonuc = new Map<string, string>();
+  const anahtar = process.env.YOUTUBE_API_KEY;
+  if (!anahtar || !videoIdleri.length) return sonuc;
+
+  // Data API tek istekte en fazla 50 kimlik kabul ediyor
+  for (let i = 0; i < videoIdleri.length; i += 50) {
+    const grup = videoIdleri.slice(i, i + 50);
+    try {
+      const res = await fetch(
+        "https://www.googleapis.com/youtube/v3/videos" +
+          `?part=snippet&fields=items(id,snippet/publishedAt)` +
+          `&id=${grup.join(",")}&key=${anahtar}`,
+        { signal: AbortSignal.timeout(15_000) }
+      );
+      if (!res.ok) {
+        console.warn(`[ders] yayın tarihi alınamadı: HTTP ${res.status}`);
+        continue;
+      }
+      const veri = (await res.json()) as {
+        items?: { id?: string; snippet?: { publishedAt?: string } }[];
+      };
+      for (const oge of veri.items ?? []) {
+        const tarih = oge?.snippet?.publishedAt;
+        if (oge?.id && typeof tarih === "string") sonuc.set(oge.id, tarih);
+      }
+    } catch (e) {
+      console.warn("[ders] yayın tarihi isteği düştü:", (e as Error).message);
+    }
+  }
+  return sonuc;
+}
+
 /** Video başlığı — oEmbed ucu herkese açık ve hafif */
 export async function baslikGetir(videoId: string): Promise<string | null> {
   try {

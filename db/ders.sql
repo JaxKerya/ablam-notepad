@@ -158,3 +158,18 @@ update ders_questions q
 
 create index if not exists ders_sessions_kategori_idx
   on ders_sessions (kategori, created_at desc);
+
+-- Ablamın soru itirazı: gerekçesi, denetimin kararı ve kararın gerekçesi.
+-- flagged=true artık "emekli" demek: soru ne pratik havuzuna giriyor ne de ders
+-- ekranında görünüyor (bkz. /api/ders/geri-bildirim). Bu kolonlar o kararın
+-- neden verildiğini saklıyor; /ders/aiview bunları listeliyor.
+alter table ders_questions add column if not exists geri_bildirim text;
+alter table ders_questions add column if not exists geri_bildirim_karari text;  -- hakli | haksiz | yazilamadi | gerekcesiz
+alter table ders_questions add column if not exists geri_bildirim_gerekce text;
+
+-- Videonun YouTube'a yüklenme tarihi (YouTube Data API v3, snippet.publishedAt).
+-- ders_videos.created_at BİZİM transkripti çektiğimiz an; ders listesinin doğru
+-- sırası ise videoların yayın sırası — ablam 65 bölümlük seriyi baştan sona
+-- çalışıyor. Boş kalırsa ders listenin sonuna düşer, başka bir şey bozulmaz.
+alter table ders_videos add column if not exists published_at timestamptz;
+create index if not exists ders_videos_published_idx on ders_videos (published_at);

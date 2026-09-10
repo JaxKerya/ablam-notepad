@@ -177,10 +177,18 @@ AI_GRADE_MODEL=openai/gpt-5.6-sol    # açık uçlu cevap değerlendirmesi
 AI_AUDIT_MODEL=openai/gpt-5.6-luna   # cevap anahtarı denetimi (ucuz model yeter)
 SUPADATA_API_KEY=...
 SITE_GATE_SECRET=rastgele-uzun-bir-metin
+YOUTUBE_API_KEY=...                  # video yayin tarihi (sıralama için)
 ```
 
 `SUPADATA_API_KEY` için [supadata.ai](https://supadata.ai/) üzerinden ücretsiz hesap
 açmanız yeterli — ücretsiz katman ayda 100 transkript veriyor.
+
+`YOUTUBE_API_KEY` derslerin doğru sırada listelenmesi için: ders listesi videonun
+YouTube'a **yüklenme tarihine** göre sıralanıyor (ekleme sırasına değil), o tarihi de
+YouTube Data API v3 veriyor. [Google Cloud Console](https://console.cloud.google.com/)
+üzerinden ücretsiz bir API anahtarı açıp "YouTube Data API v3"ü etkinleştirmek yeterli;
+günlük 10.000 birimlik kotanın 50 video başına 1 birimi harcanıyor. Anahtar yoksa
+uygulama çalışmaya devam eder, dersler yalnızca ekleme sırasına göre listelenir.
 
 `SITE_GATE_SECRET` giriş çerezini imzalar; rastgele uzun bir metin olmalı
 (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).

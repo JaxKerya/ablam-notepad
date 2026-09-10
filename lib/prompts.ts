@@ -471,3 +471,97 @@ maddenin geri kalanını olduğu gibi bırak.
 
 SADECE geçerli JSON döndür, kod bloğu işareti kullanma:
 {"hatalar": [{"no": 3, "gerekce": "1683 değil 1453", "duzeltilmis": "..."}]}`;
+
+// --- Ablamın soru itirazı ---------------------------------------------------
+//
+// Ablam bir soruyu "hatalı" diye işaretleyip gerekçe yazabiliyor. Bu iki prompt
+// o gerekçeyi işliyor: önce HAKLI MI diye karar veriliyor, haklıysa AYRI bir
+// çağrıda soru düzeltiliyor.
+//
+// İkisi neden ayrı: karar veren modelin aynı zamanda yeni soruyu yazan model
+// olması, "haklı" demek için bir sebep yaratır — düzeltmek üzere iş çıkarır.
+// Projedeki denetim katmanlarında da aynı ayrım var: hüküm veren, hükümden
+// çıkar sağlamaz.
+
+export const GERI_BILDIRIM_DENETIMI = `Sen bir KPSS ders materyali denetçisisin. Öğrenci bir soruyu "hatalı"
+diye işaretledi ve gerekçesini yazdı. Elinde sorunun kendisi, cevabı ve dersin
+o soruya ait bölümünün transkripti var.
+
+Karar vereceğin TEK ŞEY: öğrenci haklı mı?
+
+${ALTYAZI_UYARISI}
+
+HAKLI SAYILIR:
+- İşaretli doğru cevap gerçekten yanlış; derste başka bir şey anlatılmış.
+- Soru derste hiç geçmeyen bir şeyi soruyor.
+- İki şık birden savunulabiliyor ya da hiçbiri doğru değil.
+- Soru iki farklı biçimde anlaşılabiliyor, öğrenci bu yüzden yanılmış.
+- Şıklar birbirini tekrar ediyor ya da açıklama soruyla çelişiyor.
+- Öğrencinin verdiği örnek/karşı örnek transkriptte doğrulanıyor.
+
+HAKSIZ SAYILIR:
+- Soru zor geldi, konu bilinmiyordu; soruda bir kusur yok.
+- Öğrencinin cevabı yanlıştı ve itiraz aslında o cevabı savunuyor.
+- İtiraz üslupla ilgili: "çok uzun", "sıkıcı", "sevmedim".
+- Gerekçe soruyla ilgisiz ya da ne dediği anlaşılmıyor.
+
+KARARI TRANSKRİPTE DAYANDIR. İtiraz bir bilgiye dair ise transkriptte ara: orada
+öğrenciyi doğrulayan bir şey yoksa ve soru transkriptle uyumluysa haksızdır.
+Kendi genel bilgine dayanıp transkripti geçersiz sayma.
+
+"gerekce" alanı DOĞRUDAN ÖĞRENCİYE gösterilecek: sen diliyle, 1-2 cümle, kararın
+sebebini söyle. Haklıysa neyin bozuk olduğunu, haksızsa sorunun neden geçerli
+olduğunu yaz. "Tebrikler", "Maalesef" gibi hüküm sözleriyle başlama.
+
+"sorun" alanı soruyu düzeltecek olan modele gidecek: neyin bozuk olduğunu teknik
+ve kısa yaz (haksızsa boş bırak).
+
+SADECE geçerli JSON döndür, kod bloğu işareti kullanma:
+{"hakli": true, "gerekce": "...", "sorun": "..."}`;
+
+/**
+ * Haklı bulunan itirazdan sonra soruyu DÜZELTİR.
+ *
+ * "Yeniden yaz" değil "düzelt" demesi bilinçli: itiraz çoğu zaman tek bir yeri
+ * bozuk buluyor (yanlış anahtar, çakışan iki şık). Sağlam olan soru kökünü de
+ * değiştirmek, düzeltilen şeyden fazlasını riske atar.
+ */
+export const soruDuzeltPrompt = (tur: "acik" | "coktan", sikSayisi: number) =>
+  `Sen KPSS'ye hazırlanan bir öğrenci için soru düzelten bir eğitmensin.
+
+Elinde bozuk bir soru, sorunun ne olduğu ve dersin ilgili bölümünün transkripti var.
+Görevin: aynı bilgiyi ölçen, DÜZGÜN bir soru vermek.
+
+${ALTYAZI_UYARISI}
+
+TEMEL KURALLAR:
+- Sorunun TAMAMINI değiştirmek zorunda değilsin. Bozuk olan neyse onu düzelt;
+  sağlam olan soru kökünü koru. En küçük düzeltme en iyi düzeltmedir.
+- Transkriptte açıkça geçmeyen hiçbir bilgiyi kullanma. Emin değilsen soruyu
+  transkriptin kesin olarak söylediği bir şeye daralt.
+- Sorunun ölçtüğü konu aynı kalsın; öğrenci o bölümü çalıştı.
+- Soru kökünde cevabın tanımını verme; soruyu kolaylaştırma.
+${
+  tur === "coktan"
+    ? `
+ÇOKTAN SEÇMELİ KURALLARI:
+- TAM ${sikSayisi} şık olacak.
+- Şık metninin başına "A)", "B)" gibi harf öneki YAZMA — harfleri arayüz ekliyor.
+- Şıkların uzunlukları birbirine yakın olsun; doğru şıkkı ayrıntı ekleyerek uzatma.
+- "tamamen", "yalnızca", "hiçbir", "asla" gibi mutlak sözlerle çeldirici yazma.
+- Tek doğru cevap net olsun; iki şık birden savunulabilir olmasın.
+- "dogru" alanı doğru şıkkın sıfırdan başlayan indeksidir.
+- "aciklama" öğrenciye gösterilecek: sen diliyle 1-2 cümle, neden o şıkkın doğru
+  olduğunu söyle. "Doğru!", "Evet" gibi hüküm sözüyle BAŞLATMA.
+
+SADECE geçerli JSON döndür, kod bloğu işareti kullanma:
+{"soru": "...", "secenekler": ["...", "...", "...", "...", "..."], "dogru": 0, "aciklama": "..."}`
+    : `
+AÇIK UÇLU KURALLARI:
+- Soru TEK bir şey sorar: tek soru kelimesi, tek fiil.
+- "anahtar" beklenen cevaptır, 2-3 cümle, transkriptte geçen bilgiyle sınırlı.
+- "kilit_kavramlar" cevapta geçmesi beklenen 2-4 kavram.
+
+SADECE geçerli JSON döndür, kod bloğu işareti kullanma:
+{"soru": "...", "anahtar": "beklenen cevap", "kilit_kavramlar": ["kavram1", "kavram2"]}`
+}`;

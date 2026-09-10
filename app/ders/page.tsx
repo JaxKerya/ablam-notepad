@@ -51,6 +51,10 @@ interface OturumOzeti {
   /** 'tekrar' oturumları bir videodan üretilmedi, kategoriden karıştırıldı */
   tekrarMi: boolean;
   sure: number;
+  /** Videonun YouTube'daki kendi adı — ders adı modelin verdiği addır */
+  videoBaslik: string | null;
+  /** Videonun YouTube'a yüklenme anı; liste bu alana göre sıralanıyor */
+  yayin: string | null;
   soruSayisi: number;
   cevapSayisi: number;
   dogruSayisi: number;
@@ -143,12 +147,15 @@ export default function DersAnaSayfa() {
       // ders_answers kırılımı ayrı sorguda alınıyor: PostgREST'te aynı gömülü
       // seçimde count ile sütun birlikte istenemiyor.
       .select(
-        "id, title, created_at, video_id, status, kategori, tur, ders_videos(duration_seconds), ders_questions(count)"
+        "id, title, created_at, video_id, status, kategori, tur, ders_videos(duration_seconds, title), ders_questions(count)"
       )
       // Yarım kalanlar da listeleniyor: ikinci adım düşerse ya da sekme
       // kapanırsa oturum "hazirlaniyor"da kalıyordu ve tamamen görünmez
       // oluyordu — üretilen özet ve açık uçlu sorular boşa gidiyordu.
       .in("status", ["hazir", "hazirlaniyor"])
+      // Havuzdan çıkarılmış sorular sayılmıyor: kartta "12 soru" yazıp ders
+      // açıldığında 11 soru çıkması, sayının yanlış olduğu anlamına gelirdi.
+      .eq("ders_questions.flagged", false)
       .order("created_at", { ascending: false })
       .limit(LISTE_TAVANI);
 
@@ -173,6 +180,25 @@ export default function DersAnaSayfa() {
           .in("session_id", kimlikler)
       : { data: [] as { session_id: string; verdict: string | null }[] };
 
+    /**
+     * Yayın tarihleri AYRI ve hatası yutulan bir sorguda alınıyor, gömülü
+     * seçimin içinde değil. Sebebi kırılganlık: kolon henüz eklenmemişken
+     * gömülü seçim bütün sorguyu 400'e düşürüyor, yani SQL'i çalıştırmayı
+     * unutmak ders listesini tamamen kaybettiriyordu. Böyle olunca en kötü
+     * ihtimalle sıralama ekleme sırasına düşüyor.
+     */
+    const videoKimlikleri = [...new Set((data ?? []).map((o) => o.video_id))];
+    const yayinlar = new Map<string, string>();
+    if (videoKimlikleri.length) {
+      const { data: videolar } = await supabase
+        .from("ders_videos")
+        .select("video_id, published_at")
+        .in("video_id", videoKimlikleri);
+      for (const v of videolar ?? []) {
+        if (v.published_at) yayinlar.set(v.video_id, v.published_at as string);
+      }
+    }
+
     const dogrular = new Map<string, number>();
     const toplamlar = new Map<string, number>();
     for (const c of cevaplar ?? []) {
@@ -187,7 +213,7 @@ export default function DersAnaSayfa() {
         // İlişki tekil de dizi de dönebiliyor; ikisini de karşıla
         const ham = o.ders_videos as unknown;
         const video = (Array.isArray(ham) ? ham[0] : ham) as
-          | { duration_seconds: number }
+          | { duration_seconds: number; title: string | null }
           | null
           | undefined;
         const soruSayisi = (o.ders_questions as unknown as { count: number }[])?.[0]?.count ?? 0;
@@ -200,6 +226,8 @@ export default function DersAnaSayfa() {
           kategori: (o.kategori as string | null)?.trim() || KATEGORI_DIGER,
           tekrarMi: o.tur === "tekrar",
           sure: video?.duration_seconds ?? 0,
+          videoBaslik: video?.title ?? null,
+          yayin: yayinlar.get(o.video_id) ?? null,
           soruSayisi,
           cevapSayisi: toplamlar.get(o.id) ?? 0,
           dogruSayisi: dogrular.get(o.id) ?? 0,
@@ -335,7 +363,19 @@ export default function DersAnaSayfa() {
       // Pratik oturumu ders listesinden ayrılıyor: o bir ders değil, kategorinin
       // pratik durumu. Başlıkta gösterilince hem bir satır kazanıyoruz hem de
       // "kaç soru çözdüm" bilgisi kaydırmadan görünüyor.
-      const dersler = liste.filter((o) => !o.tekrarMi);
+      // DERS SIRASI = VİDEONUN YAYIN SIRASI, ekleme sırası değil: aynı seriyi
+      // toplu işlerken ekleme sırası rastgele oluyordu. En YENİ yüklenen video
+      // üstte — kanal yeni bölüm çıkardığında o, listenin başında görünsün.
+      // Yayın tarihi bilinmeyen ders (anahtar yoktu ya da video bulunamadı) en
+      // sona düşüyor, kendi içinde yeniden eskiye.
+      const dersler = liste
+        .filter((o) => !o.tekrarMi)
+        .sort((a, b) => {
+          if (a.yayin && b.yayin) return b.yayin.localeCompare(a.yayin);
+          if (a.yayin) return -1;
+          if (b.yayin) return 1;
+          return b.created_at.localeCompare(a.created_at);
+        });
       const pratik = liste.find((o) => o.tekrarMi) ?? null;
       return {
         kategori,
@@ -475,6 +515,31 @@ export default function DersAnaSayfa() {
     // diye eşleme yenileniyor. Not silinmiyor: ders gitti diye çalışma
     // materyalini de atmak ablamın istediği şey değil.
     dersNotlariniGetir();
+  };
+
+  /** Yayın tarihi bilinmeyen ders sayısı — doldurma düğmesi buna bakıyor */
+  const tarihsizSayisi = oturumlar.filter((o) => !o.tekrarMi && !o.yayin).length;
+  const [tarihDolduruluyor, setTarihDolduruluyor] = useState(false);
+
+  const yayinTarihleriniDoldur = async () => {
+    if (tarihDolduruluyor) return;
+    setTarihDolduruluyor(true);
+    try {
+      const res = await fetch("/api/ders/yayin-tarihi", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.hata ?? "Tarihler alınamadı.");
+      addToast(
+        data.dolduruldu
+          ? `${data.dolduruldu} dersin yayın tarihi alındı`
+          : "Eksik tarih kalmadı",
+        "success"
+      );
+      await oturumlariGetir();
+    } catch (err) {
+      addToast((err as Error).message, "error");
+    } finally {
+      setTarihDolduruluyor(false);
+    }
   };
 
   const calisanIs = isler.filter((i) => IS_CALISIYOR.includes(i.durum)).length;
@@ -806,6 +871,27 @@ export default function DersAnaSayfa() {
             Geçmiş dersler
           </h2>
 
+          {/* Yayın tarihi eksik dersler varsa doldurma düğmesi. KENDİ KENDİNİ
+              GİZLİYOR: yeni işlenen videoların tarihi zaten transkript adımında
+              yazılıyor, bu yalnızca kolon eklenmeden önce işlenmiş dersler için.
+              Kalıcı bir düğme, bir kereliğine yapılacak iş için gürültü olurdu. */}
+          {!yukleniyor && tarihsizSayisi > 0 && (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5">
+              <p className="text-[11.5px] leading-relaxed text-white/40">
+                {tarihsizSayisi} dersin video yayın tarihi bilinmiyor; sıralamada sona
+                düşüyorlar.
+              </p>
+              <button
+                onClick={yayinTarihleriniDoldur}
+                disabled={tarihDolduruluyor}
+                className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11.5px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/90 disabled:opacity-50"
+              >
+                {tarihDolduruluyor && <Loader2 size={12} className="animate-spin" />}
+                {tarihDolduruluyor ? "Alınıyor…" : "Tarihleri al"}
+              </button>
+            </div>
+          )}
+
           {yukleniyor ? (
             <div className="flex justify-center py-10">
               <Loader2 size={18} className="animate-spin text-[var(--accent)]/50" />
@@ -931,6 +1017,9 @@ export default function DersAnaSayfa() {
                             tamamla(o);
                           }
                         }}
+                        // Videonun tam adı üstüne gelince görünüyor: ders adı
+                        // modelin verdiği ad, video adı ise serideki karşılığı.
+                        title={o.videoBaslik ?? undefined}
                         className="flex min-w-0 flex-1 items-center gap-3"
                       >
                         {/* Bu liste yalnızca dersleri taşıyor — pratik oturumu

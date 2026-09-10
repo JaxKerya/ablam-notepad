@@ -69,7 +69,7 @@ export default async function AiViewSayfasi() {
         supabase
           .from("ders_questions")
           .select(
-            "id, session_id, question, kind, choices, correct_index, explanation, answer_key, start_seconds"
+            "id, session_id, question, kind, choices, correct_index, explanation, answer_key, start_seconds, geri_bildirim, geri_bildirim_karari, geri_bildirim_gerekce"
           )
           .in("session_id", kimlikler)
           .eq("flagged", true)
@@ -116,6 +116,12 @@ export default async function AiViewSayfasi() {
     explanation: q.explanation,
     answer_key: q.answer_key,
     start_seconds: q.start_seconds ?? 0,
+    // Kolonlar SQL çalıştırılmadan önce yoktu; eski satırlarda null geliyor
+    geri_bildirim: (q as { geri_bildirim?: string | null }).geri_bildirim ?? null,
+    geri_bildirim_karari:
+      (q as { geri_bildirim_karari?: string | null }).geri_bildirim_karari ?? null,
+    geri_bildirim_gerekce:
+      (q as { geri_bildirim_gerekce?: string | null }).geri_bildirim_gerekce ?? null,
   }));
 
   return (

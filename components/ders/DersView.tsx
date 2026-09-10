@@ -69,7 +69,22 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
    * böylece "başka soru" anında geçiyor, arada boş ekran olmuyor.
    */
   const [ekSorular, setEkSorular] = useState<DersQuestion[]>([]);
-  const sorular = useMemo(() => [...ilkSorular, ...ekSorular], [ilkSorular, ekSorular]);
+
+  /**
+   * İtiraz sonrası yerel düzeltmeler. Sunucudan gelen liste bir prop olduğu için
+   * düzeltilen soruyu burada üzerine yazıyoruz, havuzdan çıkarılanı da buradan
+   * eliyoruz — sayfa yenilenmeden sonuç görünüyor.
+   */
+  const [yenilenenler, setYenilenenler] = useState<Map<string, DersQuestion>>(new Map());
+  const [cikarilanlar, setCikarilanlar] = useState<Set<string>>(new Set());
+
+  const sorular = useMemo(
+    () =>
+      [...ilkSorular, ...ekSorular]
+        .filter((s) => !cikarilanlar.has(s.id))
+        .map((s) => yenilenenler.get(s.id) ?? s),
+    [ilkSorular, ekSorular, yenilenenler, cikarilanlar]
+  );
   const [soruGeliyor, setSoruGeliyor] = useState(false);
 
   const [cevaplar, setCevaplar] = useState<Map<string, DersAnswer>>(
@@ -247,33 +262,94 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
     }
   };
 
-  /** "Bu soru saçma" — prompt'u gerçek örneklerle iyileştirmek için toplanıyor */
-  const soruIsaretle = async (soruId: string) => {
-    const zatenIsaretli = isaretliler.has(soruId);
+  /**
+   * İşareti geri alır — soruyu havuza döndürür.
+   *
+   * İşaret koyma artık buradan geçmiyor: itiraz gerekçesiyle birlikte alınıp
+   * denetime gidiyor (bkz. itiraziGonder). Geri alma tek tıkla kalıyor çünkü
+   * yanlışlıkla çıkarılan bir soruyu geri getirmenin denetlenecek bir tarafı yok.
+   */
+  const isaretiKaldir = async (soruId: string) => {
     setIsaretliler((s) => {
       const yeni = new Set(s);
-      if (zatenIsaretli) yeni.delete(soruId);
-      else yeni.add(soruId);
+      yeni.delete(soruId);
       return yeni;
     });
 
     const { error } = await supabase
       .from("ders_questions")
-      .update({ flagged: !zatenIsaretli })
+      .update({ flagged: false })
       .eq("id", soruId);
 
     if (error) {
-      addToast("İşaretlenemedi: " + error.message, "error");
-      setIsaretliler((s) => {
-        const yeni = new Set(s);
-        if (zatenIsaretli) yeni.add(soruId);
-        else yeni.delete(soruId);
-        return yeni;
-      });
+      addToast("İşaret kaldırılamadı: " + error.message, "error");
+      setIsaretliler((s) => new Set(s).add(soruId));
       return;
     }
+    addToast("Soru havuza geri kondu", "info");
+  };
 
-    addToast(zatenIsaretli ? "İşaret kaldırıldı" : "Teşekkürler, bu soru işaretlendi", "info");
+  /**
+   * SORU İTİRAZI. Ablam soruyu hatalı bulduğunda gerekçesini yazıyor; sunucu
+   * önce haklı olup olmadığına karar veriyor, haklıysa soruyu düzeltiyor.
+   *
+   * İki sonuç var ve ikisinde de soru bir daha aynı hâliyle karşısına çıkmıyor:
+   * ya düzeltilmiş hâli geliyor ya da soru havuzdan çıkıyor. Bu, itirazın
+   * karşılıksız kalmaması demek — eski davranışta işaret koyuluyor ve soru
+   * ertesi pratikte aynen geri geliyordu.
+   */
+  const [itirazAcik, setItirazAcik] = useState(false);
+  const [itirazMetni, setItirazMetni] = useState("");
+  const [itirazGidiyor, setItirazGidiyor] = useState(false);
+
+  const itiraziGonder = async () => {
+    if (!soru || itirazGidiyor) return;
+    setItirazGidiyor(true);
+    const soruId = soru.id;
+    try {
+      const res = await fetch("/api/ders/geri-bildirim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId: soruId, metin: itirazMetni.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.hata ?? "Gönderilemedi.");
+
+      setItirazAcik(false);
+      setItirazMetni("");
+      // Eski cevap sunucuda silindi; ekranda da kalmamalı
+      setCevaplar((m) => {
+        const yeni = new Map(m);
+        yeni.delete(soruId);
+        return yeni;
+      });
+      setMetin("");
+      setSecim(null);
+
+      if (data.yenilendi && data.soru) {
+        setYenilenenler((m) => new Map(m).set(soruId, { ...soru, ...data.soru }));
+        addToast(data.gerekce ?? "Soru düzeltildi", "success");
+        return;
+      }
+
+      // Düzeltilmedi: soru havuzdan çıktı, ekrandan da çıkıyor
+      const kalan = sorular.filter((s) => s.id !== soruId).length;
+      setCikarilanlar((s) => new Set(s).add(soruId));
+      addToast(data.gerekce ?? "Bu soru bir daha karşına çıkmayacak", "info");
+
+      if (kalan === 0) {
+        if (pratik) void baskaSoru();
+        else setMod("sonuc");
+        return;
+      }
+      // Çıkarılan soru her zaman o an bakılan soru; liste kayınca aynı indeks
+      // bir sonrakini gösteriyor, yalnızca sondaysak geri çekmek gerekiyor.
+      setIndex((i) => Math.min(i, kalan - 1));
+    } catch (err) {
+      addToast((err as Error).message, "error");
+    } finally {
+      setItirazGidiyor(false);
+    }
   };
 
   /**
@@ -729,11 +805,13 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
           </div>
 
           <button
-            onClick={() => soruIsaretle(soru.id)}
+            onClick={() =>
+              isaretliler.has(soru.id) ? isaretiKaldir(soru.id) : setItirazAcik((a) => !a)
+            }
             title={
               isaretliler.has(soru.id)
-                ? "İşareti kaldır"
-                : "Bu soru saçma / hatalı — işaretle"
+                ? "İşareti kaldır, soruyu havuza geri koy"
+                : "Bu soru hatalı — nesi bozuk olduğunu yaz"
             }
             aria-label="Bu soruyu hatalı olarak işaretle"
             // h-9/w-9: telefonda parmakla basılabilir bir hedef (26px çok küçüktü)
@@ -748,6 +826,60 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
         </div>
 
         <p className="text-[15px] font-medium leading-relaxed text-white/95">{soru.question}</p>
+
+        {/* İtiraz kutusu — soru metninin hemen altında, çünkü yazarken soruya
+            bakması gerekiyor. Ne olacağı burada açıkça yazıyor: düzeltilirse
+            düzeltilmiş hâli gelir, düzeltilmezse soru bir daha çıkmaz. */}
+        {itirazAcik && (
+          <div className="animate-fade-in mt-3 rounded-xl border border-amber-400/25 bg-amber-400/[0.04] p-3.5">
+            <div className="mb-2 flex items-center gap-2 text-[12.5px] font-medium text-amber-200/90">
+              <ThumbsDown size={13} />
+              Bu soruda ne yanlış?
+            </div>
+            <textarea
+              value={itirazMetni}
+              onChange={(e) => setItirazMetni(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter") itiraziGonder();
+              }}
+              rows={3}
+              autoFocus
+              disabled={itirazGidiyor}
+              placeholder="Örn: Doğru cevap C değil, derste D anlatılmıştı."
+              className="focus-ring w-full resize-y rounded-lg border border-[var(--border)] bg-black/20 p-3 text-[13px] leading-relaxed text-white/85 placeholder-white/25 disabled:opacity-50"
+            />
+            <p className="mt-2 text-[11px] leading-relaxed text-white/35">
+              Yazdıkların derse bakılarak değerlendirilir. Haklıysan soru düzeltilir;
+              düzeltilemezse soru bir daha karşına çıkmaz.
+            </p>
+            <div className="mt-2.5 flex gap-2">
+              <button
+                onClick={itiraziGonder}
+                disabled={itirazGidiyor}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-400/15 px-4 py-2.5 text-[12.5px] font-medium text-amber-100 transition-colors hover:bg-amber-400/25 disabled:opacity-50"
+              >
+                {itirazGidiyor ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    Değerlendiriliyor…
+                  </>
+                ) : (
+                  "Gönder"
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setItirazAcik(false);
+                  setItirazMetni("");
+                }}
+                disabled={itirazGidiyor}
+                className="rounded-lg border border-[var(--border)] px-4 py-2.5 text-[12.5px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/85 disabled:opacity-50"
+              >
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Cevap alanı */}
         {soru.kind === "acik" ? (

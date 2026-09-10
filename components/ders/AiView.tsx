@@ -60,6 +60,11 @@ export interface AiViewIsaretli {
   explanation: string | null;
   answer_key: string | null;
   start_seconds: number;
+  /** Ablamın kendi cümlesiyle itirazı — prompt'u düzeltmek için en iyi malzeme */
+  geri_bildirim: string | null;
+  /** hakli | haksiz | yazilamadi | gerekcesiz */
+  geri_bildirim_karari: string | null;
+  geri_bildirim_gerekce: string | null;
 }
 
 interface Props {
@@ -580,9 +585,11 @@ export default function AiView({
         {sekme === "isaretli" && (
           <div className="mt-3 space-y-2">
             <p className="text-[11.5px] leading-relaxed text-white/30">
-              Ablamın &quot;bu soru saçma / hatalı&quot; diye işaretledikleri. Denetimin o soruya
-              dokunup dokunmadığı da gösteriliyor: ikisinin örtüştüğü yer prompt&apos;u
-              düzeltmek için en iyi malzeme.
+              Ablamın itiraz ettiği ve DÜZELTİLEMEYEN sorular. Bunlar artık ne pratik
+              havuzuna giriyor ne de ders ekranında görünüyor; burada duruyorlar çünkü
+              prompt&apos;u düzeltmek için gereken tek gerçek örnek bunlar. Düzeltilebilen
+              itirazlar listede yok — o sorular yerinde düzeltildi. Denetimin o soruya
+              dokunup dokunmadığı da gösteriliyor.
             </p>
             {isaretliler.length === 0 && (
               <div className="glass rounded-2xl border border-[var(--border)] px-5 py-10 text-center">
@@ -605,6 +612,29 @@ export default function AiView({
                     {damgaBaglantisi(q.video_id, q.start_seconds, "videoda")}
                   </div>
                   <p className="text-[12.5px] leading-relaxed text-white/85">{q.question}</p>
+
+                  {/* Ablamın kendi cümlesi ve denetimin kararı. Prompt'u
+                      düzeltmek için en değerli iki satır burası: soru nesiyle
+                      bozuktu ve denetim buna ne dedi. */}
+                  {(q.geri_bildirim || q.geri_bildirim_gerekce) && (
+                    <div className="mt-2.5 rounded-lg border border-amber-400/20 bg-amber-400/[0.04] p-2.5">
+                      {q.geri_bildirim && (
+                        <p className="text-[11.5px] leading-relaxed text-amber-100/80">
+                          <span className="text-amber-200/50">ablam: </span>
+                          {q.geri_bildirim}
+                        </p>
+                      )}
+                      {q.geri_bildirim_gerekce && (
+                        <p className="mt-1.5 text-[11.5px] leading-relaxed text-white/45">
+                          <span className="text-white/25">
+                            denetim ({q.geri_bildirim_karari ?? "?"}):{" "}
+                          </span>
+                          {q.geri_bildirim_gerekce}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {q.choices?.length ? (
                     <div className="mt-2 space-y-1">
                       {q.choices.map((o, j) => (

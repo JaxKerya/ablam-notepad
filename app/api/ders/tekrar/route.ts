@@ -383,6 +383,10 @@ export async function POST(request: Request) {
         "id, session_id, video_id, kind, question, answer_key, key_points, choices, correct_index, explanation, topic, start_seconds"
       )
       .in("session_id", dersKimlikleri)
+      // Ablamın itiraz edip düzeltilemeyen soruları havuza girmiyor. Önceden
+      // işaret yalnızca bir not düşüyordu ve aynı bozuk soru bir sonraki
+      // pratikte yeniden karşısına çıkıyordu — itirazın hiçbir karşılığı yoktu.
+      .eq("flagged", false)
       .limit(2000);
 
     if (soruHatasi) throw new Error(soruHatasi.message);

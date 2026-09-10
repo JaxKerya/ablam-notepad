@@ -63,8 +63,21 @@ export interface DersQuestion {
   explanation: string | null;
   topic: string | null;
   start_seconds: number;
-  /** Ablam "bu soru saçma" dediyse true — prompt'u iyileştirmek için toplanıyor */
+  /**
+   * Ablam soruyu hatalı bulduysa ve soru DÜZELTİLEMEDİYSE true.
+   *
+   * Anlamı genişledi: eskiden yalnızca "bu soru saçma" işaretiydi ve soru
+   * sorulmaya devam ediyordu. Artık aynı zamanda EMEKLİLİK demek — işaretli
+   * soru ne pratik havuzuna giriyor ne de ders ekranında görünüyor. İşareti
+   * geri almak soruyu havuza geri koyuyor.
+   */
   flagged: boolean;
+  /** Ablamın kendi cümlesiyle itirazı */
+  geri_bildirim?: string | null;
+  /** Denetimin kararı: 'hakli' | 'haksiz' | 'yazilamadi' */
+  geri_bildirim_karari?: string | null;
+  /** Kararın ablama gösterilen gerekçesi */
+  geri_bildirim_gerekce?: string | null;
 }
 
 export interface DersAnswer {
@@ -301,6 +314,17 @@ export function notBasligi(notId: string, videoId: string | null): string {
  * kılmak için var, ay sonunda sürpriz olmasın diye.
  */
 export const SUPADATA_AYLIK_KOTA = 100;
+
+/**
+ * Soru itirazında gerekçenin en az uzunluğu.
+ *
+ * Bunun altındaki bir metinle model çağrılmıyor: boş ya da "saçma" gibi bir
+ * kutu denetime hiçbir şey söylemez, sadece para harcar. O durumda soru
+ * doğrudan havuzdan çıkarılıyor — ablam zaten bir daha görmek istemediğini
+ * söylemiş oluyor.
+ */
+export const GERI_BILDIRIM_EN_AZ = 10;
+
 
 /**
  * Günlük ders üretimi tavanı. **0 = sınır yok.**
