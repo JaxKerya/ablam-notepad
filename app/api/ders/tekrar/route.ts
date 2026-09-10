@@ -3,6 +3,7 @@ import { chatJsonOlculu } from "@/lib/ai";
 import {
   hukumOneksizAciklama,
   siklariKaristir,
+  onculluSiklarMi,
   sikSetiniDogrula,
   TEKRAR_SORU_SAYISI,
   yeterinceFarkli,
@@ -555,8 +556,15 @@ export async function POST(request: Request) {
         // şey bilgi olmaktan çıkardı. Varyantın şıkları zaten üretim sırasında
         // karıştırıldığı için ona dokunulmuyor.
         const kaynakSecenekler = Array.isArray(s.choices) ? (s.choices as string[]) : null;
+        // ÖNCÜLLÜ SORULAR KARIŞTIRILMIYOR: "Yalnız I / I ve II / I, II ve III"
+        // dizisi sınavdaki sırasıyla okunuyor, karıştırılınca liste okunamaz
+        // hâle geliyor. Bu sorularda harf ezberi riski de düşük: cevap harfin
+        // kendisi değil, öncüllerin hangisinin doğru olduğu.
         const karisik =
-          !v && kaynakSecenekler?.length && typeof s.correct_index === "number"
+          !v &&
+          kaynakSecenekler?.length &&
+          typeof s.correct_index === "number" &&
+          !onculluSiklarMi(kaynakSecenekler)
             ? siklariKaristir(kaynakSecenekler, s.correct_index)
             : null;
 

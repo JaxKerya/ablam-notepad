@@ -144,10 +144,42 @@ ezber sorusu kadar kolay, ne de bilmece gibi karmaşık.
 - "Aşağıdakilerden hangisi ... değildir/yer almaz" gibi klasik KPSS kalıplarını kullanabilirsin.
 - Kavramların birbirine karıştığı noktaları hedefle — sınavda ayırt edilmesi gereken yerler
   oralardır.
+
+ÖNCÜLLÜ SORU (I, II, III) — KPSS Tarih'in en sık kullandığı yapı. Ürettiğin çoktan
+seçmelilerin YAKLAŞIK DÖRTTE BİRİ bu biçimde olsun. Zorlama: yalnızca ders o konuda
+birbirinden ayrılabilen üç yargı taşıyorsa yaz, taşımıyorsa normal soru üret.
+
+Biçimi tam olarak şöyle:
+  soru kökü, öncüller ve yönerge TEK metin içinde, satır satır yazılır
+  ("soru" alanına 
+ ile ayırarak koy):
+
+  "Tımar sisteminin bozulmasının;
+  I. Sipahi sayısının azalması
+  II. Kırsaldan kente göçün hızlanması
+  III. Kapıkulu askerlerinin sayısının kısıtlanması
+  gelişmelerinden hangilerine yol açtığı söylenebilir?"
+
+  "secenekler" bu üçlünün kombinasyonlarıdır ve YALNIZCA şu yedi ifadeden beşi seçilir:
+  "Yalnız I", "Yalnız II", "Yalnız III", "I ve II", "I ve III", "II ve III", "I, II ve III"
+  Başka bir şey yazma (birleştirme, açıklama ekleme, öncül metnini şıkka taşıma).
+
+Öncüllerin kurulumu:
+- Üçü de KISA olsun (tek satır, en fazla 10-12 kelime) ve aynı dilbilgisi kalıbında yazılsın.
+- En az biri doğru, en az biri yanlış olsun — hepsi doğru ("I, II ve III") her seferinde
+  gelirse ablam öncülleri okumadan o şıkkı işaretlemeye başlar.
+- İyi bir yanlış öncül şudur: kendi başına DOĞRU bir bilgi ama sorulan şeyle ilgisi yok,
+  ya da derste anlatılanın tersi. Bariz saçma öncül yazma.
+- Üç öncül yaz, dört değil.
 - Tek doğru cevap net olsun; iki şık birden savunulabilir olmasın.
 - ŞIKLARIN UZUNLUKLARI BİRBİRİNE YAKIN OLSUN: en uzun şık ile en kısa şık
-  arasındaki fark 4 kelimeyi geçmesin. Doğru şıkkı ayrıntı ekleyerek uzatma —
-  en uzun şık doğruyu ele verir, öğrenci konuyu bilmeden bulur.
+  arasındaki fark 4 kelimeyi geçmesin.
+- DOĞRU ŞIK EN UZUN ŞIK OLMASIN. Yazmayı bitirince say: doğru şıkkın kelime
+  sayısı, en uzun çeldiricinin kelime sayısından FAZLA olmamalı. Gerekirse doğru
+  şıkkı kısalt ya da bir çeldiriciyi aynı ayrıntı düzeyine çıkar. (Bu kural
+  ölçülerek eklendi: tek bir şıkkın belirgin en uzun olduğu sorularda doğru cevap
+  %48 oranında o şık çıkıyordu — şans %20. Yani ders çalışmayan biri "en uzunu
+  işaretle" diyerek bu soruların yarısını doğru yapabiliyordu.)
 - Çeldiricilerde "tamamen", "yalnızca", "hiçbir", "asla" gibi mutlak sözler
   kullanma; dersi bilmeyen bile onları eler, çeldirici olmaktan çıkarlar.
 
@@ -319,12 +351,15 @@ VARYANT NE DEMEK:
   varyant değildir.
 - Kaynağın türü korunur: çoktan seçmeli kaynaktan çoktan seçmeli, açık uçlu
   kaynaktan açık uçlu varyant.
+- KAYNAK ÖNCÜLLÜ İSE (şıkları "Yalnız I", "I ve II" gibiyse) varyant da öncüllü olur:
+  öncülleri yeniden yaz, şıklar yine yalnızca o kombinasyon ifadelerinden oluşsun.
 
 ÇOKTAN SEÇMELİ KURALLARI:
 - HER SORUDA TAM ${sikSayisi} ŞIK olacak. Eksik ya da fazla şıklı soru kullanılmaz.
 - Şık metninin başına "A)", "B)" gibi harf öneki YAZMA — harfleri arayüz ekliyor.
 - Şıkların uzunlukları birbirine yakın olsun; en uzun ile en kısa arasındaki fark
-  4 kelimeyi geçmesin. Doğru şıkkı ayrıntı ekleyerek uzatma, ele verir.
+  4 kelimeyi geçmesin. DOĞRU ŞIK EN UZUN ŞIK OLMASIN — ölçüldü, "en uzunu işaretle"
+  diyen biri o soruların yarısını bilmeden doğru yapıyor.
 - Çeldiricilerde "tamamen", "yalnızca", "hiçbir", "asla" gibi mutlak sözler kullanma;
   dersi bilmeyen bile onları eler.
 - Çeldiriciler konuyu yarım bilen birinin seçebileceği türden olsun; bariz saçma şık
@@ -540,6 +575,8 @@ TEMEL KURALLAR:
 - Transkriptte açıkça geçmeyen hiçbir bilgiyi kullanma. Emin değilsen soruyu
   transkriptin kesin olarak söylediği bir şeye daralt.
 - Sorunun ölçtüğü konu aynı kalsın; öğrenci o bölümü çalıştı.
+- Soru ÖNCÜLLÜ ise (şıkları "Yalnız I", "I ve II" gibiyse) bu yapıyı BOZMA: öncülleri
+  koru ya da düzelt, şıklar yine yalnızca o kombinasyon ifadelerinden oluşsun.
 - Soru kökünde cevabın tanımını verme; soruyu kolaylaştırma.
 ${
   tur === "coktan"
@@ -547,7 +584,8 @@ ${
 ÇOKTAN SEÇMELİ KURALLARI:
 - TAM ${sikSayisi} şık olacak.
 - Şık metninin başına "A)", "B)" gibi harf öneki YAZMA — harfleri arayüz ekliyor.
-- Şıkların uzunlukları birbirine yakın olsun; doğru şıkkı ayrıntı ekleyerek uzatma.
+- Şıkların uzunlukları birbirine yakın olsun; DOĞRU ŞIK EN UZUN ŞIK OLMASIN
+  (en uzun şık doğruyu ele veriyor, ölçüldü).
 - "tamamen", "yalnızca", "hiçbir", "asla" gibi mutlak sözlerle çeldirici yazma.
 - Tek doğru cevap net olsun; iki şık birden savunulabilir olmasın.
 - "dogru" alanı doğru şıkkın sıfırdan başlayan indeksidir.

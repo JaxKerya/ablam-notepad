@@ -611,7 +611,7 @@ export default function AiView({
                     <span className="text-white/15">·</span>
                     {damgaBaglantisi(q.video_id, q.start_seconds, "videoda")}
                   </div>
-                  <p className="text-[12.5px] leading-relaxed text-white/85">{q.question}</p>
+                  <p className="whitespace-pre-line text-[12.5px] leading-relaxed text-white/85">{q.question}</p>
 
                   {/* Ablamın kendi cümlesi ve denetimin kararı. Prompt'u
                       düzeltmek için en değerli iki satır burası: soru nesiyle

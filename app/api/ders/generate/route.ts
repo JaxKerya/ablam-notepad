@@ -10,6 +10,8 @@ import {
   KATEGORILER,
   hedefSoruSayisi,
   hukumOneksizAciklama,
+  onculMetniVarMi,
+  onculluSiklarMi,
   sikSetiniDogrula,
   soruKirp,
   type DenetimAdimi,
@@ -502,6 +504,12 @@ function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
     if (!k) {
       const ham = dizi(s.secenekler).length;
       return dus(ham !== SIK_SAYISI ? `şık sayısı ${ham}` : "boş/tekrar eden şık ya da geçersiz indeks");
+    }
+    // Öncüllü şıklar ("Yalnız I", "I ve III") ama kökte öncül yoksa soru
+    // cevaplanamaz: ablam neyin I neyin II olduğunu göremez. Bu, düzeltilebilir
+    // bir kusur değil — eksik olan sorunun yarısı.
+    if (onculluSiklarMi(k.secenekler) && !onculMetniVarMi(metin(s.soru))) {
+      return dus("öncül şıkları var ama kökte öncül yok");
     }
     karisiklar.set(s, k);
     return true;

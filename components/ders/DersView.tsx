@@ -29,6 +29,7 @@ import {
   notlariNotBelgesine,
   skorHesapla,
   slugla,
+  soruParcalari,
   videoLinki,
   VERDICT_LABEL,
   VERDICT_STYLE,
@@ -45,6 +46,31 @@ interface Props {
 }
 
 type Mod = "ozet" | "soru" | "sonuc";
+
+/**
+ * Soru kökü. Olumsuzluk kelimeleri (değildir, söylenemez, yer almaz…) koyu ve
+ * altı çizili basılıyor — ÖSYM'nin basılı kitapçıkta yaptığının aynısı. Sebebi
+ * ölçme hatasını azaltmak: soruyu bilen ama "değildir"i atlayan öğrenci bildiği
+ * soruyu kaybediyor.
+ */
+function SoruMetni({ metin, className }: { metin: string; className?: string }) {
+  // whitespace-pre-line: öncüllü sorularda soru kökü üç yargıyı alt alta
+  // sıralıyor (I. … II. … III. …). Satır sonları korunmazsa hepsi tek paragrafa
+  // yapışıyor ve soru okunamaz hâle geliyor.
+  return (
+    <p className={`whitespace-pre-line ${className ?? ""}`}>
+      {soruParcalari(metin).map((p, i) =>
+        p.vurgulu ? (
+          <strong key={i} className="font-semibold text-white underline decoration-white/40 underline-offset-2">
+            {p.metin}
+          </strong>
+        ) : (
+          <span key={i}>{p.metin}</span>
+        )
+      )}
+    </p>
+  );
+}
 
 const VERDICT_ICON: Record<Verdict, typeof CircleCheck> = {
   dogru: CircleCheck,
@@ -672,8 +698,17 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
                     }`}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px] leading-relaxed text-white/80">
-                      <span className="text-white/30">{i + 1}.</span> {s.question}
+                    <p className="whitespace-pre-line text-[13px] leading-relaxed text-white/80">
+                      <span className="text-white/30">{i + 1}.</span>{" "}
+                      {soruParcalari(s.question).map((p, j) =>
+                        p.vurgulu ? (
+                          <strong key={j} className="font-semibold text-white/95 underline decoration-white/30 underline-offset-2">
+                            {p.metin}
+                          </strong>
+                        ) : (
+                          <span key={j}>{p.metin}</span>
+                        )
+                      )}
                     </p>
                     {c?.feedback && (
                       <p className="mt-1.5 text-[12px] leading-relaxed text-white/45">
@@ -825,7 +860,10 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
           </button>
         </div>
 
-        <p className="text-[15px] font-medium leading-relaxed text-white/95">{soru.question}</p>
+        <SoruMetni
+          metin={soru.question}
+          className="text-[15px] font-medium leading-relaxed text-white/95"
+        />
 
         {/* İtiraz kutusu — soru metninin hemen altında, çünkü yazarken soruya
             bakması gerekiyor. Ne olacağı burada açıkça yazıyor: düzeltilirse

@@ -325,6 +325,51 @@ export const SUPADATA_AYLIK_KOTA = 100;
  */
 export const GERI_BILDIRIM_EN_AZ = 10;
 
+/**
+ * Soru kökündeki OLUMSUZLUK kelimeleri.
+ *
+ * ÖSYM basılı kitapçıkta bu kelimelerin altını çizip koyu yazar; sebebi ölçme
+ * hatasını azaltmak: soruyu doğru bilen ama "değildir"i atlayan aday, bildiği
+ * soruyu kaybeder. Bizim sorularımızın %4'ü olumsuz köklü ve ekranda hiçbir
+ * vurgu yoktu — düz metin akıp gidiyordu.
+ *
+ * Model tarafında çözülmedi bilerek: vurgu işaretini modele yazdırmak, hem
+ * üretilmiş 22 soruyu kapsamaz hem de modelin işaretlemeyi unutmasına açık
+ * olurdu. Arayüzde yapılınca eski sorular da dahil hepsi vurgulanıyor.
+ */
+const OLUMSUZ_KALIPLAR = [
+  "değildir",
+  "söylenemez",
+  "yer almaz",
+  "yer vermez",
+  "ulaşılamaz",
+  "yanlıştır",
+  "olamaz",
+  "bulunmaz",
+  "gösterilemez",
+  "doğru değildir",
+];
+
+/**
+ * Soru kökünü, olumsuzluk kelimeleri işaretlenmiş parçalara böler.
+ *
+ * Arayüz `vurgulu` olan parçayı koyu ve altı çizili basıyor. Saf tutuldu ki
+ * React dışında da ölçülebilsin.
+ */
+export function soruParcalari(metin: string): { metin: string; vurgulu: boolean }[] {
+  const desen = new RegExp(`(${OLUMSUZ_KALIPLAR.join("|")})`, "gi");
+  const parcalar: { metin: string; vurgulu: boolean }[] = [];
+  let son = 0;
+  for (const eslesme of metin.matchAll(desen)) {
+    const bas = eslesme.index ?? 0;
+    if (bas > son) parcalar.push({ metin: metin.slice(son, bas), vurgulu: false });
+    parcalar.push({ metin: eslesme[0], vurgulu: true });
+    son = bas + eslesme[0].length;
+  }
+  if (son < metin.length) parcalar.push({ metin: metin.slice(son), vurgulu: false });
+  return parcalar.length ? parcalar : [{ metin, vurgulu: false }];
+}
+
 
 /**
  * Günlük ders üretimi tavanı. **0 = sınır yok.**
@@ -637,6 +682,42 @@ export function yeterinceFarkli(varyant: string, kaynak: string, esik = 0.8): bo
  *
  * Hem ders üretimi hem tekrar varyantları buradan geçiyor: kural tek yerde.
  */
+/**
+ * ÖNCÜLLÜ SORU ŞIKLARI — "Yalnız I", "I ve III", "I, II ve III" gibi.
+ *
+ * KPSS Tarih'in imza yapısı: soru kökünde I, II, III diye üç yargı sıralanır,
+ * şıklar bunların kombinasyonlarıdır. Bu şıklar KARIŞTIRILMAZ; sınavda da
+ * hep aynı sırada dizilir (önce tekler, sonra ikililer, en sonda üçlü). Karışık
+ * dizilmiş bir kombinasyon listesi okunamıyor: göz "Yalnız II"yi ararken
+ * listenin ortasında buluyor.
+ *
+ * Liste KAPALI tutuldu: model bunların dışında bir şey yazarsa soru öncüllü
+ * sayılmıyor ve normal soru gibi karıştırılıyor. Yanlış tarafa düşmesi
+ * zararsız; tersi (uydurma bir kombinasyonu "öncüllü" sanıp sıralamak) değil.
+ */
+const ONCUL_SIKLARI = [
+  "yalnizi",
+  "yalnizii",
+  "yalniziii",
+  "iveii",
+  "iveiii",
+  "iiveiii",
+  "iiiveiii", // "I, II ve III"
+];
+
+/** Bütün şıklar öncül kombinasyonu mu? */
+export function onculluSiklarMi(secenekler: string[]): boolean {
+  return (
+    secenekler.length > 0 &&
+    secenekler.every((s) => ONCUL_SIKLARI.includes(sikSadelestir(s)))
+  );
+}
+
+/** Öncüllü soruda soru kökü gerçekten I ve II'yi sıralıyor mu? */
+export function onculMetniVarMi(soru: string): boolean {
+  return /(^|\n|\s)I\s*[.)]/.test(soru) && /(^|\n|\s)II\s*[.)]/.test(soru);
+}
+
 export function sikSetiniDogrula(
   hamSecenekler: unknown,
   dogru: unknown,
@@ -652,7 +733,21 @@ export function sikSetiniDogrula(
   if (!(typeof dogru === "number" && Number.isInteger(dogru) && dogru >= 0 && dogru < sec.length)) {
     return null;
   }
+  // Öncüllü şıklar karıştırılmaz, sınav sırasına dizilir (bkz. ONCUL_SIKLARI)
+  if (onculluSiklarMi(sec)) return oncullariSirala(sec, dogru);
   return siklariKaristir(sec, dogru);
+}
+
+/** Öncül kombinasyonlarını sınavdaki sıraya dizer, doğru indeksi taşır */
+export function oncullariSirala(
+  secenekler: string[],
+  dogruIndeks: number
+): { secenekler: string[]; dogruIndeks: number } {
+  const dogruMetin = secenekler[dogruIndeks];
+  const sirali = [...secenekler].sort(
+    (a, b) => ONCUL_SIKLARI.indexOf(sikSadelestir(a)) - ONCUL_SIKLARI.indexOf(sikSadelestir(b))
+  );
+  return { secenekler: sirali, dogruIndeks: sirali.indexOf(dogruMetin) };
 }
 
 export function siklariKaristir(
