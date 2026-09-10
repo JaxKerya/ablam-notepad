@@ -34,6 +34,9 @@ import {
   IS_CALISIYOR,
   KATEGORI_DIGER,
   linkleriAyikla,
+  NOT_KATEGORISIZ,
+  notBasligi,
+  notVideoId,
   tarihMetni,
   videoLinki,
   type IsDurumu,
@@ -52,6 +55,14 @@ interface OturumOzeti {
   cevapSayisi: number;
   dogruSayisi: number;
   yarim: boolean;
+}
+
+/** Ders notu — kategorisi ve başlığı ait olduğu dersten çözülmüş hâliyle */
+interface DersNotu {
+  id: string;
+  updated_at: string;
+  kategori: string;
+  baslik: string;
 }
 
 interface AramaVurgusu {
@@ -113,8 +124,9 @@ export default function DersAnaSayfa() {
   const [aramaSonucu, setAramaSonucu] = useState<AramaSonucu[] | null>(null);
   const [aramaToplam, setAramaToplam] = useState(0);
   const [araniyor, setAraniyor] = useState(false);
-  const [notlarAcik, setNotlarAcik] = useState(false);
-  const [dersNotlari, setDersNotlari] = useState<{ id: string; updated_at: string }[] | null>(null);
+  /** Not paneli hangi kategori için açık — kapalıysa null */
+  const [notKategorisi, setNotKategorisi] = useState<string | null>(null);
+  const [dersNotlari, setDersNotlari] = useState<DersNotu[] | null>(null);
   const router = useRouter();
   const { addToast } = useToast();
   // Üretim kuyruğu layout'ta yaşıyor; sayfa yalnızca gösteriyor ve besliyor.
@@ -123,7 +135,7 @@ export default function DersAnaSayfa() {
 
   // Esc ile kapanma, odak tuzağı ve odağın geri verilmesi — bkz. useModal
   const silmeRef = useModal<HTMLDivElement>(!!silinecek, () => setSilinecek(null));
-  const panelRef = useModal<HTMLElement>(notlarAcik, () => setNotlarAcik(false));
+  const panelRef = useModal<HTMLElement>(notKategorisi !== null, () => setNotKategorisi(null));
 
   const oturumlariGetir = useCallback(async () => {
     const { data, error } = await supabase
@@ -202,12 +214,23 @@ export default function DersAnaSayfa() {
     oturumlariGetir();
   }, [oturumlariGetir]);
 
-  /** Ders notları panelini ilk açılışta doldurur */
+  /**
+   * Ders notlarını çeker ve her birini KATEGORİSİNE bağlar.
+   *
+   * Kategori notun kendisinde yazmıyor: notlar tablosu not defteriyle ortak ve
+   * ders kimliği tutan bir kolonu yok. Bağ, not kimliğinin sonundaki video
+   * kimliği üzerinden kuruluyor (bkz. lib/ders.ts notVideoId). Böylece daha
+   * önce kaydedilmiş notlar da şema değişikliği olmadan yerine oturuyor.
+   *
+   * Sayfa açılışında çağrılıyor, panel açılışında değil: kategori başlığındaki
+   * "2 not" sayacı için veri zaten en baştan gerekiyor.
+   */
   const dersNotlariniGetir = useCallback(async () => {
     const { data: klasor } = await supabase
       .from("folders")
       .select("id")
       .eq("name", DERS_NOTLARI_KLASORU)
+      .limit(1)
       .maybeSingle();
 
     if (!klasor) {
@@ -219,8 +242,45 @@ export default function DersAnaSayfa() {
       .select("id, updated_at")
       .eq("folder_id", klasor.id)
       .order("updated_at", { ascending: false });
-    setDersNotlari(data ?? []);
+
+    const notlar = data ?? [];
+    const adaylar = [...new Set(notlar.map((n) => notVideoId(n.id)).filter(Boolean))] as string[];
+
+    // Video kimliği -> dersin kategorisi ve gerçek başlığı
+    const harita = new Map<string, { kategori: string; baslik: string }>();
+    if (adaylar.length) {
+      const { data: dersler } = await supabase
+        .from("ders_sessions")
+        .select("video_id, kategori, title")
+        .eq("tur", "ders")
+        .in("video_id", adaylar);
+      for (const d of dersler ?? []) {
+        harita.set(d.video_id, {
+          kategori: (d.kategori as string | null)?.trim() || KATEGORI_DIGER,
+          baslik: d.title ?? "",
+        });
+      }
+    }
+
+    setDersNotlari(
+      notlar.map((n) => {
+        const videoId = notVideoId(n.id);
+        const ders = videoId ? harita.get(videoId) : undefined;
+        return {
+          id: n.id,
+          updated_at: n.updated_at,
+          // Ders silinmişse not öksüz kalıyor; kaybolmasın diye kendi kovasına
+          kategori: ders?.kategori ?? NOT_KATEGORISIZ,
+          baslik: ders?.baslik || notBasligi(n.id, videoId),
+        };
+      })
+    );
   }, []);
+
+  useEffect(() => {
+    dersNotlariniGetir();
+  }, [dersNotlariniGetir]);
+
 
   /**
    * Kutudaki metni sıraya alır. Tek link de olabilir, alt alta beş link de —
@@ -232,11 +292,6 @@ export default function DersAnaSayfa() {
     if (!eklenen) return;
     setLink("");
     if (eklenen > 1) addToast(`${eklenen} ders sıraya alındı`, "success");
-  };
-
-  const notlariAc = () => {
-    setNotlarAcik(true);
-    if (dersNotlari === null) dersNotlariniGetir();
   };
 
   /**
@@ -289,9 +344,37 @@ export default function DersAnaSayfa() {
         dersSayisi: dersler.filter((o) => !o.yarim).length,
         yarimSayisi: dersler.filter((o) => o.yarim).length,
         soruSayisi: dersler.reduce((t, o) => t + o.soruSayisi, 0),
+        notSayisi: (dersNotlari ?? []).filter((n) => n.kategori === kategori).length,
       };
     });
-  }, [oturumlar]);
+  }, [oturumlar, dersNotlari]);
+
+  /**
+   * Dersi silinmiş notlar. Kategorisi çözülemediği için hiçbir kategori
+   * kartında görünmezlerdi; not duruyorken erişilemez olmasın diye listenin
+   * altında kendi küçük kartını alıyor. Normalde boş.
+   */
+  const kategorisizNotlar = useMemo(
+    () => (dersNotlari ?? []).filter((n) => n.kategori === NOT_KATEGORISIZ),
+    [dersNotlari]
+  );
+
+  /**
+   * Panel kapanırken 300 ms boyunca kayarak çıkıyor. İçeriği doğrudan
+   * notKategorisi'ne bağlasaydık kapatma anında kategori null olur ve panel
+   * daha ekrandayken "bu kategoride not yok" yazısına dönüşürdü. Bu yüzden
+   * gösterilen kategori ayrı tutuluyor: yalnızca AÇILIRKEN güncelleniyor.
+   */
+  const [gosterilenNotKategorisi, setGosterilenNotKategorisi] = useState<string | null>(null);
+  useEffect(() => {
+    if (notKategorisi !== null) setGosterilenNotKategorisi(notKategorisi);
+  }, [notKategorisi]);
+
+  /** Panelde gösterilen notlar */
+  const panelNotlari = useMemo(
+    () => (dersNotlari ?? []).filter((n) => n.kategori === gosterilenNotKategorisi),
+    [dersNotlari, gosterilenNotKategorisi]
+  );
 
   /**
    * Katlanır kategoriler. Kategori sayısı arttıkça sayfa 150 satırlık düz bir
@@ -388,6 +471,10 @@ export default function DersAnaSayfa() {
     setOturumlar((o) => o.filter((x) => x.id !== id));
     setSilinecek(null);
     addToast("Ders silindi", "delete");
+    // Notu duruyorsa artık kategorisi çözülemez; "Kategorisiz" kovasına düşsün
+    // diye eşleme yenileniyor. Not silinmiyor: ders gitti diye çalışma
+    // materyalini de atmak ablamın istediği şey değil.
+    dersNotlariniGetir();
   };
 
   const calisanIs = isler.filter((i) => IS_CALISIYOR.includes(i.durum)).length;
@@ -414,22 +501,11 @@ export default function DersAnaSayfa() {
         <span>Ana sayfa</span>
       </Link>
 
-      {/* Ders notları burada, kendi panelinde açılır. Önceden ana sayfaya
-          yönlendirip oradaki kenar çubuğunu açıyordu — sayfadan koparıyordu. */}
-      {/* Panel açıkken gizleniyor: aynı köşede panelin kapatma düğmesiyle
-          üst üste biniyordu ve zaten gereksiz kalıyor. */}
-      {!notlarAcik && (
-        <button
-          type="button"
-          onClick={notlariAc}
-          aria-label="Ders notlarım"
-          title="Ders notlarım"
-          className="glass fixed top-5 right-5 z-20 animate-fade-in flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85 sm:top-6 sm:right-7"
-        >
-          <NotebookPen size={14} className="text-[var(--accent)]/80" />
-          <span className="hidden sm:inline">Ders notlarım</span>
-        </button>
-      )}
+      {/* Ders notlarına giriş sağ üst köşedeydi ve TÜM notları tek listede
+          gösteriyordu. Kategori sayısı arttıkça o liste karışıyor: Tarih
+          çalışırken Coğrafya notları arada duruyordu. Giriş artık kategori
+          başlığında, "Soru Gönder"in yanında — not zaten bir dersin notu,
+          ders de bir kategorinin içinde. */}
 
       <div className="relative z-10 mx-auto max-w-3xl px-5 pb-20 pt-24 sm:pt-28">
         {/* Başlık */}
@@ -802,6 +878,21 @@ export default function DersAnaSayfa() {
                     </button>
 
                     <div className="flex flex-shrink-0 items-center gap-1.5">
+                      {/* Kategorinin ders notları. Not yoksa düğme de yok:
+                          boş bir paneli açan düğme, olmayan bir şeyi varmış
+                          gibi gösteriyor. Kategori kapalıyken de erişilebilir
+                          olması için başlıkta duruyor — "Soru Gönder" gibi. */}
+                      {g.notSayisi > 0 && (
+                        <button
+                          onClick={() => setNotKategorisi(g.kategori)}
+                          title={`${g.kategori} ders notları`}
+                          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11.5px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"
+                        >
+                          <NotebookPen size={12} className="text-[var(--accent)]/70" />
+                          {g.notSayisi} not
+                        </button>
+                      )}
+
                       {/* Pratik için ayrı bir düğme yok: "Soru Gönder" zaten
                           eskisini silip yenisini başlatıyor. Ayrı bir silme
                           düğmesi yalnızca başlıktaki sayaç satırını temizlerdi,
@@ -900,6 +991,27 @@ export default function DersAnaSayfa() {
                 );
               })}
 
+              {/* Dersi silinmiş notlar — normalde hiç görünmez */}
+              {kategorisizNotlar.length > 0 && (
+                <div className="glass flex items-center gap-3 rounded-2xl border border-[var(--border)] p-3.5">
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[12px] font-medium uppercase tracking-wider text-white/55">
+                      {NOT_KATEGORISIZ}
+                    </span>
+                    <p className="mt-1 text-[11.5px] text-white/35">
+                      dersi silinmiş {kategorisizNotlar.length} not
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setNotKategorisi(NOT_KATEGORISIZ)}
+                    className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11.5px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"
+                  >
+                    <NotebookPen size={12} className="text-[var(--accent)]/70" />
+                    {kategorisizNotlar.length} not
+                  </button>
+                </div>
+              )}
+
               {oturumlar.length >= LISTE_TAVANI && (
                 <p className="px-1 pt-2 text-center text-[11.5px] text-white/25">
                   En yeni {LISTE_TAVANI} ders gösteriliyor. Daha eskileri listede yok.
@@ -910,13 +1022,18 @@ export default function DersAnaSayfa() {
         </div>
       </div>
 
-      {/* Ders notları paneli — sayfadan çıkmadan, soldan.
-          Ana sayfadaki notlar kenar çubuğuyla aynı desen: left-0, w-72,
-          border-r ve aynı yatay kaydırma geçişi. */}
-      {notlarAcik && (
+      {/* Ders notları paneli — sayfadan çıkmadan, soldan. Tek kategorinin
+          notlarını gösteriyor; hangi kategori olduğu notKategorisi'nde.
+          Ana sayfadaki notlar kenar çubuğuyla aynı desen (left-0, border-r,
+          aynı yatay kaydırma geçişi) ama ondan GENİŞ: oradaki notların adını
+          ablam kendi koyuyor ve kısa oluyor, buradaki başlıklar ise dersin
+          kendi adı — "II. Viyana Kuşatması ve Osmanlı'nın Siyasi Üstünlüğünü
+          Kaybetmesi" gibi 60+ karakter. Genişlik tek başına yetmediği için
+          başlık iki satıra kadar sarıyor; tamamı ayrıca title'da duruyor. */}
+      {notKategorisi !== null && (
         <div
           className="animate-overlay fixed inset-0 z-[var(--z-overlay)] bg-black/50"
-          onClick={() => setNotlarAcik(false)}
+          onClick={() => setNotKategorisi(null)}
         />
       )}
 
@@ -924,25 +1041,30 @@ export default function DersAnaSayfa() {
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Ders notlarım"
-        className={`glass-strong fixed left-0 top-0 z-[var(--z-panel)] flex h-screen w-72 flex-col border-r border-[var(--border)] shadow-2xl shadow-black/40 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-          notlarAcik ? "translate-x-0" : "-translate-x-full"
+        aria-label={`${gosterilenNotKategorisi ?? ""} ders notları`}
+        className={`glass-strong fixed left-0 top-0 z-[var(--z-panel)] flex h-screen w-80 flex-col border-r border-[var(--border)] shadow-2xl shadow-black/40 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] sm:w-96 ${
+          notKategorisi !== null ? "translate-x-0" : "-translate-x-full"
         }`}
-        aria-hidden={!notlarAcik}
+        aria-hidden={notKategorisi === null}
       >
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)]/10">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10">
               <NotebookPen size={13} className="text-[var(--accent)]" />
             </div>
-            <h2 className="text-[13.5px] font-medium text-white/90">Ders notlarım</h2>
+            <div className="min-w-0">
+              <h2 className="truncate text-[13.5px] font-medium text-white/90">
+                {gosterilenNotKategorisi ?? "Ders notları"}
+              </h2>
+              <p className="text-[11px] text-white/30">ders notları</p>
+            </div>
           </div>
           <button
             type="button"
-            onClick={() => setNotlarAcik(false)}
+            onClick={() => setNotKategorisi(null)}
             aria-label="Kapat"
-            tabIndex={notlarAcik ? 0 : -1}
-            className="-mr-1.5 flex h-9 w-9 items-center justify-center rounded-lg text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/70"
+            tabIndex={notKategorisi !== null ? 0 : -1}
+            className="-mr-1.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/70"
           >
             <X size={16} />
           </button>
@@ -953,31 +1075,32 @@ export default function DersAnaSayfa() {
             <div className="flex justify-center py-12">
               <Loader2 size={18} className="animate-spin text-[var(--accent)]/50" />
             </div>
-          ) : dersNotlari.length === 0 ? (
+          ) : panelNotlari.length === 0 ? (
             <div className="flex flex-col items-center gap-3 px-3 py-14 text-center">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06]">
                 <NotebookPen size={18} className="text-white/20" />
               </div>
               <p className="text-[12.5px] leading-relaxed text-white/30">
-                Henüz ders notun yok. Bir dersin özet ekranında &quot;Özeti ders notlarına
-                kaydet&quot; dediğinde burada görünecek.
+                Bu kategoride ders notun yok. Bir dersin özet ekranında &quot;Özeti ders
+                notlarına kaydet&quot; dediğinde burada görünecek.
               </p>
             </div>
           ) : (
             <div className="flex flex-col gap-1">
-              {dersNotlari.map((n) => (
+              {panelNotlari.map((n) => (
                 <Link
                   key={n.id}
                   href={`/note/${n.id}`}
-                  tabIndex={notlarAcik ? 0 : -1}
-                  className="group flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-[var(--accent)]/[0.06]"
+                  tabIndex={notKategorisi !== null ? 0 : -1}
+                  title={n.baslik}
+                  className="group flex items-start gap-2.5 rounded-xl px-3 py-2 transition-colors hover:bg-[var(--accent)]/[0.06]"
                 >
-                  <FileText size={14} className="flex-shrink-0 text-white/25" />
+                  <FileText size={14} className="mt-0.5 flex-shrink-0 text-white/25" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] text-white/85">
-                      {n.id.replace(/^ders-/, "").replace(/-/g, " ")}
+                    <p className="line-clamp-2 text-[13px] leading-snug text-white/85">
+                      {n.baslik}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-white/30">{tarihMetni(n.updated_at)}</p>
+                    <p className="mt-1 text-[11px] text-white/30">{tarihMetni(n.updated_at)}</p>
                   </div>
                 </Link>
               ))}

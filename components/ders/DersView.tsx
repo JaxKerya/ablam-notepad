@@ -102,8 +102,21 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
   // yazdıkları da taşıdığı klasör de uçmasın.
   const [onceki, setOnceki] = useState<{ content: unknown; folder_id: string | null } | null>(null);
 
+  /**
+   * "Soruları tekrar çöz" ile yeniden çözülmek üzere işaretlenen sorular.
+   *
+   * Cevapları SİLİNMİYOR: değerlendirme ucu (/api/ders/grade) cevabı soru
+   * kimliğine göre upsert ediyor, yani yeni cevap eskisinin üstüne yazılıyor.
+   * Bu küme yalnızca "ekranda cevaplanmamış gibi görünsün" demek. Ablam
+   * yarıda bırakırsa dokunmadığı soruların eski cevapları da duruyor.
+   */
+  const [tekrarBekleyen, setTekrarBekleyen] = useState<Set<string>>(new Set());
+
   const soru = sorular[index];
-  const mevcutCevap = soru ? cevaplar.get(soru.id) : undefined;
+  const kayitliCevap = soru ? cevaplar.get(soru.id) : undefined;
+  // Tekrar çözülecek sorular her yerde cevapsız görünsün: giriş açılır, şıklar
+  // tıklanabilir olur, sonuç kutusu çıkmaz. Tek yerden dönmesi bunu sağlıyor.
+  const mevcutCevap = soru && tekrarBekleyen.has(soru.id) ? undefined : kayitliCevap;
 
   /**
    * Sorunun videosu. Tekrar oturumlarında sorular farklı derslerden geldiği için
@@ -128,7 +141,9 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
     const n = Number(ham);
     return Number.isInteger(n) ? n : null;
   })();
-  const cevaplananSayisi = cevaplar.size;
+  // İlerleme çubuğu bu turu sayıyor: tekrar çözerken 19/19 yazsaydı çubuk
+  // dolu başlar, ablam nerede olduğunu göremezdi.
+  const cevaplananSayisi = [...cevaplar.keys()].filter((id) => !tekrarBekleyen.has(id)).length;
 
   const skor = useMemo(() => skorHesapla([...cevaplar.values()]), [cevaplar]);
 
@@ -179,6 +194,13 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
         created_at: new Date().toISOString(),
       };
       setCevaplar((m) => new Map(m).set(soru.id, yeni));
+      // Yeniden çözüldü: artık normal cevaplı soru, sonucu görünsün
+      setTekrarBekleyen((s) => {
+        if (!s.has(soru.id)) return s;
+        const yeniKume = new Set(s);
+        yeniKume.delete(soru.id);
+        return yeniKume;
+      });
     } catch (err) {
       addToast((err as Error).message, "error");
     } finally {
@@ -359,9 +381,20 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
     addToast(onceki ? "Not eski hâline döndürüldü" : "Kaydetme geri alındı", "delete");
   };
 
-  const bastanBasla = () => {
-    const ilkCevapsiz = sorular.findIndex((s) => !cevaplar.has(s.id));
-    setIndex(ilkCevapsiz === -1 ? 0 : ilkCevapsiz);
+  /**
+   * Soruları baştan çözmeye döner.
+   *
+   * Önceki hâli yalnızca "sorulara dön"dü: cevaplanmış sorular kilitli
+   * geldiği için ablam soruları gözden geçiriyordu, çözmüyordu. Aynı dersi
+   * ikinci kez çözmek isteyince yapabileceği tek şey dersi silip yeniden
+   * ürettirmekti — hem para hem de geçmişi harcayan bir yol.
+   *
+   * Cevaplar silinmiyor, yalnızca "yeniden çözülecek" diye işaretleniyor;
+   * verilen yeni cevap eskisinin üstüne yazılıyor (bkz. tekrarBekleyen).
+   */
+  const tekrarCoz = () => {
+    setTekrarBekleyen(new Set(cevaplar.keys()));
+    setIndex(0);
     setMetin("");
     setSecim(null);
     setMod("soru");
@@ -599,11 +632,11 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
               listesindeki "Soru Gönder" ile baştan başlar. */}
           {!pratik && (
             <button
-              onClick={bastanBasla}
+              onClick={tekrarCoz}
               className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-4 py-3 text-[13px] text-white/65 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"
             >
               <RotateCcw size={14} />
-              Sorulara dön
+              Soruları tekrar çöz
             </button>
           )}
           <Link

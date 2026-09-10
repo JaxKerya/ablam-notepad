@@ -257,6 +257,45 @@ export const TEKRAR_SORU_SAYISI = 20;
 export const DERS_NOTLARI_KLASORU = "Ders Notları";
 
 /**
+ * Kategorisi çözülemeyen ders notlarının kovası. Notlar kategoriye göre
+ * gruplanıyor ama kategori nottan değil, notun ait olduğu DERSTEN geliyor
+ * (bkz. notVideoId). Ders silinmişse kategori de yok — o not bu başlık altında
+ * görünüyor. Sessizce kaybolmasın diye: not duruyorsa erişilebilir olmalı.
+ */
+export const NOT_KATEGORISIZ = "Kategorisiz";
+
+/**
+ * Ders notunun kimliğinden video kimliğini çıkarır.
+ *
+ * Not kimliği "ders-<başlık-slug>-<videoId>" biçiminde kuruluyor (bkz.
+ * DersView.notaKaydet); video kimliği oraya, aynı başlıklı iki dersin
+ * birbirinin notunu ezmemesi için giriyordu. Şimdi ikinci bir işi daha var:
+ * notu dersine, dolayısıyla kategorisine bağlayan tek bağ bu — notlar
+ * tablosunda ders kimliği tutan bir kolon yok ve eklemek için şema
+ * değişikliği gerekirdi.
+ *
+ * Dönen değer bir ADAY: 11 karakterlik son parça gerçekten video kimliği
+ * olmayabilir (o uzunlukta bir slug parçası da eşleşir). Çağıran taraf bunu
+ * veritabanında arayarak doğruluyor, bulamazsa not "Kategorisiz" oluyor.
+ */
+export function notVideoId(notId: string): string | null {
+  const eslesme = notId.match(/-([\w-]{11})$/);
+  return eslesme ? eslesme[1] : null;
+}
+
+/**
+ * Not kimliğinden okunabilir başlık. Ders bulunabiliyorsa onun gerçek başlığı
+ * kullanılıyor; bu yalnızca yedek yol — ve sondaki video kimliğini atıyor.
+ * Önceden atmıyordu: panelde "... siyasi ustunlugunu kaybetmesi H5ingtSpnp8"
+ * gibi, sonunda anlamsız bir kelime duruyordu.
+ */
+export function notBasligi(notId: string, videoId: string | null): string {
+  let ad = notId.replace(/^ders-/, "");
+  if (videoId && ad.endsWith(`-${videoId}`)) ad = ad.slice(0, -(videoId.length + 1));
+  return ad.replace(/-/g, " ").trim();
+}
+
+/**
  * Supadata ücretsiz katmanının aylık transkript kotası. Kota dolunca transkript
  * elle yapıştırmaya kalıyor; aiview'deki sayaç bunu ayın ortasında görünür
  * kılmak için var, ay sonunda sürpriz olmasın diye.
