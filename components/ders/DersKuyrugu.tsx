@@ -46,6 +46,8 @@ interface KuyrukDegeri {
   tekrarDene: (id: string) => void;
   /** Elle yapıştırılan transkriptle işi yeniden sıraya alır */
   elleGonder: (id: string, transkript: string) => void;
+  /** Videodan ders zaten varken ablam bilerek yeniden üretmek isterse */
+  yinedeUret: (id: string) => void;
   /** Bir iş her tamamlandığında artar — ders listesini tazelemek için */
   tamamlananSayac: number;
 }
@@ -178,6 +180,16 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
           baslik = typeof tr.baslik === "string" ? tr.baslik : null;
           yaz({ videoId, baslik, sure: typeof tr.sure === "number" ? tr.sure : 0 });
 
+          // MÜKERRER KORUMASI. Bu videodan ders varsa üretime geçilmiyor; kart
+          // "zaten var" diyip dersi açıyor, "yine de üret" ise zorla ile
+          // yeniden sıraya alıyor. Kontrol transkript cevabından geliyor —
+          // ek sorgu yok.
+          const mevcut = tr.mevcutDers as { id: string; baslik: string | null } | null | undefined;
+          if (mevcut && !is.zorla) {
+            yaz({ durum: "mevcut", mevcutDersId: mevcut.id, baslik: mevcut.baslik ?? baslik });
+            return;
+          }
+
           // Aynı videoyu işleyen başka bir iş var mı? (Kuyruğa iki kez yapıştırılan
           // link, ya da "Tamamla" ile aynı anda başlatılan yarım oturum.) Video
           // kimliği ancak burada bilindiği için kontrol burada.
@@ -308,6 +320,18 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
     [guncelle]
   );
 
+  /** "Yine de üret": mevcut ders kontrolünü atlayarak yeniden sıraya alır */
+  const yinedeUret = useCallback(
+    (id: string) => {
+      guncelle((liste) =>
+        liste.map((i) =>
+          i.id === id ? { ...i, id: yeniId(), durum: "bekliyor", hata: null, zorla: true } : i
+        )
+      );
+    },
+    [guncelle]
+  );
+
   const elleGonder = useCallback(
     (id: string, transkript: string) => {
       guncelle((liste) =>
@@ -323,7 +347,7 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
 
   return (
     <Baglam.Provider
-      value={{ isler, ekle, tamamlaEkle, kaldir, tekrarDene, elleGonder, tamamlananSayac }}
+      value={{ isler, ekle, tamamlaEkle, kaldir, tekrarDene, elleGonder, yinedeUret, tamamlananSayac }}
     >
       {children}
     </Baglam.Provider>

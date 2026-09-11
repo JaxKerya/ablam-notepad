@@ -67,6 +67,20 @@ export async function POST(request: Request) {
         .maybeSingle();
 
       if (mevcut && Array.isArray(mevcut.segments) && mevcut.segments.length) {
+        // Bu videodan ders var mı? Kuyruk bunu görünce üretime GEÇMİYOR —
+        // 30 numaralı video iki kez eklenmiş ve sistem sesini çıkarmamıştı,
+        // ~$0,12 ve mükerrer bir ders. Ablam isterse yine de üretebiliyor
+        // (zorla), ama bilerek.
+        const { data: ders } = await supabase
+          .from("ders_sessions")
+          .select("id, title, created_at")
+          .eq("video_id", videoId)
+          .eq("tur", "ders")
+          .eq("status", "hazir")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
         return NextResponse.json({
           videoId,
           baslik: mevcut.title,
@@ -74,6 +88,7 @@ export async function POST(request: Request) {
           parcaSayisi: mevcut.segments.length,
           kaynak: mevcut.source,
           onbellekten: true,
+          mevcutDers: ders ? { id: ders.id, baslik: ders.title } : null,
         });
       }
     }

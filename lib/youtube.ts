@@ -117,6 +117,95 @@ export async function yayinTarihleriGetir(
   return sonuc;
 }
 
+/** Okunacak en fazla video — bir ders serisi bunun çok altında kalır */
+const LISTE_TAVANI = 500;
+
+export interface ListeVideosu {
+  videoId: string;
+  baslik: string;
+  /** Listedeki sıra (0'dan) */
+  sira: number;
+}
+
+/**
+ * Bir oynatma listesinin videoları, liste sırasıyla. YouTube Data API v3,
+ * sayfa başına 50 video ve 1 birim kota — 65 videoluk liste 2 birim.
+ *
+ * Neden var: ablam dersleri bir listeden tek tek seçip ekliyor ve bazen birini
+ * atlıyor, bazen birini iki kez ekliyor. 65 dersten hangisinin eksik olduğunu
+ * elle bulmak mümkün değildi (bkz. /ders sayfasındaki liste karşılaştırması).
+ *
+ * Gizli/silinmiş videolar ("Private video", "Deleted video") atlanıyor: onların
+ * transkripti alınamaz, listeye eksik diye düşmeleri yanıltır.
+ */
+export async function oynatmaListesiVideolari(
+  listeId: string
+): Promise<{ videolar: ListeVideosu[]; baslik: string | null; atlanan: number; kirpildi: boolean }> {
+  const anahtar = process.env.YOUTUBE_API_KEY;
+  if (!anahtar) {
+    throw new Error(
+      "YOUTUBE_API_KEY tanımlı değil; oynatma listesi okunamıyor. (README'de kurulumu var.)"
+    );
+  }
+
+  const videolar: ListeVideosu[] = [];
+  let atlanan = 0;
+  let sayfa: string | undefined;
+  let sira = 0;
+
+  do {
+    const res = await fetch(
+      "https://www.googleapis.com/youtube/v3/playlistItems" +
+        `?part=snippet&maxResults=50&playlistId=${encodeURIComponent(listeId)}` +
+        (sayfa ? `&pageToken=${sayfa}` : "") +
+        `&key=${anahtar}`,
+      { signal: AbortSignal.timeout(15_000) }
+    );
+    if (!res.ok) {
+      const govde = await res.text().catch(() => "");
+      if (res.status === 404) throw new Error("Oynatma listesi bulunamadı ya da gizli.");
+      throw new Error(`YouTube API ${res.status}: ${govde.slice(0, 160)}`);
+    }
+    const veri = (await res.json()) as {
+      nextPageToken?: string;
+      items?: {
+        snippet?: { title?: string; resourceId?: { videoId?: string } };
+      }[];
+    };
+    for (const oge of veri.items ?? []) {
+      const id = oge.snippet?.resourceId?.videoId;
+      const baslik = oge.snippet?.title ?? "";
+      if (!id) continue;
+      if (/^(private|deleted) video$/i.test(baslik)) {
+        atlanan++;
+        continue;
+      }
+      videolar.push({ videoId: id, baslik, sira: sira++ });
+    }
+    sayfa = veri.nextPageToken;
+  } while (sayfa && videolar.length < LISTE_TAVANI);
+  // Bir kanalın bütün yüklemeleri (UU… listesi) binlerce video olabilir;
+  // 500'de kesiliyor ve kesildiği çağırana söyleniyor — sessizce değil.
+  const kirpildi = !!sayfa;
+
+  // Listenin adı — 1 birim daha; düşerse adsız devam
+  let baslik: string | null = null;
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=${encodeURIComponent(listeId)}&key=${anahtar}`,
+      { signal: AbortSignal.timeout(10_000) }
+    );
+    if (res.ok) {
+      const veri = (await res.json()) as { items?: { snippet?: { title?: string } }[] };
+      baslik = veri.items?.[0]?.snippet?.title ?? null;
+    }
+  } catch {
+    // ad olmadan da çalışır
+  }
+
+  return { videolar, baslik, atlanan, kirpildi };
+}
+
 /** Video başlığı — oEmbed ucu herkese açık ve hafif */
 export async function baslikGetir(videoId: string): Promise<string | null> {
   try {

@@ -20,6 +20,12 @@ export const maxDuration = 30;
 /** Aranan en az karakter — daha kısası bütün transkripti eşleştirir */
 const EN_AZ_UZUNLUK = 3;
 const EN_FAZLA_DERS = 12;
+/**
+ * Aranan transkript sayısı tavanı. Yalnızca LİSTEDEKİ derslerin videoları
+ * sayıldığı için tavan silinmiş derslerle dolmuyor; 73 derslik kategoride
+ * 100'ün üstüne çıkmak uzak ama çıkarsa en yeni dersler kalıyor.
+ */
+const EN_FAZLA_VIDEO = 200;
 const DERS_BASINA_VURGU = 5;
 /** Bu kadar saniye içindeki iki eşleşme tek anma sayılır */
 const BIRLESTIRME_SN = 20;
@@ -90,11 +96,30 @@ export async function POST(request: Request) {
     }
 
     const supabase = createServerSupabaseClient();
+
+    // Önce LİSTEDEKİ dersler. ders_videos bir önbellek: ders silinince
+    // transkript kalıyor (aynı video yeniden eklenirse Supadata kredisi
+    // harcanmasın diye). Doğrudan ders_videos taranınca silinmiş derslerin
+    // transkriptleri de sonuçlara karışıyordu ve 100'lük tavan silinmişlerle
+    // doluyordu. Ölçüt ders listesiyle aynı: tur=ders, hazir/hazirlaniyor.
+    const { data: dersler, error: dersHatasi } = await supabase
+      .from("ders_sessions")
+      .select("video_id, created_at")
+      .eq("tur", "ders")
+      .in("status", ["hazir", "hazirlaniyor"])
+      .order("created_at", { ascending: false })
+      .limit(EN_FAZLA_VIDEO);
+    if (dersHatasi) throw new Error(dersHatasi.message);
+
+    const videoKimlikleri = [...new Set((dersler ?? []).map((d) => d.video_id as string))];
+    if (!videoKimlikleri.length) {
+      return NextResponse.json({ sorgu, dersSayisi: 0, toplam: 0, sonuclar: [] });
+    }
+
     const { data: videolar, error } = await supabase
       .from("ders_videos")
       .select("video_id, title, duration_seconds, segments")
-      .order("created_at", { ascending: false })
-      .limit(100);
+      .in("video_id", videoKimlikleri);
 
     if (error) throw new Error(error.message);
 

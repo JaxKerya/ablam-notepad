@@ -508,6 +508,8 @@ export type IsDurumu =
   | "coktan"
   | "hazir"
   | "elle"
+  /** Bu videodan ders zaten var; üretim ablamın "yine de üret" demesini bekliyor */
+  | "mevcut"
   | "hata";
 
 /** Model çağıran, yani hem para hem süre harcayan durumlar */
@@ -526,6 +528,10 @@ export interface UretimIsi {
   hata: string | null;
   /** Otomatik transkript düşerse ablamın yapıştırdığı metin */
   elleTranskript?: string;
+  /** durum "mevcut" iken: var olan dersin kimliği (kart oraya bağlanıyor) */
+  mevcutDersId?: string | null;
+  /** Ablam "yine de üret" dedi; mevcut ders kontrolü atlanıyor */
+  zorla?: boolean;
 }
 
 /**
@@ -548,6 +554,28 @@ export function baslatilacakIs(isler: UretimIsi[], sinir = ES_ZAMANLI_URETIM): U
 
   const mesgul = new Set(calisan.map((i) => i.videoId).filter(Boolean));
   return isler.find((i) => i.durum === "bekliyor" && !(i.videoId && mesgul.has(i.videoId))) ?? null;
+}
+
+/**
+ * Saf oynatma listesi linkinin kimliği; video linkiyse null.
+ *
+ * "watch?v=…&list=…" bir VİDEO linkidir (liste içinden açılmış), o yüzden
+ * null döner — ablam tek video eklemek istiyor, listeyi karşılaştırmak değil.
+ * Yalnızca "/playlist?list=…" liste sayılıyor. lib/youtube.ts'teki
+ * oynatmaListesiMi ile aynı kural; burada tekrar var çünkü o dosya sunucu
+ * modülü, istemci onu içe alamıyor.
+ */
+export function oynatmaListesiKimligi(girdi: string): string | null {
+  try {
+    const m = girdi.trim();
+    const url = new URL(m.startsWith("http") ? m : `https://${m}`);
+    if (!url.hostname.replace(/^www\./, "").endsWith("youtube.com")) return null;
+    if (url.pathname !== "/playlist") return null;
+    const id = url.searchParams.get("list");
+    return id && /^[\w-]{10,}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

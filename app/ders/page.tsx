@@ -21,6 +21,7 @@ import {
   Dices,
   Search,
   Timer,
+  ListChecks,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
@@ -45,6 +46,7 @@ import {
   linkleriAyikla,
   NOT_KATEGORISIZ,
   notBasligi,
+  oynatmaListesiKimligi,
   notVideoId,
   tarihMetni,
   videoLinki,
@@ -97,6 +99,44 @@ interface AramaSonucu {
   vurgular: AramaVurgusu[];
 }
 
+/** Oynatma listesi karşılaştırması — /api/ders/oynatma-listesi'nin döndürdüğü */
+interface ListeSatiri {
+  videoId: string;
+  baslik: string;
+  sira: number;
+  durum: "ders" | "yarim" | "transkript" | "eksik" | "baska";
+  dersSayisi: number;
+  dersId: string | null;
+  kategori: string | null;
+}
+interface ListeKarsilastirma {
+  baslik: string | null;
+  toplam: number;
+  atlanan: number;
+  /** Liste 500 videodan uzundu, ilk 500'ü okundu */
+  kirpildi: boolean;
+  ozet: {
+    ders: number;
+    yarim: number;
+    transkript: number;
+    eksik: number;
+    baska: number;
+    mukerrer: number;
+  };
+  satirlar: ListeSatiri[];
+}
+
+const LISTE_DURUM_METNI: Record<ListeSatiri["durum"], string> = {
+  ders: "eklendi",
+  yarim: "yarım kaldı",
+  transkript: "transkripti var, dersi yok",
+  eksik: "eksik",
+  baska: "başka kategoride",
+};
+
+/** Kategori başına son karşılaştırılan liste linki — bir daha yapıştırmasın */
+const LISTE_HAFIZASI = "ablam-liste-linkleri";
+
 /** Kuyruktaki bir işin ekranda görünen hâli */
 const DURUM_METNI: Record<IsDurumu, string> = {
   bekliyor: "Sırada bekliyor",
@@ -105,6 +145,7 @@ const DURUM_METNI: Record<IsDurumu, string> = {
   coktan: "Çoktan seçmeli sorular hazırlanıyor…",
   hazir: "Hazır",
   elle: "Altyazı alınamadı — transkripti yapıştır",
+  mevcut: "Bu ders zaten var",
   hata: "Hata",
 };
 
@@ -156,7 +197,7 @@ export default function DersAnaSayfa() {
   const router = useRouter();
   const { addToast } = useToast();
   // Üretim kuyruğu layout'ta yaşıyor; sayfa yalnızca gösteriyor ve besliyor.
-  const { isler, ekle, tamamlaEkle, kaldir, tekrarDene, elleGonder, tamamlananSayac } =
+  const { isler, ekle, tamamlaEkle, kaldir, tekrarDene, elleGonder, yinedeUret, tamamlananSayac } =
     useKuyruk();
 
   // Esc ile kapanma, odak tuzağı ve odağın geri verilmesi — bkz. useModal
@@ -389,7 +430,149 @@ export default function DersAnaSayfa() {
    * üretim kuyrukta yürüdüğü için kutu kilitlenmiyor: ablam bir ders
    * hazırlanırken ikinci linki yapıştırabiliyor.
    */
+  /**
+   * OYNATMA LİSTESİ KARŞILAŞTIRMASI — kategori kartından.
+   *
+   * Ablam dersleri bir listeden tek tek seçip ekliyor; 65 videoluk seride
+   * ikisini atlamış, birini iki kez eklemişti ve bunu listeye bakarak bulmak
+   * imkânsızdı (ders adı modelin verdiği ad, video adı değil). Kategori
+   * başlığındaki düğme bir panel açıyor: liste linki yapıştırılıyor, listedeki
+   * her videonun O KATEGORİDEKİ durumu görünüyor, eksikler tek tıkla kuyruğa
+   * giriyor. Model çağrısı yok; YouTube kotasından 50 video başına 1 birim.
+   *
+   * Karşılaştırma kategoriye bağlı: video başka kategoride varsa "başka
+   * kategoride" diye ayrı gösteriliyor ve sıraya alınmıyor — aynı dersi iki kez
+   * üretmek olurdu.
+   */
+  const [listePaneli, setListePaneli] = useState<string | null>(null);
+  const [listeUrl, setListeUrl] = useState("");
+  const [liste, setListe] = useState<ListeKarsilastirma | null>(null);
+  const [listeYukleniyor, setListeYukleniyor] = useState(false);
+  /**
+   * Sıraya alınacak videolar — ablam seçiyor. Eksiklerin hepsini birden
+   * eklemek zorunda değil (84 eksik ≈ $10); varsayılan hiçbiri seçili değil,
+   * "tümünü seç" tek tık. Shift ile aralık: seri olduğu için "75'ten 90'a
+   * kadar" en sık ihtiyaç.
+   */
+  const [secilenler, setSecilenler] = useState<Set<string>>(new Set());
+  const sonTiklanan = useRef<number | null>(null);
+  const secilebilir = (v: ListeSatiri) => v.durum === "eksik" || v.durum === "transkript";
+
+  const secimiCevir = (indeks: number, shift: boolean) => {
+    if (!liste) return;
+    const satirlar = liste.satirlar;
+    const hedef = satirlar[indeks];
+    if (!secilebilir(hedef)) return;
+    // Önceki tıklama BURADA okunuyor, güncelleyicinin içinde değil: React
+    // güncelleyiciyi sonradan çalıştırıyor ve o ana kadar ref yeni indeksle
+    // ezilmiş oluyordu — aralık hep tek satıra düşüyordu (ölçüldü: 78 + Shift
+    // 84 yalnızca ikisini seçiyordu).
+    const oncekiTiklama = sonTiklanan.current;
+    setSecilenler((onceki) => {
+      const yeni = new Set(onceki);
+      if (shift && oncekiTiklama !== null) {
+        const [a, b] = [oncekiTiklama, indeks].sort((x, y) => x - y);
+        const ekle = !yeni.has(hedef.videoId);
+        for (let i = a; i <= b; i++) {
+          if (!secilebilir(satirlar[i])) continue;
+          if (ekle) yeni.add(satirlar[i].videoId);
+          else yeni.delete(satirlar[i].videoId);
+        }
+      } else if (yeni.has(hedef.videoId)) {
+        yeni.delete(hedef.videoId);
+      } else {
+        yeni.add(hedef.videoId);
+      }
+      return yeni;
+    });
+    sonTiklanan.current = indeks;
+  };
+
+  const tumunuSec = () => {
+    if (!liste) return;
+    setSecilenler(new Set(liste.satirlar.filter(secilebilir).map((v) => v.videoId)));
+  };
+  const listeRef = useModal<HTMLDivElement>(listePaneli !== null, () => setListePaneli(null));
+
+  /**
+   * Panel iki yerden açılıyor:
+   *   - kategori kartındaki "Liste" düğmesi -> kategori = "Tarih" gibi;
+   *     karşılaştırma yalnızca o kategoriyle
+   *   - ana link kutusuna liste linki yapıştırılınca -> kategori = "" ;
+   *     karşılaştırma BÜTÜN derslerle, link hazır geldiği için tarama
+   *     kendiliğinden başlıyor
+   * Boş dize "kategorisiz" demek; null "panel kapalı" demek.
+   */
+  const listePaneliAc = (kategori: string, hazirUrl?: string) => {
+    setListe(null);
+    let onceki = "";
+    try {
+      const hafiza = JSON.parse(localStorage.getItem(LISTE_HAFIZASI) ?? "{}");
+      const anahtar = kategori || "*";
+      onceki = typeof hafiza[anahtar] === "string" ? hafiza[anahtar] : "";
+    } catch {
+      // Bozuk kayıt: boş kutuyla aç
+    }
+    const url = hazirUrl ?? onceki;
+    setListeUrl(url);
+    setListePaneli(kategori);
+    if (hazirUrl) void listeyiKarsilastir(hazirUrl, kategori);
+  };
+
+  const listeyiKarsilastir = async (verilenUrl?: string, verilenKategori?: string) => {
+    if (listeYukleniyor) return;
+    const kategori = verilenKategori ?? listePaneli ?? "";
+    const url = (verilenUrl ?? listeUrl).trim();
+    if (!oynatmaListesiKimligi(url)) {
+      addToast("Bu bir oynatma listesi linkine benzemiyor (youtube.com/playlist?list=…).", "error");
+      return;
+    }
+    setListeYukleniyor(true);
+    try {
+      const res = await fetch("/api/ders/oynatma-listesi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, kategori }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.hata ?? "Liste okunamadı.");
+      setListe(data as ListeKarsilastirma);
+      setSecilenler(new Set());
+      sonTiklanan.current = null;
+      try {
+        const hafiza = JSON.parse(localStorage.getItem(LISTE_HAFIZASI) ?? "{}");
+        hafiza[kategori || "*"] = url;
+        localStorage.setItem(LISTE_HAFIZASI, JSON.stringify(hafiza));
+      } catch {
+        // Depolama kapalıysa hatırlanmaz, karşılaştırma yine çalışır
+      }
+    } catch (err) {
+      addToast((err as Error).message, "error");
+    } finally {
+      setListeYukleniyor(false);
+    }
+  };
+
+  /** SEÇİLEN videoları üretim kuyruğuna alır */
+  const eksikleriSirayaAl = () => {
+    if (!liste || !secilenler.size) return;
+    const linkler = liste.satirlar
+      .filter((v) => secilenler.has(v.videoId))
+      .map((v) => `https://www.youtube.com/watch?v=${v.videoId}`);
+    const eklenen = ekle(linkler.join("\n"));
+    if (eklenen) addToast(`${eklenen} ders sıraya alındı`, "success");
+    setListePaneli(null);
+    setListe(null);
+  };
+
   const siradanEkle = (metin: string) => {
+    // Saf liste linki: ekleme değil, seçim. Panel bütün derslerle
+    // karşılaştırıp açılıyor; ablam işlenecek videoları içinden seçiyor.
+    if (oynatmaListesiKimligi(metin.trim())) {
+      listePaneliAc("", metin.trim());
+      setLink("");
+      return;
+    }
     const eklenen = ekle(metin);
     if (!eklenen) return;
     setLink("");
@@ -818,8 +1001,17 @@ export default function DersAnaSayfa() {
               disabled={!link.trim()}
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3.5 text-sm font-medium text-[var(--background)] shadow-lg shadow-[var(--accent)]/10 transition-all hover:bg-[var(--accent-light)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none"
             >
-              {calisanIs + bekleyenIs > 0 ? "Sıraya ekle" : "Derse başla"}
-              <ArrowRight size={15} />
+              {oynatmaListesiKimligi(link.trim()) ? (
+                <>
+                  <ListChecks size={15} />
+                  Listeden seç
+                </>
+              ) : (
+                <>
+                  {calisanIs + bekleyenIs > 0 ? "Sıraya ekle" : "Derse başla"}
+                  <ArrowRight size={15} />
+                </>
+              )}
             </button>
           )}
 
@@ -854,7 +1046,7 @@ export default function DersAnaSayfa() {
                       className={`mt-0.5 flex items-center gap-1.5 text-[11px] ${
                         is.durum === "hata"
                           ? "text-red-300/80"
-                          : is.durum === "elle"
+                          : is.durum === "elle" || is.durum === "mevcut"
                             ? "text-amber-300/80"
                             : is.durum === "hazir"
                               ? "text-[var(--accent)]/70"
@@ -865,7 +1057,9 @@ export default function DersAnaSayfa() {
                         <Loader2 size={10} className="animate-spin" />
                       )}
                       {is.durum === "hazir" && <CircleCheck size={10} />}
-                      {(is.durum === "hata" || is.durum === "elle") && <CircleAlert size={10} />}
+                      {(is.durum === "hata" || is.durum === "elle" || is.durum === "mevcut") && (
+                        <CircleAlert size={10} />
+                      )}
                       <span className="truncate">
                         {is.durum === "hata" ? (is.hata ?? "Hata") : DURUM_METNI[is.durum]}
                       </span>
@@ -880,6 +1074,23 @@ export default function DersAnaSayfa() {
                       >
                         Aç
                       </Link>
+                    )}
+                    {is.durum === "mevcut" && is.mevcutDersId && (
+                      <>
+                        <Link
+                          href={`/ders/${is.mevcutDersId}`}
+                          className="rounded-lg bg-[var(--accent)]/15 px-2.5 py-1.5 text-[11.5px] font-medium text-[var(--accent-light)] transition-colors hover:bg-[var(--accent)]/25"
+                        >
+                          Aç
+                        </Link>
+                        <button
+                          onClick={() => yinedeUret(is.id)}
+                          title="Aynı videodan ikinci bir ders üretir (~$0,12)"
+                          className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11.5px] text-white/60 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"
+                        >
+                          Yine de üret
+                        </button>
+                      </>
                     )}
                     {is.durum === "hata" && (
                       <button
@@ -1184,6 +1395,16 @@ export default function DersAnaSayfa() {
                         </button>
                       )}
 
+                      {/* Oynatma listesiyle karşılaştırma — bkz. listePaneliAc */}
+                      <button
+                        onClick={() => listePaneliAc(g.kategori)}
+                        title={`${g.kategori} derslerini bir YouTube listesiyle karşılaştır`}
+                        className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11.5px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"
+                      >
+                        <ListChecks size={12} className="text-[var(--accent)]/70" />
+                        Liste
+                      </button>
+
                       {/* Deneme sınavı: KPSS'nin o dersteki gerçek soru sayısı
                           ve süresiyle. Havuz yetmiyorsa uç anlamlı bir hata
                           döndürüyor, düğmeyi burada gizlemeye gerek yok —
@@ -1485,6 +1706,202 @@ export default function DersAnaSayfa() {
           )}
         </div>
       </aside>
+
+      {/* Oynatma listesi paneli — kategori kartından açılır */}
+      {listePaneli !== null && (
+        <div
+          className="animate-overlay fixed inset-0 z-[var(--z-panel)] flex items-center justify-center bg-black/40 px-5"
+          onClick={() => !listeYukleniyor && setListePaneli(null)}
+        >
+          <div
+            ref={listeRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="liste-paneli-basligi"
+            className="animate-fade-in-scale flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl border border-[var(--border)] bg-[var(--surface-popup)] p-5 shadow-2xl shadow-black/40"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10">
+                  <ListChecks size={15} className="text-[var(--accent)]" />
+                </div>
+                <div>
+                  <h2 id="liste-paneli-basligi" className="text-[14px] font-medium text-white/90">
+                    {listePaneli
+                      ? `${listePaneli} derslerini listeyle karşılaştır`
+                      : "Listeden ders seç"}
+                  </h2>
+                  <p className="text-[11.5px] text-white/35">
+                    Eksikleri işaretle; Shift ile aralık seçebilirsin
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setListePaneli(null)}
+                aria-label="Kapat"
+                className="-mr-1.5 -mt-1 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/70"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={listeUrl}
+                onChange={(e) => setListeUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") listeyiKarsilastir();
+                }}
+                disabled={listeYukleniyor}
+                placeholder="https://www.youtube.com/playlist?list=…"
+                className="focus-ring min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-[13px] text-white/95 placeholder-white/25 disabled:opacity-50"
+              />
+              <button
+                onClick={() => listeyiKarsilastir()}
+                disabled={listeYukleniyor || !listeUrl.trim()}
+                className="flex flex-shrink-0 items-center gap-2 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-[13px] font-medium text-[var(--background)] transition-colors hover:bg-[var(--accent-light)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {listeYukleniyor ? <Loader2 size={14} className="animate-spin" /> : "Tara"}
+              </button>
+            </div>
+
+            {liste && (
+              <div className="mt-4 flex min-h-0 flex-1 flex-col">
+                <p className="mb-2 text-[12px] text-white/50">
+                  <span className="font-medium text-white/80">{liste.baslik ?? "Liste"}</span>
+                  <span className="text-white/35">
+                    {" "}
+                    · {liste.toplam} video · {liste.ozet.ders} eklendi
+                    {liste.ozet.eksik + liste.ozet.transkript > 0 &&
+                      ` · ${liste.ozet.eksik + liste.ozet.transkript} eksik`}
+                    {liste.ozet.yarim > 0 && ` · ${liste.ozet.yarim} yarım`}
+                    {liste.ozet.mukerrer > 0 && ` · ${liste.ozet.mukerrer} mükerrer`}
+                    {liste.ozet.baska > 0 && ` · ${liste.ozet.baska} başka kategoride`}
+                    {liste.atlanan > 0 && ` · ${liste.atlanan} gizli/silinmiş atlandı`}
+                    {liste.kirpildi && " · liste 500'den uzun, ilk 500'ü okundu"}
+                  </span>
+                </p>
+
+                <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2">
+                  {liste.satirlar.map((v, i) => (
+                    <div
+                      key={v.videoId}
+                      onClick={(e) => secimiCevir(i, e.shiftKey)}
+                      className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[12px] ${
+                        secilebilir(v)
+                          ? "cursor-pointer select-none hover:bg-white/[0.04]"
+                          : ""
+                      } ${
+                        secilenler.has(v.videoId)
+                          ? "bg-[var(--accent)]/[0.08] text-white/90"
+                          : v.durum === "ders" && v.dersSayisi === 1
+                            ? "text-white/40"
+                            : "text-white/80"
+                      }`}
+                    >
+                      {/* Seçim kutusu yalnızca sıraya alınabilecek satırlarda;
+                          diğerlerinde aynı genişlikte boşluk, hizalama bozulmasın */}
+                      {secilebilir(v) ? (
+                        <input
+                          type="checkbox"
+                          checked={secilenler.has(v.videoId)}
+                          onChange={() => undefined}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            secimiCevir(i, (e as React.MouseEvent).shiftKey);
+                          }}
+                          aria-label={`${v.baslik} — sıraya al`}
+                          className="h-3.5 w-3.5 flex-shrink-0 cursor-pointer accent-[var(--accent)]"
+                        />
+                      ) : (
+                        <span className="w-3.5 flex-shrink-0" />
+                      )}
+                      <span className="w-6 flex-shrink-0 text-right font-mono text-[11px] text-white/25">
+                        {v.sira + 1}
+                      </span>
+                      {/* Küçük resim: 157 satırlık listede tembel yükleme şart.
+                          default.jpg 120×90; 16:9'a kırpılıyor. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`https://img.youtube.com/vi/${v.videoId}/default.jpg`}
+                        alt=""
+                        loading="lazy"
+                        className={`h-[22px] w-10 flex-shrink-0 rounded border border-white/[0.06] object-cover ${
+                          v.durum === "ders" && v.dersSayisi === 1 ? "opacity-50" : ""
+                        }`}
+                      />
+                      <span className="min-w-0 flex-1 truncate" title={v.baslik}>
+                        {v.baslik}
+                      </span>
+                      {v.dersSayisi > 1 ? (
+                        <Link
+                          href={`/ders/${v.dersId}`}
+                          className="flex-shrink-0 rounded-md border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10.5px] text-amber-200 transition-colors hover:bg-amber-400/20"
+                          title="Bu video birden fazla kez eklenmiş; derslerden birini silebilirsin"
+                        >
+                          {v.dersSayisi} kez eklenmiş
+                        </Link>
+                      ) : v.durum === "ders" ? (
+                        <span className="flex-shrink-0 text-[10.5px] text-[var(--accent)]/60">
+                          {LISTE_DURUM_METNI.ders}
+                        </span>
+                      ) : v.durum === "yarim" ? (
+                        <Link
+                          href={`/ders/${v.dersId}`}
+                          className="flex-shrink-0 rounded-md border border-amber-400/30 px-1.5 py-0.5 text-[10.5px] text-amber-200/80"
+                        >
+                          {LISTE_DURUM_METNI.yarim}
+                        </Link>
+                      ) : v.durum === "baska" ? (
+                        <Link
+                          href={`/ders/${v.dersId}`}
+                          className="flex-shrink-0 rounded-md border border-[var(--border)] px-1.5 py-0.5 text-[10.5px] text-white/50"
+                          title={`Bu video "${v.kategori}" kategorisinde ekli`}
+                        >
+                          {v.kategori}
+                        </Link>
+                      ) : (
+                        <span className="flex-shrink-0 rounded-md border border-red-400/30 bg-red-400/[0.06] px-1.5 py-0.5 text-[10.5px] text-red-200/80">
+                          {LISTE_DURUM_METNI[v.durum]}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {liste.ozet.eksik + liste.ozet.transkript > 0 ? (
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      onClick={secilenler.size ? () => setSecilenler(new Set()) : tumunuSec}
+                      className="flex-shrink-0 rounded-xl border border-[var(--border)] px-3 py-2.5 text-[12px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/85"
+                    >
+                      {secilenler.size
+                        ? "Seçimi kaldır"
+                        : `Tümünü seç (${liste.ozet.eksik + liste.ozet.transkript})`}
+                    </button>
+                    <button
+                      onClick={eksikleriSirayaAl}
+                      disabled={!secilenler.size}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-[13px] font-medium text-[var(--background)] transition-colors hover:bg-[var(--accent-light)] disabled:cursor-not-allowed disabled:opacity-35"
+                    >
+                      <ArrowRight size={14} />
+                      {secilenler.size
+                        ? `Seçili ${secilenler.size} dersi sıraya al`
+                        : "Sıraya almak için ders seç"}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-center text-[11.5px] text-[var(--accent)]/70">
+                    {listePaneli ? "Listedeki her video bu kategoride ekli." : "Listedeki her video zaten ekli."}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Deneme kurulumu. Soru sayısı ve tempo BURADA seçiliyor: ablam sistemi
           hem KPSS hem YKS için kullanıyor, aynı ders iki sınavda farklı
