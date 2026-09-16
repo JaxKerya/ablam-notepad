@@ -36,9 +36,44 @@ const DEGERLENDIRME_MODELI = process.env.AI_GRADE_MODEL ?? "openai/gpt-5.6-sol";
  */
 const DENETIM_MODELI = process.env.AI_AUDIT_MODEL ?? "openai/gpt-5.6-luna";
 
+/**
+ * Öz-denetim (soru geliştirme) modeli. BOŞSA ADIM HİÇ ÇALIŞMAZ — bu bir
+ * deney: üretim modeli kendi sorularını transkriptle birlikte ikinci kez
+ * okuyup zayıf çeldiricileri güçlendiriyor. Genelde üretim modelinin kendisi
+ * verilir ("self-reflection"); farklı bir model de verilebilir.
+ */
+const GELISTIRME_MODELI = process.env.AI_REFINE_MODEL?.trim() ?? "";
+
+/**
+ * Düşünme derinliği (low | medium | high | xhigh). Yalnızca ÜRETİM ve ÖZ-DENETİM
+ * rollerine gidiyor; denetim (Luna) ve diğerleri sağlayıcı varsayılanında.
+ * Boşsa parametre hiç gönderilmez. OpenRouter bunu `reasoning.effort` olarak
+ * modele geçiriyor (Anthropic'te output_config.effort, OpenAI'da reasoning_effort).
+ * Ölçüm: Sonnet 5'te 13 dk dersin 2. adımı 7.588 çıktı token'ı — ders
+ * maliyetinin %56'sı düşünmeye gidiyor; `medium` bunun ilk düğmesi.
+ */
+const EFFORT = process.env.AI_EFFORT?.trim() ?? "";
+export const gelistirmeAcikMi = () => GELISTIRME_MODELI.length > 0;
+
+/**
+ * İçerik parçası. Düz metin yerine parça listesi göndermenin tek sebebi
+ * `cache_control`: Anthropic modellerinde bir parçayı önbellek sınırı olarak
+ * işaretler (OpenRouter bunu olduğu gibi Anthropic'e geçirir; OpenAI
+ * modellerinde yok sayılır, onların önbelleği otomatik). Önbellek ÖN-EK
+ * eşleşmesiyle çalışır: işaretli parça ve öncesi iki istekte bayt bayt aynıysa
+ * ikinci istekte o kısım okuma fiyatından gelir. Bu yüzden generate route
+ * transkripti prompt'un ÖNÜNE koyuyor — prompt adımdan adıma değişiyor,
+ * transkript değişmiyor.
+ */
+export interface ChatParca {
+  type: "text";
+  text: string;
+  cache_control?: { type: "ephemeral" };
+}
+
 export interface ChatMesaj {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ChatParca[];
 }
 
 export class AiHatasi extends Error {}
@@ -51,6 +86,14 @@ export class AiHatasi extends Error {}
 export interface AiOlcum {
   girdiToken: number;
   ciktiToken: number;
+  /** Girdinin önbellekten okunan kısmı (girdiToken'a dahil). Sağlayıcı bildirmezse 0. */
+  onbellekToken: number;
+  /**
+   * Sağlayıcının bildirdiği gerçek ücret (USD). OpenRouter `usage.include`
+   * ile döndürüyor; fiyat tablosunu koda gömmekten güvenilir — model
+   * değişince eskimiyor. Bildirilmezse undefined.
+   */
+  maliyetUsd?: number;
   sn: number;
   /** İsteği hangi modelin karşıladığı. Model env'den geldiği için kayıtta
    *  durmazsa eski kayıtlar hangi modele ait olduğunu söyleyemez — bu projede
@@ -61,6 +104,11 @@ export interface AiOlcum {
 const olcumTopla = (a: AiOlcum, b: AiOlcum): AiOlcum => ({
   girdiToken: a.girdiToken + b.girdiToken,
   ciktiToken: a.ciktiToken + b.ciktiToken,
+  onbellekToken: a.onbellekToken + b.onbellekToken,
+  maliyetUsd:
+    a.maliyetUsd === undefined && b.maliyetUsd === undefined
+      ? undefined
+      : (a.maliyetUsd ?? 0) + (b.maliyetUsd ?? 0),
   sn: a.sn + b.sn,
   model: b.model || a.model,
 });
@@ -71,7 +119,9 @@ function rolModeli(rol: ChatSecenekleri["rol"]): string {
     ? DEGERLENDIRME_MODELI
     : rol === "denetim"
       ? DENETIM_MODELI
-      : URETIM_MODELI;
+      : rol === "gelistirme"
+        ? GELISTIRME_MODELI || URETIM_MODELI
+        : URETIM_MODELI;
 }
 
 /** Yeniden denemeye değer geçici hata */
@@ -109,7 +159,7 @@ interface ChatSecenekleri {
   maxTokens?: number;
   timeoutMs?: number;
   /** Hangi işin modeli kullanılsın — her rolün kendi env değişkeni var */
-  rol?: "uretim" | "degerlendirme" | "denetim";
+  rol?: "uretim" | "degerlendirme" | "denetim" | "gelistirme";
 }
 
 async function chatOnce({
@@ -139,6 +189,12 @@ async function chatOnce({
         response_format: { type: "json_object" },
         max_tokens: maxTokens,
         messages: mesajlar,
+        ...(EFFORT && (rol === "uretim" || rol === "gelistirme")
+          ? { reasoning: { effort: EFFORT } }
+          : {}),
+        // Cevaba gerçek ücreti ve önbellek sayımını ekletir (OpenRouter'a
+        // özgü; başka sağlayıcı bilmiyorsa yok sayar, alanlar 0 kalır).
+        usage: { include: true },
       }),
       signal: controller.signal,
     });
@@ -154,11 +210,15 @@ async function chatOnce({
     const data = await res.json();
     const icerik: string | undefined = data?.choices?.[0]?.message?.content;
     if (!icerik) throw new GeciciHata("Sağlayıcı boş cevap döndürdü.");
+    const kullanim = data?.usage ?? {};
+    const maliyet = Number(kullanim.cost);
     return {
       icerik,
       olcum: {
-        girdiToken: Number(data?.usage?.prompt_tokens) || 0,
-        ciktiToken: Number(data?.usage?.completion_tokens) || 0,
+        girdiToken: Number(kullanim.prompt_tokens) || 0,
+        ciktiToken: Number(kullanim.completion_tokens) || 0,
+        onbellekToken: Number(kullanim.prompt_tokens_details?.cached_tokens) || 0,
+        maliyetUsd: Number.isFinite(maliyet) ? maliyet : undefined,
         sn: (Date.now() - baslangic) / 1000,
         model,
       },

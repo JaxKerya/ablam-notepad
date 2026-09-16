@@ -108,10 +108,20 @@ ezber sorusu kadar kolay, ne de bilmece gibi karmaşık.
   konuyu yarım bilen birinin seçebileceği şeydir; bariz saçma şık soruyu değersizleştirir.
 - Soru TEK ODAKLI olsun: tek bir kavramı, olayı ya da ayrımı sınasın. İki üç şeyi aynı anda
   ölçmeye çalışma.
-- Soru kökü tek cümle, en fazla iki satır olsun. Uzun paragraflı kök yazma.
+- Öncüllü sorular dışında soru kökü tek cümle olsun; uzun senaryolu paragraf kök yazma.
 - "Aşağıdakilerden hangisi ... değildir/yer almaz" gibi klasik KPSS kalıplarını kullanabilirsin.
 - Kavramların birbirine karıştığı noktaları hedefle — sınavda ayırt edilmesi gereken yerler
   oralardır.
+- Şıkların uzunlukları birbirine yakın olsun; en uzun ile en kısa arasındaki fark 4 kelimeyi
+  geçmesin.
+- Doğru şık en uzun şık olmasın: doğru şıkkın kelime sayısı en uzun çeldiriciyi geçmesin;
+  gerekirse doğru şıkkı kısalt ya da bir çeldiriciyi aynı ayrıntı düzeyine çıkar. Sebep: tek
+  bir şıkkın belirgin en uzun olduğu sorularda doğru cevap ölçümde %48 oranında o şıktı; dersi
+  bilmeyen biri "en uzunu işaretle" diyerek yarısını doğru yapıyordu.
+- Çeldiricilerde "tamamen", "yalnızca", "hiçbir", "asla" gibi mutlak sözler kullanma; dersi
+  bilmeyen bile onları eler, çeldirici olmaktan çıkarlar.
+Bu üç şık kuralı öncüllü sorular DIŞINDAKİ bütün sorular içindir; öncüllü şıklar zaten sabit
+kombinasyon ifadeleridir.
 
 ÖNCÜLLÜ SORU (I, II, III) — KPSS Tarih'in en sık kullandığı yapı. Ürettiğin çoktan
 seçmelilerin YAKLAŞIK DÖRTTE BİRİ bu biçimde olsun. Zorlama: yalnızca ders o konuda
@@ -119,8 +129,7 @@ birbirinden ayrılabilen üç yargı taşıyorsa yaz, taşımıyorsa normal soru
 
 Biçimi tam olarak şöyle:
   soru kökü, öncüller ve yönerge TEK metin içinde, satır satır yazılır
-  ("soru" alanına 
- ile ayırarak koy):
+  ("soru" alanına satırları \\n ile ayırarak koy):
 
   "Tımar sisteminin bozulmasının;
   I. Sipahi sayısının azalması
@@ -140,16 +149,6 @@ Biçimi tam olarak şöyle:
   ya da derste anlatılanın tersi. Bariz saçma öncül yazma.
 - Üç öncül yaz, dört değil.
 - Tek doğru cevap net olsun; iki şık birden savunulabilir olmasın.
-- ŞIKLARIN UZUNLUKLARI BİRBİRİNE YAKIN OLSUN: en uzun şık ile en kısa şık
-  arasındaki fark 4 kelimeyi geçmesin.
-- DOĞRU ŞIK EN UZUN ŞIK OLMASIN. Yazmayı bitirince say: doğru şıkkın kelime
-  sayısı, en uzun çeldiricinin kelime sayısından FAZLA olmamalı. Gerekirse doğru
-  şıkkı kısalt ya da bir çeldiriciyi aynı ayrıntı düzeyine çıkar. (Bu kural
-  ölçülerek eklendi: tek bir şıkkın belirgin en uzun olduğu sorularda doğru cevap
-  %48 oranında o şık çıkıyordu — şans %20. Yani ders çalışmayan biri "en uzunu
-  işaretle" diyerek bu soruların yarısını doğru yapabiliyordu.)
-- Çeldiricilerde "tamamen", "yalnızca", "hiçbir", "asla" gibi mutlak sözler
-  kullanma; dersi bilmeyen bile onları eler, çeldirici olmaktan çıkarlar.
 
 ${ORTAK_KURALLAR}
 
@@ -182,6 +181,53 @@ az üret, sayıyı doldurmak için zayıf soru üretme.
 Dersin ana konuları: ${konular.join(", ") || "(belirtilmedi)"}
 Soruları bu konulara yay, tek konuda yığılma.`;
 
+// --- Öz-denetim (soru geliştirme) -------------------------------------------
+//
+// Üretim modelinin kendi sorularını, transkript hâlâ önündeyken, bir ÖSYM soru
+// yazarı gözüyle ikinci kez okuması. Denetim katmanlarından farkı: onlar
+// DOĞRULUK arar (anahtar yanlış mı?), bu adım KALİTE arar (çeldirici zayıf mı,
+// ipucu var mı?). Kontrol listesi Haladyna'nın çoktan seçmeli madde yazım
+// kurallarından, ÖSYM pratiğine uyarlanarak seçildi. Yalnızca değişen sorular
+// döner; "boş liste normaldir" cümlesi şart — yoksa model her soruya dokunur.
+//
+// EN ÖNEMLİ SINIR: doğru şıkkın anlamı değişmez. Kod tarafında da korunuyor:
+// eski doğru şık yeni çeldiricilerin arasına düşmüşse öneri reddediliyor.
+
+export const soruGelistirmePrompt = (sikSayisi: number) =>
+  `Az önce yukarıdaki ders transkriptinden çoktan seçmeli sorular yazıldı. Şimdi bu soruları bir
+ÖSYM soru yazarı gibi İKİNCİ KEZ okuyacak ve yalnızca zayıf olanları düzelteceksin.
+
+KONTROL LİSTESİ (çoktan seçmeli madde yazım kuralları):
+1. ÇELDİRİCİ GÜCÜ — her yanlış şık, konuyu yarım bilen bir öğrencinin seçebileceği kadar makul
+   olmalı: aynı dönemden, aynı kavram ailesinden, gerçek bir karıştırma hatasını yansıtan. Bariz
+   saçma, konu dışı ya da "beşinciyi doldurmak için" yazılmış şıkkı güçlüsüyle DEĞİŞTİR.
+2. ÇELDİRİCİ KAYNAĞI — çeldirici, derste geçen ya da o konunun standart müfredatında bulunan bir
+   şey olmalı; uydurma isim, olay ya da tarih olmasın.
+3. TEK DOĞRU — hiçbir çeldirici savunulabilir biçimde doğru olmasın. Öyleyse ÇELDİRİCİYİ
+   değiştir, anahtarı değil.
+4. İPUCU YOK — doğru şık en uzun ya da en ayrıntılı olmasın; şıklar uzunluk ve dil bilgisi
+   bakımından türdeş olsun; kökteki bir kelimenin yalnızca doğru şıkta tekrar etmesi ve
+   "her zaman / asla" gibi mutlak ifadelerin yalnızca çeldiricilerde bulunması ipucudur.
+5. KÖK — tek başına anlaşılır, tek soru sorar.
+6. Öncüllü (I, II, III) soruların şık düzenine dokunma.
+
+SINIRLAR:
+- Doğru şıkkın ANLAMINI ve sorunun ölçtüğü bilgiyi değiştirme. Doğru şıkkın metnine yalnızca
+  uzunluk/dil dengesi için dokunabilirsin.
+- Soru ekleme, soru silme, soruların sırasını değiştirme.
+- Derste anlatılmayan bilgiye dayanan çeldirici yazma.
+- Sorun görmediğin soruyu LİSTELEME. Boş liste tamamen normaldir; değişiklik için değişiklik
+  yapma. Sorular zaten iyiyse en doğru cevap boş listedir.
+
+ÇIKTI — yalnızca DEĞİŞTİRDİĞİN sorular, tam hâliyle ("dogru" 0'dan başlayan indeks,
+"secenekler" tam ${sikSayisi} şık, "degisiklik" tek cümlelik gerekçe):
+{"sorular": [
+  {"no": 3, "soru": "...", "secenekler": ["...", "...", "...", "...", "..."], "dogru": 1,
+   "aciklama": "...", "degisiklik": "B ve D konu dışıydı; aynı dönemin iki antlaşmasıyla değiştirildi"}
+]}
+
+SADECE geçerli JSON döndür, kod bloğu işareti kullanma.`;
+
 // --- Soru denetimi ----------------------------------------------------------
 //
 // İki katman, çünkü tek katman bir hata sınıfını tanımı gereği göremiyor:
@@ -206,9 +252,6 @@ Soruları bu konulara yay, tek konuda yığılma.`;
 // generate/route.ts'teki coktanUygula'da.
 
 const DENETIM_ORTAK = `Sorunun neresinde sorun olduğunu "nerede" alanında belirtmen gerekir.
-
-Açık uçlu sorularda tek parça vardır:
-- "anahtar"   : beklenen cevap.
 
 Çoktan seçmeli sorularda şıkların TAMAMI ve hangisinin doğru olarak işaretlendiği
 veriliyor. Üç parça olabilir:
@@ -313,8 +356,6 @@ VARYANT NE DEMEK:
   ya da "hangi ilkenin zayıfladığını gösterir" diye sorabilir.
 - Çoktan seçmelide ÇELDİRİCİLER YENİDEN YAZILIR. Aynı şıkları farklı sırayla vermek
   varyant değildir.
-- Kaynağın türü korunur: çoktan seçmeli kaynaktan çoktan seçmeli, açık uçlu
-  kaynaktan açık uçlu varyant.
 - KAYNAK ÖNCÜLLÜ İSE (şıkları "Yalnız I", "I ve II" gibiyse) varyant da öncüllü olur:
   öncülleri yeniden yaz, şıklar yine yalnızca o kombinasyon ifadelerinden oluşsun.
 
@@ -333,22 +374,12 @@ VARYANT NE DEMEK:
   doğru olduğunu söyle. "Doğru!", "Evet", "Tebrikler" gibi hüküm sözüyle BAŞLATMA —
   öğrencinin doğru mu yanlış mı yaptığını arayüz zaten kendi cümlesiyle söylüyor.
 
-AÇIK UÇLU KURALLARI:
-- Soru TEK bir şey sorar: tek soru kelimesi, tek fiil. Virgülle ikinci bir soru ekleme,
-  "sırasıyla açıklayınız" gibi kompozisyon isteme.
-- "anahtar" beklenen cevaptır, 2-3 cümle.
-- ANAHTARI DA YENİDEN YAZ. Kaynağın beklenen cevabını kopyalama, bir cümlesini kırpıp
-  kalanını aynen kullanma. Aynı bilgiyi KENDİ cümlelerinle anlat. Çoktan seçmelide
-  çeldiricileri yeniden yazmak varyantı zaten değiştiriyor; açık uçluda varyantı
-  değiştiren şey budur.
-
 Her varyantta kaynak sorunun "no" değerini AYNEN geri ver — hangi soruya karşılık
 geldiği bundan anlaşılıyor.
 
 SADECE geçerli JSON döndür, kod bloğu işareti kullanma:
 {"varyantlar": [
-  {"no": 1, "soru": "...", "secenekler": ["...", "...", "...", "...", "..."], "dogru": 0, "aciklama": "..."},
-  {"no": 2, "soru": "...", "anahtar": "beklenen cevap", "kilit_kavramlar": ["kavram1", "kavram2"]}
+  {"no": 1, "soru": "...", "secenekler": ["...", "...", "...", "...", "..."], "dogru": 0, "aciklama": "..."}
 ]}`;
 
 // --- Cevap değerlendirme ----------------------------------------------------

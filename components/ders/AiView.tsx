@@ -94,6 +94,8 @@ const ISLEM: Record<string, { ad: string; sinif: string }> = {
   sik: { ad: "şık metni düzeltildi", sinif: "border-sky-400/30 bg-sky-400/[0.07] text-sky-200" },
   aciklama: { ad: "açıklama düzeltildi", sinif: "border-sky-400/25 bg-sky-400/[0.05] text-sky-200/80" },
   "aciklama-dusuruldu": { ad: "açıklama kaldırıldı", sinif: "border-white/15 bg-white/[0.04] text-white/55" },
+  celdirici: { ad: "çeldiriciler güçlendirildi", sinif: "border-emerald-400/30 bg-emerald-400/[0.07] text-emerald-200" },
+  "gelistirme-reddedildi": { ad: "öz-denetim önerisi alınmadı", sinif: "border-white/15 bg-white/[0.04] text-white/55" },
   elendi: { ad: "soru elendi", sinif: "border-red-400/40 bg-red-400/10 text-red-300" },
   "bicim-elendi": { ad: "biçimden elendi", sinif: "border-red-400/25 bg-red-400/[0.06] text-red-300/80" },
 };
@@ -102,6 +104,7 @@ const KATMAN: Record<string, string> = {
   transkript: "transkript denetimi",
   olgu: "olgu denetimi",
   bicim: "biçim doğrulaması",
+  gelistirme: "öz-denetim",
 };
 
 const sayi = (n: number) => n.toLocaleString("tr");
@@ -178,6 +181,12 @@ function AdimBlogu({ a }: { a: DenetimAdimi }) {
         {a.uretimSn !== undefined && (
           <span className="rounded-md border border-[var(--border)] px-1.5 py-0.5 text-white/45">
             üretim {a.uretimSn.toFixed(1)} sn · {sayi(token)} token
+            {!!a.uretimOnbellekToken && (
+              <span className="text-white/30"> · {sayi(a.uretimOnbellekToken)} önbellekten</span>
+            )}
+            {a.uretimMaliyetUsd !== undefined && (
+              <span className="text-white/30"> · ${a.uretimMaliyetUsd.toFixed(4)}</span>
+            )}
             {a.uretimModeli && <span className="text-white/30"> · {a.uretimModeli}</span>}
           </span>
         )}
@@ -194,6 +203,7 @@ function AdimBlogu({ a }: { a: DenetimAdimi }) {
             {KATMAN[g.katman]}: {g.bulgu} bulgu
             {g.valf && " — VALF DEVREDE, hiçbiri uygulanmadı"}
             {!g.valf && ` · ${g.sn.toFixed(1)} sn`}
+            {g.maliyetUsd !== undefined && ` · ${g.maliyetUsd.toFixed(4)}`}
             {g.model && <span className="text-white/25"> · {g.model}</span>}
           </span>
         ))}

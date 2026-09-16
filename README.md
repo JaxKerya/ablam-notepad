@@ -173,7 +173,9 @@ tabloları oluşturur: `ders_videos` (video başına bir kez çekilen transkript
 AI_BASE_URL=https://openrouter.ai/api/v1
 AI_API_KEY=...
 AI_MODEL=openai/gpt-5.6-sol          # soru üretimi
-AI_GRADE_MODEL=openai/gpt-5.6-sol    # açık uçlu cevap değerlendirmesi
+AI_REFINE_MODEL=                     # öz-denetim (boş = kapalı; bkz. aşağıda)
+AI_EFFORT=                           # düşünme derinliği low|medium|high|xhigh (boş = varsayılan)
+AI_GRADE_MODEL=openai/gpt-5.6-sol    # (artık kullanılmıyor — açık uçlu kapatıldı)
 AI_AUDIT_MODEL=openai/gpt-5.6-luna   # cevap anahtarı denetimi (ucuz model yeter)
 SUPADATA_API_KEY=...
 SITE_GATE_SECRET=rastgele-uzun-bir-metin
@@ -216,6 +218,29 @@ uygulama çalışmaya devam eder, dersler yalnızca ekleme sırasına göre list
    Bölmenin sebebi ölçüm: tek çağrı 46 dakikalık bir derste 149 saniye sürüyordu
    (bölünce en uzun istek 108 saniye). Her soru için cevap anahtarı, kilit kavramlar
    ve videodaki saniyesi saklanır.
+
+   **Öz-denetim (isteğe bağlı, `AI_REFINE_MODEL`).** Doluysa çoktan seçmeli adımında, biçim
+   doğrulamasından sonra ve denetimlerden önce, üretim modeli kendi sorularını transkript hâlâ
+   önündeyken bir ÖSYM soru yazarı gözüyle ikinci kez okur: zayıf ya da konu dışı çeldiricileri
+   güçlendirir, ipucu veren şık düzenini bozar, kökü netleştirir (Haladyna madde yazım
+   kurallarından uyarlanmış 6 maddelik liste, `soruGelistirmePrompt`). Yalnızca değiştirdiği
+   soruları döndürür. Kod tarafı korumaları: şık seti yine biçim şartından geçer ve eski doğru
+   şık yeni çeldiricilerin arasına düşmüşse (model cevabı kaydırmışsa) öneri reddedilir.
+   Uygulanan ve reddedilen her öneri gerekçesiyle `denetim` kaydına yazılır. Ölçüm (13 dk ders,
+   Sonnet 5): 8 sorunun 1'inde çeldirici değişti, adımın bedeli ders başına ~$0,03. Değeri tek
+   örnekle kanıtlanmış değil; boş bırakılırsa adım hiç çalışmaz.
+
+   **Transkript önbelleği.** Üretim çağrılarında transkript, yönergeden ÖNCE ve
+   `cache_control` işaretli gönderilir (`lib/ai.ts` → `ChatParca`). Aynı ön-ek ~1 dk arayla
+   iki-üç kez okunduğu için Anthropic modellerinde ikinci okumadan itibaren girdi önbellek
+   fiyatından gelir; OpenAI modellerinde işaret yok sayılır, onların önbelleği otomatiktir.
+   Ölçüm: önbellek Fable 5.1'de ders maliyetini yalnızca %13 düşürdü — para çıktı tokenında,
+   önbellek ona dokunmuyor. Her çağrının gerçek ücreti (`usage.cost`) ve önbellekten okunan
+   token sayısı `denetim` kaydına yazılır, `/ders/aiview` gösterir.
+
+   **Model kıyası** (aynı 13 dk ders, gerçek ücret): sol ~$0,06 · Sonnet 5 + öz-denetim
+   $0,146 · Fable 5.1 (önbellekli) $0,448. Fable'ın tokenizer'ı Türkçede sol'un ~1,7 katı token
+   üretiyor. Kalite farkı 8 soruluk örneklemle ölçülemedi; ölçüsü ablamın itiraz oranı olacak.
 
    **Cevap anahtarı denetimi.** Her iki adımın sonunda üretilen sorular ayrı ve ucuz bir
    modele (`AI_AUDIT_MODEL`) tek çağrıda gönderilir: "bu cevap anahtarlarında derste hiç

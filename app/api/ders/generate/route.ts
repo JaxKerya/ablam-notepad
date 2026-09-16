@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { chatJsonOlculu } from "@/lib/ai";
+import { chatJsonOlculu, gelistirmeAcikMi, type ChatMesaj } from "@/lib/ai";
 import {
   DENETIM_KAYIT_SINIRI,
   EN_AZ_SORU,
@@ -28,6 +28,7 @@ import {
   cozumlemePrompt,
   coktanPrompt,
   SIK_SAYISI,
+  soruGelistirmePrompt,
   SORU_OLGU_DENETIMI,
   SORU_TRANSKRIPT_DENETIMI,
 } from "@/lib/prompts";
@@ -419,6 +420,122 @@ type Dizin = Map<string, number[]>;
  * atılan fazlalıklar o boşluğu doldurabilirdi. Fazlalıklar için ödeme zaten
  * yapılmış durumda; yedek olarak tutuluyorlar.
  */
+interface GelistirmeOnerisi {
+  no?: number;
+  soru?: string;
+  secenekler?: string[];
+  dogru?: number;
+  aciklama?: string;
+  degisiklik?: string;
+}
+
+type CoktanSoru = ReturnType<typeof coktanDogrula>["sorular"][number];
+
+/**
+ * Öz-denetim: üretim modeli kendi sorularını ikinci kez okur, zayıf
+ * çeldiricileri güçlendirir. Yönerge lib/prompts.ts'te (soruGelistirmePrompt).
+ *
+ * Kod tarafındaki korumalar — model ne derse desin:
+ *   - şık seti biçim şartından geçmeli (5 şık, geçersiz indeks yok, öncül kuralı);
+ *   - ANAHTAR KORUMASI: eski doğru şıkkın metni yeni çeldiricilerin arasına
+ *     düşmüşse model cevabı kaydırmış demektir, öneri reddedilir;
+ *   - adım düşerse (hata, zaman aşımı) sorular olduğu gibi devam eder.
+ * Reddedilen öneriler de kayda giriyor; aiview'de "neden alınmadı" görünsün.
+ */
+async function gelistirmeCalistir(
+  sorular: CoktanSoru[],
+  mesajlar: (yonerge: string, kullanici?: string) => ChatMesaj[],
+  ozet: DenetimBirikimi
+): Promise<{ sorular: CoktanSoru[]; gecis: DenetimGecisi | null }> {
+  if (!gelistirmeAcikMi() || !sorular.length) return { sorular, gecis: null };
+
+  const liste = sorular
+    .map((s, i) => {
+      const parcalar = [`${i + 1}. SORU: ${s.question}`];
+      (s.choices ?? []).forEach((o, j) => parcalar.push(`   ${HARF[j] ?? j + 1}) ${o}`));
+      parcalar.push(`   İŞARETLİ DOĞRU CEVAP: ${HARF[s.correct_index ?? 0] ?? "?"}`);
+      if (s.explanation) parcalar.push(`   aciklama: ${s.explanation}`);
+      return parcalar.join("\n");
+    })
+    .join("\n\n");
+
+  let oneriler: GelistirmeOnerisi[] = [];
+  let olcum: { girdiToken: number; ciktiToken: number; onbellekToken: number; maliyetUsd?: number; sn: number; model: string } =
+    { girdiToken: 0, ciktiToken: 0, onbellekToken: 0, sn: 0, model: "" };
+  try {
+    const sonuc = await chatJsonOlculu<{ sorular?: GelistirmeOnerisi[] }>({
+      mesajlar: mesajlar(
+        soruGelistirmePrompt(SIK_SAYISI),
+        `--- GÖZDEN GEÇİRİLECEK SORULAR ---\n\n${liste}`
+      ),
+      maxTokens: 16000,
+      rol: "gelistirme",
+    });
+    oneriler = Array.isArray(sonuc.veri?.sorular) ? sonuc.veri.sorular : [];
+    olcum = sonuc.olcum;
+  } catch (err) {
+    // Deney adımı; düşerse üretimi engellemesin, iz bıraksın.
+    console.warn("[ders] öz-denetim düştü:", (err as Error).message);
+    return { sorular, gecis: null };
+  }
+
+  let uygulanan = 0;
+  const yeniListe = [...sorular];
+  for (const o of oneriler) {
+    const no = typeof o?.no === "number" ? o.no : -1;
+    if (no < 1 || no > sorular.length) continue;
+    const eski = sorular[no - 1];
+    const gerekce = gerekceKirp(metin(o.degisiklik));
+    const reddet = (sebep: string) =>
+      kaydet(ozet, "gelistirme", eski.question, {
+        islem: "gelistirme-reddedildi",
+        sebep,
+        gerekce,
+      });
+
+    const k = sikSetiniDogrula(o.secenekler, o.dogru, SIK_SAYISI);
+    if (!k) {
+      reddet("şık seti biçim şartına takıldı");
+      continue;
+    }
+    const yeniSoru = metin(o.soru) || eski.question;
+    if (onculluSiklarMi(k.secenekler) && !onculMetniVarMi(yeniSoru)) {
+      reddet("öncül şıkları var ama kökte öncül yok");
+      continue;
+    }
+    // Anahtar koruması: eski doğru cevap yeni çeldiriciler arasındaysa cevap kaydı.
+    const eskiDogru = (eski.choices ?? [])[eski.correct_index ?? 0]?.trim().toLowerCase() ?? "";
+    const yeniCeldiriciler = k.secenekler
+      .filter((_, j) => j !== k.dogruIndeks)
+      .map((x) => x.trim().toLowerCase());
+    if (eskiDogru && yeniCeldiriciler.includes(eskiDogru)) {
+      reddet("doğru cevap kaydırılmış");
+      continue;
+    }
+
+    yeniListe[no - 1] = {
+      ...eski,
+      question: yeniSoru,
+      choices: k.secenekler,
+      correct_index: k.dogruIndeks,
+      explanation: metin(o.aciklama) ? hukumOneksizAciklama(metin(o.aciklama)) : eski.explanation,
+    };
+    uygulanan++;
+    kaydet(ozet, "gelistirme", eski.question, {
+      islem: "celdirici",
+      eski: gerekceKirp((eski.choices ?? []).join(" | ")),
+      yeni: gerekceKirp(k.secenekler.join(" | ")),
+      gerekce,
+    });
+  }
+  ozet.duzeltilen += uygulanan;
+
+  return {
+    sorular: yeniListe,
+    gecis: { katman: "gelistirme", bulgu: uygulanan, valf: false, ...olcum },
+  };
+}
+
 function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
   const gelen = ham ?? [];
   // Hangi şartın kaç soruyu düşürdüğü ayrı ayrı sayılıyor: "12 soru geldi 9 kaldı"
@@ -577,6 +694,28 @@ export async function POST(request: Request) {
       `Ders süresi: ${Math.round(sure / 60)} dakika\n\n` +
       `Ders transkripti:\n\n${transkriptMetni(segments)}`;
 
+    /**
+     * Mesaj dizilişi ÖNBELLEK için: transkript en önde ve işaretli, adımın
+     * yönergesi ondan SONRA. İki adım aynı transkripti ~1 dk arayla gönderiyor;
+     * ön-ek aynı olunca ikinci adımda transkript önbellek okuma fiyatından
+     * geliyor (Anthropic'te girdinin 1/40'ı). Yönerge önde olsaydı ön-ek her
+     * adımda farklı olur, önbellek hiç tutmazdı. OpenAI modellerinde
+     * cache_control yok sayılır, diziliş yine çalışır.
+     */
+    const mesajlar = (
+      yonerge: string,
+      kullanici = "Yukarıdaki transkripti yönergeye göre işle; yalnızca JSON döndür."
+    ): ChatMesaj[] => [
+      {
+        role: "system",
+        content: [
+          { type: "text", text: transkript, cache_control: { type: "ephemeral" } },
+          { type: "text", text: yonerge },
+        ],
+      },
+      { role: "user", content: kullanici },
+    ];
+
     // ------------------------------------------------------------ 1. adım
     if (adim === "cozumleme") {
       if (await gunlukLimitAsildiMi()) {
@@ -611,16 +750,10 @@ export async function POST(request: Request) {
         ozet?: string;
         konular?: string[];
       }>({
-        mesajlar: [
-          {
-            role: "system",
-            // Kategori listesi lib/ders.ts'te tek kaynak; prompt'a parametre
-            // olarak giriyor ki prompts.ts hiçbir şey import etmesin
-            // (ölçüm betikleri onu doğrudan Node ile açıyor).
-            content: cozumlemePrompt(KATEGORILER, KATEGORI_DIGER),
-          },
-          { role: "user", content: transkript },
-        ],
+        // Kategori listesi lib/ders.ts'te tek kaynak; prompt'a parametre
+        // olarak giriyor ki prompts.ts hiçbir şey import etmesin
+        // (ölçüm betikleri onu doğrudan Node ile açıyor).
+        mesajlar: mesajlar(cozumlemePrompt(KATEGORILER, KATEGORI_DIGER)),
         // Akıl yürüten modellerde düşünme tokenları da bu bütçeden düşüyor.
         // Dar bırakılınca model bütçeyi düşünmeye harcayıp boş cevap dönüyordu
         // (glm-5.3 ve kimi-k3 ölçümü). max_tokens yalnızca tavan — kullanılmayan
@@ -641,6 +774,8 @@ export async function POST(request: Request) {
         uretimGirdiToken: uretimOlcum.girdiToken,
         uretimCiktiToken: uretimOlcum.ciktiToken,
         uretimModeli: uretimOlcum.model,
+        uretimOnbellekToken: uretimOlcum.onbellekToken,
+        uretimMaliyetUsd: uretimOlcum.maliyetUsd,
         hamUretim:
           !metin(uretilen.ozet) || !metin(uretilen.baslik) ? hamKirp(uretimHam) : undefined,
         gecisler: [],
@@ -704,13 +839,7 @@ export async function POST(request: Request) {
       } = await chatJsonOlculu<{
         coktan_secmeli?: UretilenCoktan[];
       }>({
-        mesajlar: [
-          {
-            role: "system",
-            content: coktanPrompt(hedef.coktan, (oturum.topics as string[]) ?? []),
-          },
-          { role: "user", content: transkript },
-        ],
+        mesajlar: mesajlar(coktanPrompt(hedef.coktan, (oturum.topics as string[]) ?? [])),
         maxTokens: 32000,
       });
 
@@ -738,6 +867,12 @@ export async function POST(request: Request) {
 
       const dogrulama = coktanDogrula(uretilen.coktan_secmeli ?? [], sure, dizin);
       let coktan = dogrulama.sorular;
+
+      // ÖZ-DENETİM (deney, AI_REFINE_MODEL doluysa). Denetimlerden ÖNCE
+      // çalışıyor: geliştirilmiş şıklar da transkript ve olgu denetiminden
+      // geçsin. Transkript önbellekten geliyor (aynı ön-ek, üçüncü okuma).
+      const gelistirme = await gelistirmeCalistir(coktan, mesajlar, ozet);
+      coktan = gelistirme.sorular;
 
       const gecis1 = await denetimCalistir(
         "transkript", SORU_TRANSKRIPT_DENETIMI, coktan.map(girdi), transkript
@@ -773,8 +908,14 @@ export async function POST(request: Request) {
         uretimGirdiToken: uretimOlcum.girdiToken,
         uretimCiktiToken: uretimOlcum.ciktiToken,
         uretimModeli: uretimOlcum.model,
+        uretimOnbellekToken: uretimOlcum.onbellekToken,
+        uretimMaliyetUsd: uretimOlcum.maliyetUsd,
         hamUretim: coktanTers ? hamKirp(uretimHam) : undefined,
-        gecisler: [gecis1.gecis, gecis2.gecis],
+        gecisler: [
+          ...(gelistirme.gecis ? [gelistirme.gecis] : []),
+          gecis1.gecis,
+          gecis2.gecis,
+        ],
         kayitlar: ozet.kayitlar,
       };
 

@@ -122,7 +122,7 @@ export const DENETIM_KAYIT_SINIRI = 80;
  */
 export const HAM_CIKTI_SINIRI = 20000;
 
-export type DenetimKatmani = "transkript" | "olgu" | "bicim";
+export type DenetimKatmani = "transkript" | "olgu" | "bicim" | "gelistirme";
 
 export type DenetimIslemi =
   | "anahtar"              // cevap anahtarı değiştirildi (en kritik olanı)
@@ -130,6 +130,8 @@ export type DenetimIslemi =
   | "aciklama"             // açıklama düzeltildi
   | "aciklama-dusuruldu"   // açıklama düzeltilemedi, kaldırıldı, soru kaldı
   | "anahtar-duzeltildi"   // açık uçlunun beklenen cevabı düzeltildi
+  | "celdirici"            // öz-denetim: çeldiriciler/kök güçlendirildi (anahtar aynı)
+  | "gelistirme-reddedildi" // öz-denetimin önerisi biçim ya da anahtar koruması yüzünden alınmadı
   | "elendi"               // soru atıldı
   | "bicim-elendi";        // soru daha denetime girmeden biçim şartına takıldı
 
@@ -152,12 +154,16 @@ export interface DenetimKaydi {
 
 /** Bir denetim geçişinin özeti — valf devreye girdiyse bulgular UYGULANMADI */
 export interface DenetimGecisi {
-  katman: "transkript" | "olgu";
+  katman: "transkript" | "olgu" | "gelistirme";
   bulgu: number;
   valf: boolean;
   sn: number;
   girdiToken: number;
   ciktiToken: number;
+  /** Girdinin önbellekten okunan kısmı */
+  onbellekToken?: number;
+  /** Sağlayıcının bildirdiği gerçek ücret (USD) */
+  maliyetUsd?: number;
   model?: string;
   /**
    * Valf devreye girdiğinde denetimin ham cevabı. Bunlar atılan bulgular:
@@ -180,6 +186,10 @@ export interface DenetimAdimi {
   uretimGirdiToken?: number;
   uretimCiktiToken?: number;
   uretimModeli?: string;
+  /** Girdinin önbellekten okunan kısmı — 0 ise önbellek tutmadı demek */
+  uretimOnbellekToken?: number;
+  /** Sağlayıcının bildirdiği gerçek ücret (USD); bildirmediyse yok */
+  uretimMaliyetUsd?: number;
   /** Üretim modelinin ham çıktısı — yalnızca bu adımda bir şey ters gittiyse */
   hamUretim?: string;
   gecisler: DenetimGecisi[];
