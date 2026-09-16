@@ -156,10 +156,10 @@ Supabase **SQL Editor**'da `db/sheets.sql` dosyasının tamamını çalıştır�
 
 İzlenen bir YouTube ders videosunun linkinden, o derste anlatılanları ölçen sorular
 üretir. Soru sayısı sabit değil, dersin uzunluğuna göre hesaplanır (8–26 arası) ve
-ağırlık çoktan seçmelidedir (%80) — KPSS'nin kendisi çoktan seçmeli olduğu için sınav
-refleksi orada kazanılıyor. Kalan %20 açık uçludur ve yapay zeka tarafından
-değerlendirilip anında geri bildirim verilir. Her soruda konunun videoda anlatıldığı
-ana giden link gösterilir; cevap anahtarları ayrı bir denetim katmanından geçer.
+hepsi çoktan seçmelidir — ÖSYM'nin biçimi bu. (2026-09-16'ya kadar %20'si açık uçluydu;
+kapatıldı. Eski derslerin açık uçluları veritabanında duruyor ama hiçbir ekranda ve
+havuzda görünmüyor.) Her soruda konunun videoda anlatıldığı ana giden link gösterilir;
+cevap anahtarları ayrı bir denetim katmanından geçer.
 
 ### Kurulum
 
@@ -205,12 +205,13 @@ uygulama çalışmaya devam eder, dersler yalnızca ekleme sırasına göre list
    tekrar girilirse veritabanından gelir.
 2. **Soru üretimi** (`/api/ders/generate`) — **iki ayrı istek**, her birinin kendi süre
    bütçesi var:
-   - `adim: "acik"` → oturumu açar; ders özeti, konu listesi ve açık uçlu sorular.
+   - `adim: "cozumleme"` → oturumu açar; başlık, kategori, ders özeti ve konu listesi.
+     Soru üretmez, denetim geçişi yok — kısa ve ucuz bir çağrı.
    - `adim: "coktan"` → çoktan seçmelileri ekler, oturumu `hazir` yapar.
 
    İkinci adım düşerse ya da sekme kapanırsa oturum `hazirlaniyor` durumunda kalır. Bu
    oturumlar listede "Tamamlanmadı — devam et" rozetiyle görünür; tıklayınca yalnızca ikinci
-   adım çağrılır, birinci adımda üretilen özet ve açık uçlu sorular tekrar üretilmez.
+   adım çağrılır, birinci adımda üretilen özet ve konular tekrar üretilmez.
 
    Bölmenin sebebi ölçüm: tek çağrı 46 dakikalık bir derste 149 saniye sürüyordu
    (bölünce en uzun istek 108 saniye). Her soru için cevap anahtarı, kilit kavramlar
@@ -270,26 +271,19 @@ uygulama çalışmaya devam eder, dersler yalnızca ekleme sırasına göre list
    `:online` eklemek yeterli, kod değişmez.
 
    **Soru sayısı sabit değil**, dersin uzunluğuna göre hesaplanır (`hedefSoruSayisi`):
-   kabaca her üç dakikaya bir soru, 8 ile 26 arasında, **%80 çoktan seçmeli**. KPSS'nin
-   kendisi çoktan seçmeli olduğu için ağırlık orada; açık uçlular öğrenmeyi asıl
-   pekiştiren kısım olduğu için hiç eksilmiyor (en az 2 garanti).
+   kabaca her üç dakikaya bir soru, 8 ile 26 arasında, **hepsi çoktan seçmeli**.
 
-   **Her iki bölüm de gerçek KPSS zorluğundadır; ortak ilke şudur: zorluk sorunun
-   derinliğinden gelsin, dolambaçlılığından değil.** Fark yalnızca formattadır:
+   **İlke: zorluk sorunun derinliğinden gelsin, dolambaçlılığından değil.**
 
-   - *Açık uçlular KPSS seviyesindedir ama dolambaçlı değildir.* Tek konulu, tek cümlelik
-     kök, 2-3 cümlelik beklenen cevap. "X ile Y'yi karşılaştırınız", "üç yönüyle
-     değerlendiriniz" gibi birden çok şeyi aynı anda isteyen kalıplar yasaktır. Ezber sorusu
-     da yasaktır: yalın tanım yerine "neden / nasıl / hangi sonucu doğurdu" sorulur.
    - *Çoktan seçmeliler gerçek KPSS zorluğundadır.* Zorluk ÇELDİRİCİLERDEN gelir, soru
      kökünün karmaşıklığından değil: iyi çeldirici, konuyu yarım bilen birinin seçebileceği
      şeydir. Sorular tek odaklıdır; "ortak amacı nedir", "neyi gösterir" gibi çok adımlı
      çıkarım zincirleri yine yasaktır — zor olmakla dolambaçlı olmak aynı şey değildir. Bu bir üst sınırdır:
    ders taşımıyorsa model daha az üretir, doğrulama katmanı fazlasını kırpar.
-3. **Değerlendirme** (`/api/ders/grade`) — açık uçlu cevaplar için modele transkriptin
-   tamamı değil, sorunun geldiği bölüm (±90 sn) + cevap anahtarı gönderilir. Çoktan
-   seçmeli sorular ve pas geçmeler sunucuda yerel değerlendirilir, model çağrısı
-   yapılmaz.
+3. **Değerlendirme** (`/api/ders/grade`) — çoktan seçmeli sorular ve pas geçmeler
+   sunucuda yerel değerlendirilir, model çağrısı yapılmaz. (Açık uçlu yolu kodda duruyor
+   — sorunun geldiği ±90 sn'lik bölüm + cevap anahtarıyla model değerlendirmesi — ama
+   açık uçlu soru artık üretilmediği için çalışmıyor.)
 
    **Geri bildirim metninin kaynağına dikkat.** Çoktan seçmeli ağırlığı %80 olduğu için
    öğrencinin okuduğu metnin çoğu değerlendirme modelinden değil, üretim modelinin yazdığı
@@ -351,7 +345,7 @@ Bütün prompt'lar **`lib/prompts.ts`** içinde, her birinin altında neden öyl
 yazıldığını anlatan ölçüm notlarıyla. Route dosyaları yalnızca akışı taşır.
 
 Ayrı `.txt` dosyalarında tutulmuyorlar: yarısı çalışma anındaki değerlerle
-şablonlanan fonksiyon (`acikPrompt(adet)`, `coktanPrompt(adet, konular, ...)`),
+şablonlanan fonksiyon (`cozumlemePrompt(kategoriler, ...)`, `coktanPrompt(adet, konular)`),
 TypeScript şablonu bu işi derleme zamanı denetimiyle yapıyor — yer tutucu adı
 yanlış yazılırsa `tsc` söylüyor, `.txt`'de sessizce boş geçerdi. Ayrıca çalışma
 anında dosya okunmadığı için dağıtımda dosyanın pakete girip girmediği sorunu
@@ -359,10 +353,10 @@ da yok.
 
 İki ders alındı ve ikisi de yorum olarak yazılı:
 
-- **Tutmayan kural zararsız değildir.** Açık uçlulardaki "tek konulu sor"
-  kuralı yasak listesi olarak yazılmıştı ve üretilen üç sorunun ikisi onu
-  çiğniyordu. Ölçülebilir bir yapı şartı (tek soru kelimesi, tek fiil) ve
-  gerçek hatalardan alınmış iyi/kötü örnek çiftleriyle değiştirilince tuttu.
+- **Tutmayan kural zararsız değildir.** (Artık üretilmeyen) açık uçlulardaki
+  "tek konulu sor" kuralı yasak listesi olarak yazılmıştı ve üretilen üç sorunun
+  ikisi onu çiğniyordu. Ölçülebilir bir yapı şartı (tek soru kelimesi, tek fiil)
+  ve gerçek hatalardan alınmış iyi/kötü örnek çiftleriyle değiştirilince tuttu.
 - **Bazen bozuk olan çıktı değil kuralın kendisidir.** Çoktan seçmelilerde
   "...neyi gösterir" kalıbı yasaklıydı, model yasağı çiğniyordu ve çıkan
   sorular iyiydi — çünkü o standart bir KPSS kalıbı. Kural kaldırıldı.

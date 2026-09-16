@@ -141,7 +141,7 @@ const LISTE_HAFIZASI = "ablam-liste-linkleri";
 const DURUM_METNI: Record<IsDurumu, string> = {
   bekliyor: "Sırada bekliyor",
   transkript: "Altyazı alınıyor…",
-  acik: "Ders çözümleniyor, açık uçlu sorular hazırlanıyor…",
+  cozumleme: "Ders çözümleniyor: özet ve konular…",
   coktan: "Çoktan seçmeli sorular hazırlanıyor…",
   hazir: "Hazır",
   elle: "Altyazı alınamadı — transkripti yapıştır",
@@ -214,11 +214,14 @@ export default function DersAnaSayfa() {
       )
       // Yarım kalanlar da listeleniyor: ikinci adım düşerse ya da sekme
       // kapanırsa oturum "hazirlaniyor"da kalıyordu ve tamamen görünmez
-      // oluyordu — üretilen özet ve açık uçlu sorular boşa gidiyordu.
+      // oluyordu — üretilen özet ve konular boşa gidiyordu.
       .in("status", ["hazir", "hazirlaniyor"])
       // Havuzdan çıkarılmış sorular sayılmıyor: kartta "12 soru" yazıp ders
       // açıldığında 11 soru çıkması, sayının yanlış olduğu anlamına gelirdi.
       .eq("ders_questions.flagged", false)
+      // Açık uçlu üretimi kapatıldı; eski derslerin açık uçluları hiçbir
+      // ekranda görünmüyor, kartta da sayılmıyor.
+      .eq("ders_questions.kind", "coktan")
       .order("created_at", { ascending: false })
       .limit(LISTE_TAVANI);
 
@@ -236,10 +239,14 @@ export default function DersAnaSayfa() {
     // tavanına takılıp sessizce eksik veri dönüyordu ve eski derslerin kartında
     // "0 doğru" yazıyordu — hata değil, yanlış sayı.
     const kimlikler = (data ?? []).map((o) => o.id);
+    // Yalnızca çoktan seçmeli cevaplar: eski derslerde açık uçlulara verilmiş
+    // cevaplar var ve soru sayısı artık onları içermiyor — sayılsalardı kartta
+    // "12/10 doğru" çıkardı. Süzgeç iç birleşimle sunucuda.
     const { data: cevaplar } = kimlikler.length
       ? await supabase
           .from("ders_answers")
-          .select("session_id, verdict")
+          .select("session_id, verdict, ders_questions!inner(kind)")
+          .eq("ders_questions.kind", "coktan")
           .in("session_id", kimlikler)
       : { data: [] as { session_id: string; verdict: string | null }[] };
 
@@ -263,30 +270,18 @@ export default function DersAnaSayfa() {
     }
 
     /**
-     * Kategori başına ÇOKTAN SEÇMELİ havuzu. Deneme yalnızca çoktan seçmeliden
-     * kuruluyor; kartlardaki toplam soru sayısı açık uçluları da içerdiği için
-     * "deneme kurulabilir mi" sorusunu cevaplamıyor. Yalnızca kimlik çekiliyor,
-     * sayım istemcide yapılıyor — PostgREST'te grup bazlı sayım yok.
+     * Kategori başına soru havuzu (deneme eşiği için) — kartların zaten
+     * taşıdığı `count` toplanıyor, satır çekilmiyor. Eski hâli soru
+     * kimliklerini çekip istemcide sayıyordu ve Supabase'in 1000 satır
+     * tavanına takılıyordu: Tarih'te 950 soru varken "havuzda 636 var"
+     * yazıyordu, deneme kurulumu da o yanlış sayıyla sınırlanıyordu.
      */
     const coktanHavuz = new Map<string, number>();
-    if (kimlikler.length) {
-      const { data: coktanlar } = await supabase
-        .from("ders_questions")
-        .select("session_id")
-        .eq("kind", "coktan")
-        .eq("flagged", false)
-        .in("session_id", kimlikler)
-        .limit(5000);
-      const oturumKategorisi = new Map(
-        (data ?? []).map((o) => [
-          o.id,
-          o.tur === "ders" ? (o.kategori as string | null)?.trim() || KATEGORI_DIGER : null,
-        ])
-      );
-      for (const q of coktanlar ?? []) {
-        const kat = oturumKategorisi.get(q.session_id);
-        if (kat) coktanHavuz.set(kat, (coktanHavuz.get(kat) ?? 0) + 1);
-      }
+    for (const o of data ?? []) {
+      if (o.tur !== "ders") continue;
+      const kat = (o.kategori as string | null)?.trim() || KATEGORI_DIGER;
+      const sayi = (o.ders_questions as unknown as { count: number }[])?.[0]?.count ?? 0;
+      coktanHavuz.set(kat, (coktanHavuz.get(kat) ?? 0) + sayi);
     }
     setHavuzlar(coktanHavuz);
 
@@ -581,7 +576,7 @@ export default function DersAnaSayfa() {
 
   /**
    * Yarım kalan oturumu tamamlar: yalnızca ikinci adımı çağırır, birinci adım
-   * (özet + açık uçlular) zaten kayıtlı olduğu için tekrar üretilmez.
+   * (özet + konular) zaten kayıtlı olduğu için tekrar üretilmez.
    *
    * Bu da kuyruğa giriyor, doğrudan çağrılmıyor: yeni bir ders hazırlanırken
    * tıklanırsa hem eşzamanlılık sınırının dışına çıkardı hem de aynı videoyu

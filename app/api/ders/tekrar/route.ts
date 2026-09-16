@@ -12,7 +12,7 @@ import {
   TEKRAR_SORU_SAYISI,
   yeterinceFarkli,
 } from "@/lib/ders";
-import { hataCevabi, kapiKontrol } from "@/lib/ders-server";
+import { hataCevabi, hepsiniCek, kapiKontrol } from "@/lib/ders-server";
 import { SIK_SAYISI, SORU_OLGU_DENETIMI, tekrarVaryantPrompt } from "@/lib/prompts";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
@@ -406,28 +406,27 @@ export async function POST(request: Request) {
     }
 
     const dersKimlikleri = dersler.map((d) => d.id);
-    const { data: sorular, error: soruHatasi } = await supabase
-      .from("ders_questions")
-      .select(
-        "id, session_id, video_id, kind, question, answer_key, key_points, choices, correct_index, explanation, topic, start_seconds"
-      )
-      .in("session_id", dersKimlikleri)
-      // Ablamın itiraz edip düzeltilemeyen soruları havuza girmiyor. Önceden
-      // işaret yalnızca bir not düşüyordu ve aynı bozuk soru bir sonraki
-      // pratikte yeniden karşısına çıkıyordu — itirazın hiçbir karşılığı yoktu.
-      .eq("flagged", false)
-      .limit(2000);
+    // Sayfalı: kategori havuzu 1000 satırı geçti, tek sorguda kırpılıyordu
+    // (bkz. hepsiniCek). Tür süzgeci de sunucuda — eski açık uçlular hiç gelmesin.
+    const sorular = await hepsiniCek<KaynakSoru>(() =>
+      supabase
+        .from("ders_questions")
+        .select(
+          "id, session_id, video_id, kind, question, answer_key, key_points, choices, correct_index, explanation, topic, start_seconds"
+        )
+        .in("session_id", dersKimlikleri)
+        .eq("kind", "coktan")
+        // Ablamın itiraz edip düzeltilemeyen soruları havuza girmiyor. Önceden
+        // işaret yalnızca bir not düşüyordu ve aynı bozuk soru bir sonraki
+        // pratikte yeniden karşısına çıkıyordu — itirazın hiçbir karşılığı yoktu.
+        .eq("flagged", false)
+        .order("id")
+    );
 
-    if (soruHatasi) throw new Error(soruHatasi.message);
-
-    let havuz = (sorular ?? []) as KaynakSoru[];
-
-    // Denemede yalnızca çoktan seçmeli: açık uçlu değerlendirmesi model çağırıyor,
-    // süreli bir sınavda hem beklemeye hem paraya mal olurdu.
+    let havuz = sorular;
     let denemeSoru = adet;
     let denemeSure = 0;
     if (deneme) {
-      havuz = havuz.filter((s) => s.kind === "coktan");
       // ALT SINIR: 8 sorudan kurulan bir "deneme" sınav deneyimi vermez, üstelik
       // aynı sorular her denemede döner. Eşiğin altındaysa deneme kurulmuyor.
       if (havuz.length < DENEME_EN_AZ_HAVUZ) {
@@ -492,17 +491,22 @@ export async function POST(request: Request) {
 
     const sonGorulme = new Map<string, number>();
     if (kategoriOturumlari.length) {
-      const [{ data: tumSorular }, { data: cevaplar }] = await Promise.all([
-        supabase
-          .from("ders_questions")
-          .select("id, kaynak_soru_id")
-          .in("session_id", kategoriOturumlari)
-          .limit(3000),
-        supabase
-          .from("ders_answers")
-          .select("question_id, created_at")
-          .in("session_id", kategoriOturumlari)
-          .limit(3000),
+      // Sayfalı: ders + pratik soruları kategori başına 1000'i aştı (hepsiniCek)
+      const [tumSorular, cevaplar] = await Promise.all([
+        hepsiniCek<{ id: string; kaynak_soru_id: string | null }>(() =>
+          supabase
+            .from("ders_questions")
+            .select("id, kaynak_soru_id")
+            .in("session_id", kategoriOturumlari)
+            .order("id")
+        ),
+        hepsiniCek<{ question_id: string; created_at: string }>(() =>
+          supabase
+            .from("ders_answers")
+            .select("question_id, created_at")
+            .in("session_id", kategoriOturumlari)
+            .order("id")
+        ),
       ]);
       // Kopya -> kaynak eşlemesi; ders sorusu kendine işaret eder
       const kaynagi = new Map<string, string>();

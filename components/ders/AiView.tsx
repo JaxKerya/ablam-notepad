@@ -78,7 +78,8 @@ interface Props {
 }
 
 const ADIM_ADI: Record<string, string> = {
-  acik: "Açık uçlu üretimi",
+  cozumleme: "Ders çözümleme (özet + konular)",
+  acik: "Açık uçlu üretimi (eski dersler)",
   coktan: "Çoktan seçmeli üretimi",
   not: "Ders notu çıkarma",
 };

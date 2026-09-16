@@ -40,18 +40,28 @@ export default async function DersOturumSayfasi({ params }: PageProps) {
       // İşaretli soru = ablamın itiraz ettiği ve düzeltilemeyen soru. Bir daha
       // karşısına çıkmaması gerekiyor; oturumu yeniden açtığında da çıkmasın.
       .eq("flagged", false)
+      // Açık uçlu üretimi kapatıldı (2026-09-16). Eski derslerin açık uçluları
+      // silinmedi ama gösterilmiyor; cevapları da aşağıda ayıklanıyor ki
+      // "22 cevaplandı / 20 soru" gibi bir sayım çıkmasın.
+      .eq("kind", "coktan")
       .eq("session_id", sessionId)
       .order("position", { ascending: true }),
     supabase.from("ders_answers").select("*").eq("session_id", sessionId),
   ]);
+
+  const sorular = (sorularRes.data ?? []) as DersQuestion[];
+  const soruKimlikleri = new Set(sorular.map((s) => s.id));
+  const ilkCevaplar = ((cevaplarRes.data ?? []) as DersAnswer[]).filter((c) =>
+    soruKimlikleri.has(c.question_id)
+  );
 
   // Deneme sınavının akışı bambaşka: süre işliyor, geri bildirim sona saklanıyor,
   // sorular arasında gezilebiliyor. Aynı bileşene sığdırmak DersView'i üçüncü bir
   // moda daha bölerdi; ayrı ekran hem okunur hem birbirini bozmaz.
   const ortak = {
     oturum: oturum as DersSession,
-    sorular: (sorularRes.data ?? []) as DersQuestion[],
-    ilkCevaplar: (cevaplarRes.data ?? []) as DersAnswer[],
+    sorular,
+    ilkCevaplar,
   };
   return oturum.tur === "deneme" ? <DenemeView {...ortak} /> : <DersView {...ortak} />;
 }

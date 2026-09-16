@@ -25,7 +25,7 @@ import { gunlukLimitAsildiMi, hataCevabi, kapiKontrol } from "@/lib/ders-server"
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { damgaBelirle, kelimeDizini, transkriptMetni } from "@/lib/youtube";
 import {
-  acikPrompt,
+  cozumlemePrompt,
   coktanPrompt,
   SIK_SAYISI,
   SORU_OLGU_DENETIMI,
@@ -41,8 +41,13 @@ export const maxDuration = 300;
 // kendi süre bütçesi demek — hem sunucu tavanına takılma riski yarıya iniyor
 // hem de ablam ilk adım biter bitmez ders özetini görebiliyor.
 //
-//   adim "acik"   -> oturumu açar, özet + konular + açık uçlu sorular
-//   adim "coktan" -> çoktan seçmelileri ekler, oturumu "hazir" yapar
+//   adim "cozumleme" -> oturumu açar: başlık + kategori + özet + konular
+//   adim "coktan"    -> çoktan seçmelileri ekler, oturumu "hazir" yapar
+//
+// Açık uçlu soru yok. 2026-09-16'ya kadar 1. adım açık uçluları da üretip iki
+// denetim geçişinden geçiriyordu; ablam yalnızca çoktan seçmeli çözdüğü için
+// kapatıldı. Eski derslerin açık uçluları veritabanında duruyor, okuma
+// tarafındaki kind = 'coktan' süzgeciyle görünmüyor.
 
 /**
  * Denetim bulgularının UYGULANMASI. Denetim yönergelerinin kendisi ve iki
@@ -255,49 +260,6 @@ function tamSoruMetni(s: {
 const logSatiri = (k: DenetimKaydi) =>
   `${k.islem}${k.sebep ? ` (${k.sebep})` : ""}: ${k.soru}${k.gerekce ? ` — ${k.gerekce}` : ""}`;
 
-/** Açık uçlu sorulara denetim uygular: "yok" elenir, geri kalanı düzeltilir. */
-function acikUygula<T extends { question: string; answer_key: string | null }>(
-  sorular: T[],
-  katman: "transkript" | "olgu",
-  bulgular: Map<number, DenetimBulgusu>,
-  ozet: DenetimBirikimi
-): T[] {
-  return sorular.filter((s, i) => {
-    const b = bulgular.get(i);
-    // "dogru_sik" yalnızca çoktan seçmeli için anlamlı; açık uçluda gelirse yok say.
-    if (!b || b.nerede === "dogru_sik") return true;
-
-    if (b.tur === "yok") {
-      ozet.elenen++;
-      kaydet(ozet, katman, s.question, {
-        islem: "elendi",
-        sebep: "derste yok",
-        gerekce: gerekceKirp(b.gerekce),
-        tamMetin: tamSoruMetni(s),
-      });
-      return false;
-    }
-    if (!b.duzeltilmis) {
-      ozet.elenen++;
-      kaydet(ozet, katman, s.question, {
-        islem: "elendi",
-        sebep: "düzeltme gelmedi",
-        tamMetin: tamSoruMetni(s),
-      });
-      return false;
-    }
-    kaydet(ozet, katman, s.question, {
-      islem: "anahtar-duzeltildi",
-      eski: gerekceKirp(s.answer_key ?? ""),
-      yeni: gerekceKirp(b.duzeltilmis),
-      gerekce: gerekceKirp(b.gerekce),
-    });
-    s.answer_key = b.duzeltilmis;
-    ozet.duzeltilen++;
-    return true;
-  });
-}
-
 /**
  * Çoktan seçmeliye denetim uygular. Açıklama düzeltmek her zaman güvenli;
  * doğru şıkkın metnini düzeltmek de güvenli, tek istisna düzeltilmiş metnin
@@ -433,14 +395,6 @@ function coktanUygula<
   });
 }
 
-interface UretilenAcik {
-  soru?: string;
-  anahtar?: string;
-  kilit_kavramlar?: string[];
-  konu?: string;
-  saniye?: number;
-}
-
 interface UretilenCoktan {
   soru?: string;
   secenekler?: string[];
@@ -465,27 +419,6 @@ type Dizin = Map<string, number[]>;
  * atılan fazlalıklar o boşluğu doldurabilirdi. Fazlalıklar için ödeme zaten
  * yapılmış durumda; yedek olarak tutuluyorlar.
  */
-function acikDogrula(ham: UretilenAcik[], sure: number, dizin: Dizin) {
-  return (ham ?? [])
-    .filter((s) => metin(s.soru) && metin(s.anahtar))
-    .map((s) => ({
-      kind: "acik" as const,
-      question: metin(s.soru),
-      answer_key: metin(s.anahtar),
-      key_points: dizi(s.kilit_kavramlar),
-      choices: null,
-      correct_index: null,
-      explanation: null,
-      topic: metin(s.konu) || null,
-      start_seconds: damgaBelirle(
-        [metin(s.soru), metin(s.anahtar), dizi(s.kilit_kavramlar).join(" ")].join(" "),
-        dizin,
-        s.saniye,
-        sure
-      ),
-    }));
-}
-
 function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
   const gelen = ham ?? [];
   // Hangi şartın kaç soruyu düşürdüğü ayrı ayrı sayılıyor: "12 soru geldi 9 kaldı"
@@ -524,7 +457,7 @@ function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
     );
   }
 
-  // Kırpma yok — gerekçesi acikDogrula'nın başında.
+  // Kırpma yok — gerekçesi fonksiyonun başında.
   const sorular = gecerli
     .map((s) => {
       // Doğru şıkkın konumu modele bırakılmıyor — bkz. siklariKaristir
@@ -602,7 +535,7 @@ async function videoGetir(videoId: string) {
 }
 
 /**
- * Gövde: { videoId, adim: "acik" } -> { sessionId, ... }
+ * Gövde: { videoId, adim: "cozumleme" } -> { sessionId, coktanHedef }
  *        { videoId, adim: "coktan", sessionId } -> { soruSayisi }
  */
 export async function POST(request: Request) {
@@ -617,7 +550,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ hata: "Geçersiz istek gövdesi." }, { status: 400 });
     }
     const videoId = typeof govde.videoId === "string" ? govde.videoId : "";
-    const adim = typeof govde.adim === "string" ? govde.adim : "acik";
+    const adim = typeof govde.adim === "string" ? govde.adim : "cozumleme";
     const sessionId = typeof govde.sessionId === "string" ? govde.sessionId : undefined;
 
     if (!videoId) {
@@ -645,7 +578,7 @@ export async function POST(request: Request) {
       `Ders transkripti:\n\n${transkriptMetni(segments)}`;
 
     // ------------------------------------------------------------ 1. adım
-    if (adim === "acik") {
+    if (adim === "cozumleme") {
       if (await gunlukLimitAsildiMi()) {
         return NextResponse.json(
           { hata: "Bugünlük ders hazırlama sınırına ulaşıldı. Yarın devam edebilirsin." },
@@ -677,7 +610,6 @@ export async function POST(request: Request) {
         kategori?: string;
         ozet?: string;
         konular?: string[];
-        acik_uclu?: UretilenAcik[];
       }>({
         mesajlar: [
           {
@@ -685,7 +617,7 @@ export async function POST(request: Request) {
             // Kategori listesi lib/ders.ts'te tek kaynak; prompt'a parametre
             // olarak giriyor ki prompts.ts hiçbir şey import etmesin
             // (ölçüm betikleri onu doğrudan Node ile açıyor).
-            content: acikPrompt(hedef.acik, KATEGORILER, KATEGORI_DIGER),
+            content: cozumlemePrompt(KATEGORILER, KATEGORI_DIGER),
           },
           { role: "user", content: transkript },
         ],
@@ -696,46 +628,23 @@ export async function POST(request: Request) {
         maxTokens: 32000,
       });
 
+      // Bu adımda denetim çalışmıyor: soru üretilmiyor, denetlenecek şey yok.
+      // Kayıt yine yazılıyor ki /ders/aiview adımın süresini ve token'ını
+      // göstersin; ham çıktı yalnızca özet ya da başlık boş geldiyse saklanıyor.
       const ozet: DenetimBirikimi = { duzeltilen: 0, elenen: 0, kayitlar: [] };
-      const girdi = (s: { question: string; answer_key: string | null }) => ({
-        question: s.question,
-        anahtar: s.answer_key ?? "",
-      });
-
-      // 1. katman: derste var mı? 2. katman: gerçekte doğru mu?
-      // İkisi de önce düzeltmeye çalışır, eleme son çare.
-      const hamAcik = (uretilen.acik_uclu ?? []).length;
-      let acik = acikDogrula(uretilen.acik_uclu ?? [], sure, dizin);
-
-      const gecis1 = await denetimCalistir(
-        "transkript", SORU_TRANSKRIPT_DENETIMI, acik.map(girdi), transkript
-      );
-      acik = acikUygula(acik, "transkript", gecis1.bulgular, ozet);
-
-      const gecis2 = await denetimCalistir("olgu", SORU_OLGU_DENETIMI, acik.map(girdi));
-      acik = acikUygula(acik, "olgu", gecis2.bulgular, ozet);
-
-      acik = acik.slice(0, hedef.acik);
-      if (ozet.kayitlar.length) {
-        console.warn("[ders] denetim (açık uçlu):", ozet.kayitlar.map(logSatiri));
-      }
-
-      // Ham çıktı yalnızca bir şey ters gittiyse saklanıyor: her derste saklamak
-      // oturum başına ~25 KB demekti. Ters giden = soru elendi ya da valf devrede.
-      const acikTers =
-        ozet.elenen > 0 || gecis1.gecis.valf || gecis2.gecis.valf;
-      const acikAdimi: DenetimAdimi = {
-        adim: "acik",
-        uretilen: hamAcik,
-        hedef: hedef.acik,
-        nihai: acik.length,
+      const cozumlemeAdimi: DenetimAdimi = {
+        adim: "cozumleme",
+        uretilen: 0,
+        hedef: 0,
+        nihai: 0,
         uretimSn: uretimOlcum.sn,
         uretimGirdiToken: uretimOlcum.girdiToken,
         uretimCiktiToken: uretimOlcum.ciktiToken,
         uretimModeli: uretimOlcum.model,
-        hamUretim: acikTers ? hamKirp(uretimHam) : undefined,
-        gecisler: [gecis1.gecis, gecis2.gecis],
-        kayitlar: ozet.kayitlar,
+        hamUretim:
+          !metin(uretilen.ozet) || !metin(uretilen.baslik) ? hamKirp(uretimHam) : undefined,
+        gecisler: [],
+        kayitlar: [],
       };
 
       const { data: oturum, error: oturumHatasi } = await supabase
@@ -759,22 +668,9 @@ export async function POST(request: Request) {
 
       // Denetim özeti şeffaflık için; kolon henüz eklenmemişse ders üretimi
       // bundan etkilenmesin diye ayrı ve hatası yutulan bir güncelleme.
-      await denetimOzetiYaz(supabase, oturum.id, ozet, acikAdimi, false);
+      await denetimOzetiYaz(supabase, oturum.id, ozet, cozumlemeAdimi, false);
 
-      if (acik.length) {
-        const { error } = await supabase
-          .from("ders_questions")
-          .insert(
-            acik.map((s, i) => ({ ...s, session_id: oturum.id, video_id: videoId, position: i }))
-          );
-        if (error) throw new Error(`Sorular kaydedilemedi: ${error.message}`);
-      }
-
-      return NextResponse.json({
-        sessionId: oturum.id,
-        acikSayisi: acik.length,
-        coktanHedef: hedef.coktan,
-      });
+      return NextResponse.json({ sessionId: oturum.id, coktanHedef: hedef.coktan });
     }
 
     // ------------------------------------------------------------ 2. adım
@@ -799,7 +695,6 @@ export async function POST(request: Request) {
         .eq("session_id", sessionId)
         .order("position");
 
-      const acikSorular = (mevcut ?? []).filter((s) => s.kind === "acik").map((s) => s.question);
       const sonrakiPozisyon = (mevcut ?? []).length;
 
       const {
@@ -812,11 +707,7 @@ export async function POST(request: Request) {
         mesajlar: [
           {
             role: "system",
-            content: coktanPrompt(
-              hedef.coktan,
-              (oturum.topics as string[]) ?? [],
-              acikSorular
-            ),
+            content: coktanPrompt(hedef.coktan, (oturum.topics as string[]) ?? []),
           },
           { role: "user", content: transkript },
         ],

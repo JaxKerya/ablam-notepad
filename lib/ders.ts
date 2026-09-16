@@ -168,7 +168,8 @@ export interface DenetimGecisi {
 }
 
 export interface DenetimAdimi {
-  adim: "acik" | "coktan" | "not";
+  /** "acik" yalnızca eski oturumlarda: açık uçlu üretimi kapatıldı */
+  adim: "cozumleme" | "acik" | "coktan" | "not";
   /** Modelin döndürdüğü ham öğe sayısı */
   uretilen: number;
   /** Biçim şartına takılanların sebep kırılımı */
@@ -220,22 +221,18 @@ export function hamKirp(metin: string): string {
  * Soru sayısı sabit değil, dersin uzunluğuna göre hesaplanıyor: kabaca her üç
  * dakikalık anlatım için bir soru, 8 ile 26 arasında sıkıştırılmış.
  *
- * Ağırlık çoktan seçmelide (%80): KPSS'nin kendisi çoktan seçmeli, sınav
- * refleksi orada kazanılıyor. Açık uçlular kalan %20 — onlar da öğrenmeyi
- * asıl pekiştiren kısım olduğu için hiç eksilmiyor, en az ikisi garanti.
+ * Hepsi çoktan seçmeli. Eskiden %20'si açık uçluydu; 2026-09-16'da açık uçlu
+ * üretimi kapatıldı — ÖSYM'nin biçimi çoktan seçmeli, ablam da yalnızca onu
+ * çözüyor. Eski derslerde kalan açık uçlular veritabanında duruyor ama hiçbir
+ * ekranda ve havuzda görünmüyor (kind = 'coktan' süzgeci).
  *
  * Bu bir ÜST SINIR: ders bu kadar soruyu taşımıyorsa model daha az üretir,
  * doğrulama katmanı da fazlasını kırpar.
  */
-export function hedefSoruSayisi(sureSaniye: number): {
-  toplam: number;
-  coktan: number;
-  acik: number;
-} {
+export function hedefSoruSayisi(sureSaniye: number): { toplam: number; coktan: number } {
   const dakika = Math.max(0, sureSaniye) / 60;
   const toplam = Math.round(Math.min(26, Math.max(8, dakika / 3)));
-  const acik = Math.max(2, Math.round(toplam * 0.2));
-  return { toplam, coktan: toplam - acik, acik };
+  return { toplam, coktan: toplam };
 }
 
 /** Bir oturumun anlamlı sayılması için gereken en az soru sayısı */
@@ -504,7 +501,8 @@ export const ES_ZAMANLI_URETIM = 3;
 export type IsDurumu =
   | "bekliyor"
   | "transkript"
-  | "acik"
+  /** 1. adım: özet + konular (eskiden açık uçlu sorular da burada üretilirdi) */
+  | "cozumleme"
   | "coktan"
   | "hazir"
   | "elle"
@@ -513,7 +511,7 @@ export type IsDurumu =
   | "hata";
 
 /** Model çağıran, yani hem para hem süre harcayan durumlar */
-export const IS_CALISIYOR: IsDurumu[] = ["transkript", "acik", "coktan"];
+export const IS_CALISIYOR: IsDurumu[] = ["transkript", "cozumleme", "coktan"];
 
 export interface UretimIsi {
   id: string;

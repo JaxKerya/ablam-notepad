@@ -43,7 +43,7 @@ create table if not exists ders_questions (
   id            uuid primary key default gen_random_uuid(),
   session_id    uuid not null references ders_sessions(id) on delete cascade,
   position      integer not null,
-  kind          text    not null,                      -- acik | coktan
+  kind          text    not null,                      -- acik | coktan ('acik' yalnızca eski kayıtlarda; üretimi 2026-09-16'da kapatıldı)
   question      text    not null,
   answer_key    text,                                  -- açık uçlu için beklenen cevap
   key_points    jsonb   not null default '[]'::jsonb,  -- kilit kavramlar

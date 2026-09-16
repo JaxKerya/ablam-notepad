@@ -201,9 +201,9 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
             return;
           }
 
-          yaz({ durum: "acik" });
-          const acik = await istek("/api/ders/generate", { videoId, adim: "acik" });
-          sessionId = String(acik.sessionId ?? "");
+          yaz({ durum: "cozumleme" });
+          const cozumleme = await istek("/api/ders/generate", { videoId, adim: "cozumleme" });
+          sessionId = String(cozumleme.sessionId ?? "");
           yaz({ sessionId });
         }
 

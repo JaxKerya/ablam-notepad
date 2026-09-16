@@ -43,72 +43,40 @@ işaretinden hesapla).
 SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti kullanma.`;
 
 /**
- * Açık uçlu sorular.
+ * Ders çözümleme: başlık, kategori, özet, konular. SORU YOK.
  *
- * "TEK KONULU sor" kuralı önce yasak listesi olarak yazılmıştı ve TUTMADI:
- * üretilen üç sorunun ikisi virgülle bağlanmış iki soru içeriyordu, üçüncüsü
- * "neden-sonuç sırasıyla açıklayınız" diyerek kompozisyon istiyordu. Kural
- * artık üç şeye dayanıyor: ölçülebilir bir yapı şartı (tek soru kelimesi, tek
- * fiil), gerçek hatalardan alınmış örnek çiftleri, ve yasak kalıp listesi en
- * sona. Modeller yasaktan çok örnekten öğreniyor.
+ * Bu adım eskiden açık uçlu soruları da üretiyordu; 2026-09-16'da açık uçlu
+ * tamamen kapatıldı (ÖSYM biçimi çoktan seçmeli, ablam yalnızca onu çözüyor).
+ * Adım ayrı kalıyor çünkü konu listesi çoktan seçmeli üretiminin girdisi ve
+ * özet ders açılır açılmaz görünüyor. Çıktı kısa, denetim geçişi yok — iki
+ * denetim çağrısı ve ~1.500 çıktı token'ı ders başına maliyetten düştü.
  */
-export const acikPrompt = (
-  adet: number,
-  kategoriler: readonly string[],
-  digerKategori: string
-) =>
-  `Sen KPSS'ye hazırlanan bir öğrenciye ders videosundan ölçme soruları hazırlayan bir eğitmensin.
+export const cozumlemePrompt = (kategoriler: readonly string[], digerKategori: string) =>
+  `Sen KPSS ve YKS'ye hazırlanan bir öğrenci için ders videolarını çözümleyen bir eğitmensin.
 
-${ORTAK_KURALLAR}
+Sana bir ders videosunun transkripti veriliyor.
+${TRANSKRIPT_UYARISI}
 
 Şema:
 {
   "baslik": "dersin kısa başlığı",
   "kategori": "dersin ait olduğu ders adı",
   "ozet": "3-4 cümlelik ders özeti",
-  "konular": ["ana konu 1", "ana konu 2"],
-  "acik_uclu": [
-    {"soru": "...", "anahtar": "beklenen cevap, 2-3 cümle",
-     "kilit_kavramlar": ["kavram1", "kavram2"], "konu": "hangi ana konu", "saniye": 123}
-  ]
+  "konular": ["ana konu 1", "ana konu 2"]
 }
 
-KATEGORİ — dersin hangi KPSS dersine ait olduğunu şu listeden SEÇ, yeni bir ad uydurma:
+KATEGORİ — dersin hangi derse ait olduğunu şu listeden SEÇ, yeni bir ad uydurma:
 ${kategoriler.join(", ")}
 Hiçbirine uymuyorsa "${digerKategori}" yaz. Liste kapalı çünkü kategori, aynı dersin
 bütün videolarını bir arada tutmak için kullanılıyor; serbest yazılan ad havuzu böler.
 
-SORU BİÇİMİ — en önemli kural bu, ihlal eden soru işe yaramaz.
-Her soru TEK bir şey sorar. Ölçütü şudur: soruda tek bir soru kelimesi geçer
-("neden", "nasıl", "hangi"...) ve soru tek bir fiille biter.
+ÖZET — yalnızca derste gerçekten anlatılanı yaz. Sayılar ve özel isimler altyazıda bozulmuş
+olabilir; şüpheliyse özete koyma.
 
-  DOĞRU:  "Ekber ve erşed sistemi merkezi otoriteyi neden zayıflattı?"
-  YANLIŞ: "Ekber ve erşed sistemi hangi sorunu çözmeyi amaçlamış, uygulamada merkezi
-           otoriteyi nasıl olumsuz etkilemiştir?"
-           (iki ayrı soru virgülle birbirine bağlanmış)
+KONULAR — dersin ana başlıkları, 2-6 madde. Bu liste çoktan seçmeli soruların hangi konulara
+yayılacağını belirliyor; ne tek kelimelik genel bir ad ne de tek bir ayrıntı olsun.
 
-  DOĞRU:  "Tımar sisteminin bozulması iltizamı neden yaygınlaştırdı?"
-  YANLIŞ: "Uzayan savaşlardan şehir kültürünün yozlaşmasına kadar gelişen süreci
-           neden-sonuç sırasıyla açıklayınız."
-           (soru değil, kompozisyon ödevi)
-
-Yasak kalıplar: "hem ... hem ...", "X ile Y'yi karşılaştırınız", "üç yönüyle
-değerlendiriniz", "... sırasıyla açıklayınız", ve virgülle eklenmiş ikinci bir soru.
-
-SORULARIN ZORLUĞU — gerçek KPSS seviyesinde olsun, ama DOLAMBAÇLI olmasın. Zorluk sorunun
-derinliğinden gelsin, kaç parçadan oluştuğundan değil:
-- Soru kökü tek cümle ve net olsun; uzun senaryolu kurgu yazma.
-- Ezber sorusu sorma. Yalın tanım istemek yerine anlayıp anlamadığını gösterecek şekilde
-  sor: neden böyle olduğu, nasıl işlediği, hangi sonucu doğurduğu.
-- Beklenen cevap 2-3 cümle olsun — ne tek kelimelik ne de kompozisyon.
-- Cevap derste anlatılanlara dayansın; derste hiç geçmemiş bir bilgiyi çıkarmasını isteme.
-
-SORU SAYISI — en fazla ${adet} açık uçlu soru üret:
-- Bu bir ÜST SINIR, doldurulması zorunlu bir kota değil. Ders bu kadar soruyu taşımıyorsa daha
-  az üret. Sayıyı tutturmak için zayıf, tekrar eden ya da transkriptte net anlatılmayan konudan
-  soru üretme — az ama sağlam soru, çok ama gevşek sorudan iyidir.
-- Soruları derste anlatılan farklı ana konulara yay; tek konudan üst üste sorma.
-- İki soru aynı bilgiyi ölçmesin.`;
+SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti kullanma.`;
 
 /**
  * Çoktan seçmeliler.
@@ -126,7 +94,7 @@ SORU SAYISI — en fazla ${adet} açık uçlu soru üret:
  *    İYİYDİ — "hangi ilkenin zayıfladığını gösterir" standart bir KPSS kalıbı.
  *    Yani bozuk olan çıktı değil kuralın kendisiydi; kaldırıldı.
  */
-export const coktanPrompt = (adet: number, konular: string[], acikSorular: string[]) =>
+export const coktanPrompt = (adet: number, konular: string[]) =>
   `Sen KPSS'ye hazırlanan bir öğrenciye ders videosundan ÇOKTAN SEÇMELİ sorular hazırlayan bir
 eğitmensin.
 
@@ -212,11 +180,7 @@ SORU SAYISI — en fazla ${adet} çoktan seçmeli soru üret. Bu bir ÜST SINIR;
 az üret, sayıyı doldurmak için zayıf soru üretme.
 
 Dersin ana konuları: ${konular.join(", ") || "(belirtilmedi)"}
-Soruları bu konulara yay, tek konuda yığılma.
-
-Bu öğrenciye AYNI derste şu açık uçlu sorular zaten soruldu. Aynı bilgiyi tekrar ölçme, farklı
-noktalara odaklan:
-${acikSorular.map((s, i) => `${i + 1}. ${s}`).join("\n") || "(yok)"}`;
+Soruları bu konulara yay, tek konuda yığılma.`;
 
 // --- Soru denetimi ----------------------------------------------------------
 //
