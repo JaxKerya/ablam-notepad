@@ -216,12 +216,12 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
         // yok, o yüzden döngü ilk cevaptan sonra sayıyı günceller).
         let parca = 0;
         do {
-          yaz({ durum: "coktan", ilerleme: parcaSayisi > 1 ? `${parca + 1}/${parcaSayisi}` : undefined });
+          yaz({ durum: "coktan" });
           const cevap = await istek("/api/ders/generate", { videoId, adim: "coktan", sessionId, parca });
           parcaSayisi = Number(cevap.parcaSayisi) || 1;
           parca++;
         } while (parca < parcaSayisi);
-        yaz({ durum: "hazir", hata: null, ilerleme: undefined });
+        yaz({ durum: "hazir", hata: null });
 
         setTamamlananSayac((n) => n + 1);
 

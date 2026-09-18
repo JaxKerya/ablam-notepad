@@ -235,20 +235,32 @@ export default function DersAnaSayfa() {
     setListeHatasi(null);
 
     // Doğru sayısı için ayrı, hafif bir sorgu (verdict kırılımı gerekiyor).
-    // YALNIZCA listelenen oturumlar için: filtresiz çekilince PostgREST'in satır
-    // tavanına takılıp sessizce eksik veri dönüyordu ve eski derslerin kartında
-    // "0 doğru" yazıyordu — hata değil, yanlış sayı.
+    // YALNIZCA listelenen oturumlar için ve SAYFA SAYFA: Supabase bir sorguda en
+    // fazla 1000 satır döndürüyor, üstü sessizce düşüyor. İlk sürüm filtresiz
+    // çekiyordu, eski derslerde "0 doğru" yazıyordu; oturum filtresiyle
+    // düzeltildi, cevaplar 1264'e ulaşınca yine taştı ve bu kez EN YENİ deneme
+    // 0 net görünüyordu. Sayfalama olmadan bu sayı büyüdükçe tekrar olur.
     const kimlikler = (data ?? []).map((o) => o.id);
     // Yalnızca çoktan seçmeli cevaplar: eski derslerde açık uçlulara verilmiş
     // cevaplar var ve soru sayısı artık onları içermiyor — sayılsalardı kartta
     // "12/10 doğru" çıkardı. Süzgeç iç birleşimle sunucuda.
-    const { data: cevaplar } = kimlikler.length
-      ? await supabase
-          .from("ders_answers")
-          .select("session_id, verdict, ders_questions!inner(kind)")
-          .eq("ders_questions.kind", "coktan")
-          .in("session_id", kimlikler)
-      : { data: [] as { session_id: string; verdict: string | null }[] };
+    const cevaplar: { session_id: string; verdict: string | null }[] = [];
+    const SAYFA = 1000;
+    for (let bas = 0; kimlikler.length; bas += SAYFA) {
+      const { data: sayfa, error: sayfaHatasi } = await supabase
+        .from("ders_answers")
+        .select("session_id, verdict, ders_questions!inner(kind)")
+        .eq("ders_questions.kind", "coktan")
+        .in("session_id", kimlikler)
+        .order("id")
+        .range(bas, bas + SAYFA - 1);
+      if (sayfaHatasi) {
+        console.error("Cevaplar yüklenemedi:", sayfaHatasi.message);
+        break;
+      }
+      cevaplar.push(...(sayfa ?? []));
+      if (!sayfa || sayfa.length < SAYFA) break;
+    }
 
     /**
      * Yayın tarihleri AYRI ve hatası yutulan bir sorguda alınıyor, gömülü
@@ -1057,7 +1069,6 @@ export default function DersAnaSayfa() {
                       )}
                       <span className="truncate">
                         {is.durum === "hata" ? (is.hata ?? "Hata") : DURUM_METNI[is.durum]}
-                        {is.durum === "coktan" && is.ilerleme && <span className="ml-1 tabular-nums opacity-70">{is.ilerleme}</span>}
                       </span>
                     </p>
                   </div>

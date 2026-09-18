@@ -231,6 +231,20 @@ export function hamKirp(metin: string): string {
 
 // --- Sabitler ---------------------------------------------------------------
 
+/**
+ * Soru kökünde derse/hocaya/videoya gönderme: "Rüştü Hoca'nın anlattığına göre",
+ * "videoda hangi ... olarak tanıtılmıştır". Sınav sorusu bağımsız olmalı; hoca
+ * adının kökte geçmesi de yakışıksız. Ölçüm: 2390 soruda 19 (%0,8). Prompt'ta
+ * kural var, burası kaçanları yakalıyor. Dar tutuldu: "Hoca Ahmet Yesevi" gibi
+ * gerçek içerik geçmesin diye yalnızca "hocanın anlattığı/verdiği" kalıpları.
+ */
+export const META_REFERANS =
+  /\b(videoda|videonun|videoya|bu derste|derste anlat|dersin (bu|baş|son)|hoca['’]?n[ıi]n\s+(anlatt|dedi|söyle|göster|verdi|kulland|öner)|hocaya göre|hocam[ıi]z|eğitmenin|anlatıldığına göre)/i;
+
+export function metaReferansVarMi(metin: string): boolean {
+  return META_REFERANS.test(metin);
+}
+
 /** Bir oturumun anlamlı sayılması için gereken en az soru sayısı */
 export const EN_AZ_SORU = 4;
 
@@ -572,8 +586,6 @@ export interface UretimIsi {
   mevcutDersId?: string | null;
   /** Ablam "yine de üret" dedi; mevcut ders kontrolü atlanıyor */
   zorla?: boolean;
-  /** Parçalı üretimde ilerleme metni ("2/4") */
-  ilerleme?: string;
 }
 
 /**

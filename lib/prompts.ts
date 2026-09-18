@@ -110,6 +110,10 @@ ezber sorusu kadar kolay, ne de bilmece gibi karmaşık.
   ölçmeye çalışma.
 - Öncüllü sorular dışında soru kökü tek cümle olsun; uzun senaryolu paragraf kök yazma.
 - "Aşağıdakilerden hangisi ... değildir/yer almaz" gibi klasik KPSS kalıplarını kullanabilirsin.
+- Soru BAĞIMSIZ olsun: kökte, şıklarda ve açıklamada hocaya, videoya, derse gönderme YOK —
+  "hocanın anlattığına göre", "videoda tanıtılan", "Rüştü Hoca'nın taktiğine göre" yazma;
+  hocanın adı hiçbir yerde geçmesin. Bilgiyi sınavdaki gibi doğrudan sor: "'rağmen' sözcüğü
+  neden edattır?" Hocanın kendine özgü yöntemi soruluyorsa yöntemi kökte tanımla.
 - Kavramların birbirine karıştığı noktaları hedefle — sınavda ayırt edilmesi gereken yerler
   oralardır.
 - Şıkların uzunlukları birbirine yakın olsun; en uzun ile en kısa arasındaki fark 4 kelimeyi

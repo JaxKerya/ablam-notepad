@@ -9,6 +9,7 @@ import {
   kategoriDogrula,
   KATEGORILER,
   hukumOneksizAciklama,
+  metaReferansVarMi,
   parcaAraligi,
   parcaSayisi,
   parcaSoruSiniri,
@@ -563,6 +564,8 @@ function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
     if (onculluSiklarMi(k.secenekler) && !onculMetniVarMi(metin(s.soru))) {
       return dus("öncül şıkları var ama kökte öncül yok");
     }
+    // "Hocanın anlattığına göre…" — sınav sorusu değil, ders notu (lib/ders.ts META_REFERANS)
+    if (metaReferansVarMi(metin(s.soru))) return dus("hoca/video göndermesi");
     karisiklar.set(s, k);
     return true;
   });
