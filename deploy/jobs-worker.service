@@ -1,0 +1,18 @@
+[Unit]
+Description=Ablam Is Firsatlari zamanlayicisi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ablam
+WorkingDirectory=/opt/ablam
+EnvironmentFile=/etc/ablam/jobs-worker.env
+ExecStart=/usr/bin/node /opt/ablam/scripts/jobs-worker.mjs
+Restart=always
+RestartSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

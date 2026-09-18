@@ -1,0 +1,17 @@
+[Unit]
+Description=Ablam Is Firsatlari tek tarama
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+EnvironmentFile=/etc/ablam/jobs-worker.env
+ExecStart=/usr/bin/python3 /opt/ablam/scripts/jobs-scan.py
+TimeoutStartSec=300
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+MemoryMax=96M
+CPUQuota=20%

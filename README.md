@@ -544,3 +544,20 @@ ablam-notepad/
 - **Pin notes**: Pin important notes to the top of the sidebar
 - **Password protection**: Lock notes with a password (SHA-256 hashed)
 - **Dark theme**: Clean, modern, distraction-free UI
+
+## Ablam İş Fırsatları — yeni bölüm
+
+`/is` adresinde kişisel profil, çok kaynaklı ilan araması, açıklamalı AI uygunluk değerlendirmesi, e-posta bildirimleri ve başvuru takibi bulunur. Ana sayfadan erişilir; mevcut tema korunur.
+
+**İlk kurulum:** [docs/JOBS_SETUP.md](docs/JOBS_SETUP.md). Supabase'de [db/jobs.sql](db/jobs.sql) kurulmalı; sunucu anahtarı, ilan sağlayıcıları, e-posta ve zamanlayıcı bağlanmalıdır. Canlı anahtarlar olmadan uygulama tarama yapıldığını iddia etmez.
+
+**Türkiye kaynakları ve mevcut VPS:** [Exa araştırma raporu](exa-results/turkiye-is-kaynaklari-2026-09-18/REPORT.md). Doğrulanmış erişim yolları, önerilen bağlantılar ve henüz geliştirilmemiş entegrasyonlar ayrı belirtilmiştir. Jooble için Türkiye portalından alınan anahtar gerekir.
+
+**VPS zamanlayıcısı:** [Kurulum ve mevcut durum](docs/VPS_WORKER.md). GitHub → Vercel yayın akışını koruyan Python/systemd seçeneği; canlı tarama için önce uygulama ve sağlayıcı kurulumu tamamlanmalıdır.
+
+- Sunucu zamanlayıcısı: `npm run jobs:worker` (alternatif hosting cron örneği `deploy/` içinde).
+- Sistem testleri: `npm run test:jobs`.
+- Tarayıcı testleri: `npm run test:jobs:ui`.
+- Site içi yönetici rehberi: `/is/kurulum`.
+
+---

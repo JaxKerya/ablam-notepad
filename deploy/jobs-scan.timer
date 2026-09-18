@@ -1,0 +1,11 @@
+[Unit]
+Description=Ablam Is Firsatlari bes dakikalik zamanlayici
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=15s
+Unit=ablam-jobs-scan.service
+
+[Install]
+WantedBy=timers.target

@@ -726,6 +726,7 @@ export default function Home() {
               <GraduationCap size={14} className="text-[var(--accent)]/80" />
               <span>Ablam Ders</span>
             </Link>
+            {/* İş Fırsatları geçici olarak ana ekranda gizli; /is adresinden erişilebilir. */}
           </div>
         </div>
       </div>
