@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/kariyer/nabiz", "schedule": "0 6 * * *" }
+  ]
+}

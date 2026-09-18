@@ -1057,6 +1057,7 @@ export default function DersAnaSayfa() {
                       )}
                       <span className="truncate">
                         {is.durum === "hata" ? (is.hata ?? "Hata") : DURUM_METNI[is.durum]}
+                        {is.durum === "coktan" && is.ilerleme && <span className="ml-1 tabular-nums opacity-70">{is.ilerleme}</span>}
                       </span>
                     </p>
                   </div>

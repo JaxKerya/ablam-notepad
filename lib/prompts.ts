@@ -94,7 +94,7 @@ SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti ku
  *    İYİYDİ — "hangi ilkenin zayıfladığını gösterir" standart bir KPSS kalıbı.
  *    Yani bozuk olan çıktı değil kuralın kendisiydi; kaldırıldı.
  */
-export const coktanPrompt = (adet: number, konular: string[]) =>
+export const coktanPrompt = (ustSinir: number, konular: string[], dersOzeti: string | null = null) =>
   `Sen KPSS'ye hazırlanan bir öğrenciye ders videosundan ÇOKTAN SEÇMELİ sorular hazırlayan bir
 eğitmensin.
 
@@ -175,11 +175,21 @@ AÇIKLAMAYI HÜKÜM SÖZÜYLE BAŞLATMA: "Doğru!", "Doğru;", "Evet", "Tebrikle
 cümlen onun üstüne biniyor. Yanlış cevap veren öğrenci "Doğru cevap B) ... Doğru! ..."
 diye okuyor. Doğrudan bilgiyle başla.
 
-SORU SAYISI — en fazla ${adet} çoktan seçmeli soru üret. Bu bir ÜST SINIR; ders taşımıyorsa daha
-az üret, sayıyı doldurmak için zayıf soru üretme.
+SORU SAYISI — EN FAZLA ${ustSinir} soru. Bu bir ÜST SINIR, hedef değil: bölüm daha az taşıyorsa
+daha az üret, sayıyı doldurmak için zayıf, tekrar eden ya da ezber sorusu yazma. Bölüm daha
+fazlasını taşıyorsa SEÇ: "KPSS'de sorulma ihtimali en yüksek, dersi dinleyen birinin
+dinlemeyene fark atacağı" ${ustSinir} şeyi sor; hocanın her cümlesine soru yazma. Aynı bilgiyi
+ikinci kez sorma.
 
 Dersin ana konuları: ${konular.join(", ") || "(belirtilmedi)"}
-Soruları bu konulara yay, tek konuda yığılma.`;
+Soruları bu konulara yay, tek konuda yığılma.${
+    dersOzeti
+      ? `
+
+DERSİN TAMAMININ ÖZETİ (parçalı üretimde bağlam için; sorular yine yalnızca bu bölümün
+transkriptinden çıkacak): ${dersOzeti}`
+      : ""
+  }`;
 
 // --- Öz-denetim (soru geliştirme) -------------------------------------------
 //

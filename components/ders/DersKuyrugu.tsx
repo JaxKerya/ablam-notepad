@@ -155,6 +155,7 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
 
       let videoId = is.videoId;
       let sessionId = is.sessionId;
+      let parcaSayisi = 1;
       let baslik = is.baslik;
 
       try {
@@ -204,14 +205,23 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
           yaz({ durum: "cozumleme" });
           const cozumleme = await istek("/api/ders/generate", { videoId, adim: "cozumleme" });
           sessionId = String(cozumleme.sessionId ?? "");
+          parcaSayisi = Number(cozumleme.parcaSayisi) || 1;
           yaz({ sessionId });
         }
 
         if (!videoId || !sessionId) throw new Error("Oturum kimliği alınamadı.");
 
-        yaz({ durum: "coktan" });
-        await istek("/api/ders/generate", { videoId, adim: "coktan", sessionId });
-        yaz({ durum: "hazir", hata: null });
+        // Sorular parça parça: uzun derste tek istek sunucunun süre sınırını
+        // aşıyordu. Parça sayısını ilk cevap söyler ("tamamla" işinde çözümleme
+        // yok, o yüzden döngü ilk cevaptan sonra sayıyı günceller).
+        let parca = 0;
+        do {
+          yaz({ durum: "coktan", ilerleme: parcaSayisi > 1 ? `${parca + 1}/${parcaSayisi}` : undefined });
+          const cevap = await istek("/api/ders/generate", { videoId, adim: "coktan", sessionId, parca });
+          parcaSayisi = Number(cevap.parcaSayisi) || 1;
+          parca++;
+        } while (parca < parcaSayisi);
+        yaz({ durum: "hazir", hata: null, ilerleme: undefined });
 
         setTamamlananSayac((n) => n + 1);
 

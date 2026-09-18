@@ -1,0 +1,26 @@
+# Ablam Kariyer tarayıcısı — systemd birimi.
+# Kurulum: deploy/vps-kur.sh (kopyalar, etkinleştirir). Günlük: journalctl -u ablam-kariyer -f
+[Unit]
+Description=Ablam Kariyer - is ilani tarayicisi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kariyer
+Group=kariyer
+WorkingDirectory=/opt/ablam-kariyer
+# Chromium burada; iskur.ts Linux'ta Playwright'ın kendi tarayıcısını kullanır
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/ablam-kariyer/.browsers
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run kariyer:dongu
+Restart=always
+RestartSec=60
+# Chromium + Node; sunucuda başka işler de var, taşmasın
+MemoryMax=1500M
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ablam-kariyer
+
+[Install]
+WantedBy=multi-user.target

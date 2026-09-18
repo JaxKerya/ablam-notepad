@@ -8,8 +8,10 @@ import {
   KATEGORI_DIGER,
   kategoriDogrula,
   KATEGORILER,
-  hedefSoruSayisi,
   hukumOneksizAciklama,
+  parcaAraligi,
+  parcaSayisi,
+  parcaSoruSiniri,
   onculMetniVarMi,
   onculluSiklarMi,
   sikSetiniDogrula,
@@ -652,8 +654,10 @@ async function videoGetir(videoId: string) {
 }
 
 /**
- * Gövde: { videoId, adim: "cozumleme" } -> { sessionId, coktanHedef }
- *        { videoId, adim: "coktan", sessionId } -> { soruSayisi }
+ * Gövde: { videoId, adim: "cozumleme" } -> { sessionId, parcaSayisi }
+ *        { videoId, adim: "coktan", sessionId, parca } -> { soruSayisi, parca, parcaSayisi, son }
+ * "coktan" parça parça çağrılır (bkz. lib/ders.ts PARCA_SURESI_SN); istemci
+ * parca=0..parcaSayisi-1 sırayla ister, son parça oturumu "hazir" yapar.
  */
 export async function POST(request: Request) {
   const engel = await kapiKontrol();
@@ -685,14 +689,29 @@ export async function POST(request: Request) {
 
     const segments = video.segments as Segment[];
     const sure = video.duration_seconds ?? 0;
-    const hedef = hedefSoruSayisi(sure);
     const dizin = kelimeDizini(segments);
+    const toplamParca = parcaSayisi(sure);
+    const parcaNo = Number.isInteger(govde.parca) ? Number(govde.parca) : 0;
+    if (parcaNo < 0 || parcaNo >= toplamParca) {
+      return NextResponse.json({ hata: `parca 0-${toplamParca - 1} arasında olmalı.` }, { status: 400 });
+    }
+    // Çözümleme dersin tamamını okur; soru üretimi yalnızca istenen parçayı.
+    // Uzun derste tek istek 300 sn'yi aşıyordu (lib/ders.ts'teki ölçüm).
+    const { bas: parcaBas, son: parcaSon } = parcaAraligi(sure, parcaNo);
+    const parcaSegments =
+      adim === "coktan" && toplamParca > 1
+        ? segments.filter((s) => s.o >= parcaBas * 1000 && s.o < parcaSon * 1000)
+        : segments;
     // Video başlığı modele dönemi ve özel isimleri veriyor. Otomatik altyazıda
     // özel isimler bozuluyor ("ahlak" -> "Aylak" gibi); başlık bunu azaltıyor.
     const transkript =
       (video.title ? `Video başlığı: ${video.title}\n` : "") +
-      `Ders süresi: ${Math.round(sure / 60)} dakika\n\n` +
-      `Ders transkripti:\n\n${transkriptMetni(segments)}`;
+      `Ders süresi: ${Math.round(sure / 60)} dakika\n` +
+      (adim === "coktan" && toplamParca > 1
+        ? `Bu istek dersin ${parcaNo + 1}/${toplamParca}. bölümü: dakika ${Math.round(parcaBas / 60)}–${Math.round(parcaSon / 60)}. ` +
+          `Sorular yalnızca bu bölümden üretilecek; konular listesi dersin tamamına ait.\n`
+        : "") +
+      `\n${adim === "coktan" && toplamParca > 1 ? "Ders transkripti (bu bölüm)" : "Ders transkripti"}:\n\n${transkriptMetni(parcaSegments)}`;
 
     /**
      * Mesaj dizilişi ÖNBELLEK için: transkript en önde ve işaretli, adımın
@@ -805,7 +824,7 @@ export async function POST(request: Request) {
       // bundan etkilenmesin diye ayrı ve hatası yutulan bir güncelleme.
       await denetimOzetiYaz(supabase, oturum.id, ozet, cozumlemeAdimi, false);
 
-      return NextResponse.json({ sessionId: oturum.id, coktanHedef: hedef.coktan });
+      return NextResponse.json({ sessionId: oturum.id, parcaSayisi: toplamParca });
     }
 
     // ------------------------------------------------------------ 2. adım
@@ -816,7 +835,7 @@ export async function POST(request: Request) {
 
       const { data: oturum } = await supabase
         .from("ders_sessions")
-        .select("id, topics, status")
+        .select("id, topics, summary, status, denetim")
         .eq("id", sessionId)
         .maybeSingle();
 
@@ -831,6 +850,25 @@ export async function POST(request: Request) {
         .order("position");
 
       const sonrakiPozisyon = (mevcut ?? []).length;
+      const sonParca = parcaNo === toplamParca - 1;
+      const soruSiniri = parcaSoruSiniri(sure);
+
+      // Yarım kalan oturum tamamlanırken biten parçalar yeniden üretilmesin:
+      // her parça denetim özetine kendi numarasıyla yazılıyor.
+      const bitenParcalar = ((oturum.denetim as Partial<DenetimOzetiKaydi> | null)?.adimlar ?? [])
+        .filter((a) => a.adim === "coktan" && typeof a.parca === "number")
+        .map((a) => a.parca as number);
+      if (bitenParcalar.includes(parcaNo)) {
+        if (sonParca) await supabase.from("ders_sessions").update({ status: "hazir" }).eq("id", sessionId);
+        return NextResponse.json({ sessionId, soruSayisi: sonrakiPozisyon, coktanSayisi: 0, parca: parcaNo, parcaSayisi: toplamParca, son: sonParca, atlandi: true });
+      }
+      if (!parcaSegments.length) {
+        // Bu zaman aralığında altyazı yok (sessiz bölüm, kesik transkript) — parça boş geçilir
+        await denetimOzetiYaz(supabase, sessionId, { duzeltilen: 0, elenen: 0, kayitlar: [] },
+          { adim: "coktan", parca: parcaNo, parcaSayisi: toplamParca, uretilen: 0, hedef: 0, nihai: 0, gecisler: [], kayitlar: [] }, true);
+        if (sonParca) await supabase.from("ders_sessions").update({ status: "hazir" }).eq("id", sessionId);
+        return NextResponse.json({ sessionId, soruSayisi: sonrakiPozisyon, coktanSayisi: 0, parca: parcaNo, parcaSayisi: toplamParca, son: sonParca });
+      }
 
       const {
         veri: uretilen,
@@ -839,7 +877,7 @@ export async function POST(request: Request) {
       } = await chatJsonOlculu<{
         coktan_secmeli?: UretilenCoktan[];
       }>({
-        mesajlar: mesajlar(coktanPrompt(hedef.coktan, (oturum.topics as string[]) ?? [])),
+        mesajlar: mesajlar(coktanPrompt(soruSiniri, (oturum.topics as string[]) ?? [], toplamParca > 1 ? (oturum.summary as string | null) : null)),
         maxTokens: 32000,
       });
 
@@ -882,7 +920,8 @@ export async function POST(request: Request) {
       const gecis2 = await denetimCalistir("olgu", SORU_OLGU_DENETIMI, coktan.map(girdi));
       coktan = coktanUygula(coktan, "olgu", gecis2.bulgular, ozet, anahtariDuzeltilen);
 
-      coktan = coktan.slice(0, hedef.coktan);
+      // Üst sınır kodda da: prompt'a güvenilmez, model taşarsa en baştakiler kalır
+      coktan = coktan.slice(0, soruSiniri);
       if (ozet.kayitlar.length) {
         console.warn("[ders] denetim (çoktan seçmeli):", ozet.kayitlar.map(logSatiri));
       }
@@ -900,9 +939,11 @@ export async function POST(request: Request) {
         gecis2.gecis.valf;
       const coktanAdimi: DenetimAdimi = {
         adim: "coktan",
+        parca: parcaNo,
+        parcaSayisi: toplamParca,
         uretilen: dogrulama.uretilen,
         bicimElenen: dogrulama.bicimElenen,
-        hedef: hedef.coktan,
+        hedef: soruSiniri,
         nihai: coktan.length,
         uretimSn: uretimOlcum.sn,
         uretimGirdiToken: uretimOlcum.girdiToken,
@@ -932,6 +973,12 @@ export async function POST(request: Request) {
       }
 
       const toplam = sonrakiPozisyon + coktan.length;
+      await denetimOzetiYaz(supabase, sessionId, ozet, coktanAdimi, true);
+
+      // Son parça değilse oturum "hazirlaniyor" kalır; istemci sonraki parçayı ister
+      if (!sonParca) {
+        return NextResponse.json({ sessionId, soruSayisi: toplam, coktanSayisi: coktan.length, parca: parcaNo, parcaSayisi: toplamParca, son: false });
+      }
 
       if (toplam < EN_AZ_SORU) {
         await supabase.from("ders_sessions").delete().eq("id", sessionId);
@@ -942,9 +989,8 @@ export async function POST(request: Request) {
       }
 
       await supabase.from("ders_sessions").update({ status: "hazir" }).eq("id", sessionId);
-      await denetimOzetiYaz(supabase, sessionId, ozet, coktanAdimi, true);
 
-      return NextResponse.json({ sessionId, soruSayisi: toplam, coktanSayisi: coktan.length });
+      return NextResponse.json({ sessionId, soruSayisi: toplam, coktanSayisi: coktan.length, parca: parcaNo, parcaSayisi: toplamParca, son: true });
     }
 
     return NextResponse.json({ hata: "Geçersiz adım." }, { status: 400 });

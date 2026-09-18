@@ -176,6 +176,10 @@ export interface DenetimGecisi {
 export interface DenetimAdimi {
   /** "acik" yalnızca eski oturumlarda: açık uçlu üretimi kapatıldı */
   adim: "cozumleme" | "acik" | "coktan" | "not";
+  /** 0 = hedef yok (parçalı üretimde sayı serbest); eski oturumlarda üretim hedefi */
+  /** Parçalı üretimde hangi parça (0'dan) — yarım kalan oturumu tamamlarken bitenler atlanır */
+  parca?: number;
+  parcaSayisi?: number;
   /** Modelin döndürdüğü ham öğe sayısı */
   uretilen: number;
   /** Biçim şartına takılanların sebep kırılımı */
@@ -227,26 +231,54 @@ export function hamKirp(metin: string): string {
 
 // --- Sabitler ---------------------------------------------------------------
 
-/**
- * Soru sayısı sabit değil, dersin uzunluğuna göre hesaplanıyor: kabaca her üç
- * dakikalık anlatım için bir soru, 8 ile 26 arasında sıkıştırılmış.
- *
- * Hepsi çoktan seçmeli. Eskiden %20'si açık uçluydu; 2026-09-16'da açık uçlu
- * üretimi kapatıldı — ÖSYM'nin biçimi çoktan seçmeli, ablam da yalnızca onu
- * çözüyor. Eski derslerde kalan açık uçlular veritabanında duruyor ama hiçbir
- * ekranda ve havuzda görünmüyor (kind = 'coktan' süzgeci).
- *
- * Bu bir ÜST SINIR: ders bu kadar soruyu taşımıyorsa model daha az üretir,
- * doğrulama katmanı da fazlasını kırpar.
- */
-export function hedefSoruSayisi(sureSaniye: number): { toplam: number; coktan: number } {
-  const dakika = Math.max(0, sureSaniye) / 60;
-  const toplam = Math.round(Math.min(26, Math.max(8, dakika / 3)));
-  return { toplam, coktan: toplam };
-}
-
 /** Bir oturumun anlamlı sayılması için gereken en az soru sayısı */
 export const EN_AZ_SORU = 4;
+
+/**
+ * Uzun ders PARÇALI üretilir: soru üretimi + denetimler tek istekte koşuyor ve
+ * süre transkriptle büyüyor. Ölçüm: 58 dk'lık ders 32k token, üretim 126 sn +
+ * geliştirme 97 sn + iki denetim 74 sn = 297 sn — Vercel'in 300 sn sınırının
+ * dibinde. 3 sa 12 dk'lık ders (82k token) hiç tamamlanmadı.
+ *
+ * Soru sayısında HEDEF yok, ÜST SINIR var: bölümün her 2 dakikası için en fazla
+ * 1 soru (20 dk'lık parça -> 10). Ölçüm (192 dk, sol, 30 dk'lık parçalar, sınırsız):
+ * parça başına 15-29 soru, dakikada ~0,7 — bir kısmı "her cümleye bir soru".
+ * Üst sınır modeli seçmeye zorluyor; eski sabit tavan (26) ise 3 saatlik dersi
+ * 25 soruda kesiyordu. 1/2 dk, KPSS'nin kendi yoğunluğuna yakın (30 soru ≈ 60 dk).
+ * Süre: 10 soruluk parça ~60-100 sn, Vercel'de öz-denetim açıkken de 300 sn'ye
+ * sığar. 20 dakikaya kadar ders tek parça.
+ */
+export const PARCA_SURESI_SN = 20 * 60;
+/** Bölümün her bu kadar saniyesi için en fazla 1 soru */
+export const SORU_BASINA_SN = 2 * 60;
+
+/** Parçanın soru üst sınırı: bindirme hariç uzunluğuna göre, en az 4 */
+export function parcaSoruSiniri(sureSaniye: number): number {
+  const n = parcaSayisi(sureSaniye);
+  return Math.max(4, Math.round(sureSaniye / n / SORU_BASINA_SN));
+}
+/**
+ * Parçalar bu kadar bindirmeli: sınırda bölünen konu (hoca 19'da açıp 22'de
+ * bitiriyor) en az bir parçada bütün görünsün. Aynı bölgeden iki parçanın aynı
+ * soruyu üretme riski var; 3 dakikalık pencerede düşük (137 soruluk ölçümde
+ * çift çıkmadı). 20 dk'lık parçada 5 dk bindirme %50 fazla token olurdu.
+ */
+export const PARCA_BINDIRME_SN = 3 * 60;
+
+/** Parça sayısı: 30 dakikalık dilimler, parçalar eşit uzunlukta */
+export function parcaSayisi(sureSaniye: number): number {
+  return Math.max(1, Math.ceil(Math.max(0, sureSaniye) / PARCA_SURESI_SN));
+}
+
+/** Parçanın zaman aralığı (sn); parçalar eşit uzunlukta, uçlarda bindirme */
+export function parcaAraligi(sureSaniye: number, parca: number): { bas: number; son: number } {
+  const n = parcaSayisi(sureSaniye);
+  const boy = sureSaniye / n;
+  return {
+    bas: Math.max(0, Math.floor(parca * boy) - PARCA_BINDIRME_SN),
+    son: Math.min(sureSaniye, Math.ceil((parca + 1) * boy) + PARCA_BINDIRME_SN),
+  };
+}
 
 /**
  * Kategoriler kapalı bir liste. Serbest bırakılsaydı model aynı dersi bir gün
@@ -540,6 +572,8 @@ export interface UretimIsi {
   mevcutDersId?: string | null;
   /** Ablam "yine de üret" dedi; mevcut ders kontrolü atlanıyor */
   zorla?: boolean;
+  /** Parçalı üretimde ilerleme metni ("2/4") */
+  ilerleme?: string;
 }
 
 /**

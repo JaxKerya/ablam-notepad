@@ -173,7 +173,7 @@ function AdimBlogu({ a }: { a: DenetimAdimi }) {
         <span className="text-[12.5px] font-medium text-white/85">{ADIM_ADI[a.adim] ?? a.adim}</span>
         <span className="text-[11.5px] text-white/45">
           {sayi(a.uretilen)} üretildi → {sayi(a.nihai)} kaldı
-          <span className="text-white/25"> (hedef {sayi(a.hedef)})</span>
+          {a.hedef > 0 && <span className="text-white/25"> (en fazla {sayi(a.hedef)})</span>}
         </span>
       </div>
 

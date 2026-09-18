@@ -467,10 +467,20 @@ iki adımda 101.515 giriş tokenı faturalandı, gönderilen metin ise ~21 bin t
 Supabase ücretsiz katman yeter (150 video/ay ≈ 7 MB transkript). Vercel'de aylık ~6 saat
 fonksiyon süresi oluşur; Hobby planının sınırını aşarsa Pro gerekebilir.
 
-**Ders uzunluğu ve süre tavanı:** çoktan seçmeli adımı soru sayısıyla birlikte uzuyor.
-`sol` ile 39 dakikalık derste 90 sn, 78 dakikalıkta tahminen ~200 sn — Vercel'in 300 sn
-tavanına rahat sığar. `sol-pro` ile aynı adım 162 sn'den başlar ve 78 dakikalık bir derste
-tavanı aşar.
+**Ders uzunluğu ve süre tavanı:** çoktan seçmeli adımı transkriptle birlikte uzuyor. Ölçüm
+(Sonnet 5, öz-denetim açık): 58 dakikalık derste üretim 126 sn + geliştirme 97 sn + iki denetim
+74 sn = 297 sn — Vercel'in 300 sn tavanının dibinde; 3 sa 12 dk'lık ders hiç tamamlanmadı.
+Bu yüzden üretim **parçalı**: istemci `coktan` adımını 20 dakikalık, 3 dk bindirmeli parçalar
+hâlinde sırayla ister (`parca=0..n-1`, `PARCA_SURESI_SN`); her parça dersin özetini bağlam olarak
+alır, sorular dersin her yerinden gelir. Biten parçalar denetim özetine yazılır; yarım kalan
+oturum "Tamamla" ile kaldığı parçadan sürer.
+
+**Soru sayısında hedef yok, üst sınır var:** bölümün her 2 dakikası için en fazla 1 soru
+(`SORU_BASINA_SN`; 20 dk'lık parça → 10, 3 saatlik ders → en fazla ~100). Eski sabit tavan
+(8–26) 3 saatlik dersi 25 soruda kesiyordu; sınırsız denemede (`sol`, 30 dk'lık parçalar) aynı
+ders **137 soru** verdi — dakikada ~0,7, bir kısmı "her cümleye bir soru". Üst sınır modeli
+seçmeye zorluyor ("en fazla N; sınav değeri en yüksek N şeyi sor"), kod da keser. Parça 20 dakika
+ki 10 soruluk istek Vercel'de öz-denetim açıkken de 300 sn'ye sığsın.
 ### İşaretlenen sorular
 
 Ablam bir soruyu 👎 ile işaretlediğinde `ders_questions.flagged` alanı `true` olur. Bu veri
@@ -492,6 +502,109 @@ içindeki üretim prompt'unu düzeltmek için kullanılmalı.
 `lib/ders.ts` içindeki `GUNLUK_URETIM_LIMITI` günde 40 ders ile sınırlar; sızan bir
 linkin faturayı şişirmesini engeller. API uçları ayrıca giriş kapısının verdiği
 imzalı çerezi arar (`lib/gate.ts`).
+
+## Ablam Kariyer — yapay zekâ destekli iş ilanı takibi (`/kariyer`)
+
+**Açılış anahtarı:** Vercel'de `NEXT_PUBLIC_KARIYER_ACIK=false` iken bölüm ablama kapalı — ana
+sayfada "Yakında" rozetiyle tıklanmaz durur, `/kariyer` yakında ekranı gösterir. Tarayıcı yine
+saat başı çalışır ve e-posta gönderir (bildirim adresi kimse ona), açıldığı gün liste dolu olur.
+Geliştiren kişi `/kariyer?onizleme=1` ile görür (tarayıcıda kalıcı). Açmak için değişkeni
+silip yeniden deploy etmek yeter.
+
+İş ilanlarını ablamın yerine sürekli tarar, profiline uyanları puanlar, uygun
+olanları e-postayla bildirir. Arayüz bu sitede (`/kariyer`), tarayıcı VPS'te
+(`worker/`), ikisi aynı Supabase'i paylaşır.
+
+### Kurulum
+
+**1.** Supabase SQL Editor'da `db/kariyer.sql` dosyasının tamamını çalıştırın
+(`kariyer_profil`, `kariyer_ilanlar`, `kariyer_eslesmeler`, `kariyer_taramalar`).
+Tablolar daha önce `is_*` adıyla kurulduysa onun yerine `db/kariyer-yeniden-adlandir.sql`
+çalıştırın — veri kaybolmadan yeniden adlandırır.
+
+**2.** `.env.local`'a `RESEND_API_KEY` ekleyin (`.env.local.example`'a bakın).
+Resend hesabını bildirimi alacak adresle açın: alan adı doğrulanmadan yalnızca o adrese gönderir.
+
+**3.** Sitede `/kariyer` → Profil, üç adım, tek kayıt:
+   1. ablam kendini kendi cümleleriyle anlatır, "Profili çıkar" der (kaydetmez);
+   2. sistem iki katman gösterir — metne sadık profil ("seni şöyle anladım", düzeltilebilir)
+      ve "bunlar da uyabilir" önerileri (yakın işler, tıklayınca profile girer, tıklanmayan
+      yok sayılır); arama terimleri açılır bölümde;
+   3. şartlar — şehirler (birden fazla; boş = her yer), uzaktan, maaş, e-posta.
+   "Kaydet" hepsini birlikte yazar; kaydedilmemiş değişiklik varsa düğmenin üstünde yazar.
+   Tablolar eski tek `sehir` kolonuyla kurulduysa `db/kariyer-sehirler.sql` bir kez çalıştırılır.
+
+**4.** VPS (Ubuntu 22.04+, root SSH). Kod `/opt/ablam-kariyer`'de, `kariyer` kullanıcısıyla
+systemd servisi olarak koşar; dosyalar `deploy/` altında.
+
+```bash
+# yerelde, proje kökünden — kodu gönderir (.env.local yalnızca sunucuda yoksa gider)
+deploy/vps-gonder.sh root@SUNUCU ~/.ssh/anahtar
+# sunucuda, ilk kez — Node 22, npm ci, Playwright Chromium (+sistem kütüphaneleri), servis
+bash /opt/ablam-kariyer/deploy/vps-kur.sh
+systemctl restart ablam-kariyer && journalctl -u ablam-kariyer -f
+```
+
+Sonraki güncellemeler yalnızca `vps-gonder.sh` (npm ci + servis yeniden başlatma dahil).
+Sunucudaki `.env.local`'da `CAREERJET_USER_IP` sunucunun IP'si olmalı ve o IP Careerjet
+yayıncı panelinde yetkili olmalı. Disk: node_modules + Chromium ≈ 2 GB.
+
+### Nasıl çalışıyor
+
+Her koşu (varsayılan saat başı):
+
+1. **Profil** okunur; arama terimleri ve şehir buradan gelir.
+2. **Kaynaklar** sırayla taranır (`worker/kaynaklar/`); biri düşerse diğerleri koşar.
+   Yalnızca belirli kaynakları koşturmak için `KAYNAKLAR=ilangov,linkedin npm run kariyer:tara`.
+
+   | Kaynak | Ne taşıyor | Nasıl | Anahtar |
+   |---|---|---|---|
+   | **İŞKUR** `iskur` | özel sektör, işyeri adı gizli | Playwright (ASP.NET postback) | — |
+   | **ilan.gov.tr** `ilangov` | kamu personel alımları (DPB, YÖK, belediye) — Resmî Gazete ile aynı gün | JSON API, şehir filtresi | — |
+   | **Kariyer Kapısı** `kariyerkapisi` | başvurusu kariyerkapisi.gov.tr'den alınan kamu ilanları; pozisyon pozisyon (unvan, KPSS şartı, il kontenjanı) | JSON API; ilan kontenjan illerine göre elenir | — |
+   | **LinkedIn** `linkedin` | özel sektör, özellikle 3D/oyun/tasarım | girişsiz "guest" uç noktası, düz HTTP; **günde 2 kez** (`LINKEDIN_ARALIK_DK`) | — |
+   | **Jooble** `jooble` | toplayıcı (kariyer.net, yenibiris vb. dolaylı) | resmî REST API | `JOOBLE_API_KEY` — tr.jooble.org/api/about formu |
+   | **Careerjet** `careerjet` | toplayıcı, bu profil için ince | resmî REST API | `CAREERJET_API_KEY` — careerjet.com.tr/partners/api yayıncı hesabı |
+
+   Anahtarı olmayan kaynak sessizce atlanır (loga düşer). LinkedIn kullanım
+   şartlarına aykırı; kişisel, düşük hacimli kullanım — engellenirse 3 koşu sonra
+   uyarı e-postası gelir. Değmeyenler: memurlar.net (haber sitesi, RSS yok), Google Jobs
+   tabanlı her şey (SerpAPI, JSearch — Türkiye yok), kariyer.net (PerimeterX bot koruması:
+   düz HTTP, sunucu ve ev IP'sinden headless Chrome dahil 403; atlatma yapılmıyor — tek
+   meşru yol e-posta uyarıları + Resend inbound, kurulmadı).
+   ilan.gov.tr sunucusu TLS ara sertifikasını göndermediği için DigiCert'in herkese
+   açık ara sertifikası `worker/sertifikalar/` altında; 2027-11'de yenilenmeli.
+3. **Tekilleştirme**: `parmakIzi` (başlık+şirket+şehir; şirket yoksa kaynak+kimlik).
+   Görülmüş ilan bir daha değerlendirilmez.
+4. **Sert filtre** (`sertFiltre`): ilanın şehri listedekilerden hiçbirine uymuyorsa ve ilan
+   uzaktan değilse model çağrılmaz. Bilerek dar — yanlış eleme yanlış bildirimden kötü.
+   Kaynaklar her şehri ayrı arar (İŞKUR formu ve ilan.gov.tr API'si tek şehir alıyor).
+5. **Model** (`degerlendirmePrompt`): 0-100 puan + tek cümle gerekçe. Ölçek bildirim
+   eşiklerine bağlı: 75+ anında e-posta, 50-74 akşamki tek özet (18'den sonraki ilk koşu, günde bir), 25-49 yalnızca
+   listede, altı elenir. Ablamın "ilgilenmedim" dedikleri sonraki değerlendirmelere
+   olumsuz örnek olarak girer. Açıklamasız ilanda tavan 80.
+6. **Bildirim** (`worker/bildir.ts`): e-posta; son başvuru tarihi yazılır (3 gün ve altı
+   kırmızı), süresi geçmiş ilan bildirilmez. Bir kaynak arka arkaya 3 koşu düşerse uyarı
+   e-postası — sessiz kırılma yok.
+7. **Korumalar** (`worker/degerlendir.ts`): günlük model harcaması `GUNLUK_MALIYET_USD`
+   (varsayılan $1) tavanını aşınca ilanlar kaydedilir ama puanlama ertesi güne kalır. İŞKUR
+   6 saatte bir (`ISKUR_ARALIK_DK`). Kaynaklar arası "benzer başlık" tekilleştirmesi denendi
+   ve kaldırıldı: yanlış pozitif verdi, gizlenen ilan bir daha görülmüyor; aynı ilanın iki
+   kaynaktan iki kez gelmesi kabul edilen bedel.
+8. **Nabız** (`app/api/kariyer/nabiz`, `vercel.json`): sunucudan bağımsız kontrol. Vercel cron
+   günde bir çağırır; son taramanın üstünden 6 saat geçtiyse e-posta (günde en fazla bir).
+   Vercel'de `CRON_SECRET` ve `RESEND_API_KEY` tanımlı olmalı. Hobby planında cron günde bir
+   koşar; Pro'da `vercel.json`'daki zamanlama saatliğe çekilebilir. Arayüzdeki durum şeridi de
+   3 saatten eski taramayı kırmızı gösterir; "N kaynak çalışıyor" hapı kaynak başına son
+   başarılı taramayı, son hatayı ve gecikmeyi açar.
+9. **Profil değişince**: şehir/uzaktan değişirse son 30 günün filtre elemeleri kendiliğinden
+   sıfırlanır (bedava, yeniden süzülür). Modelle puanlanmışlar için Profil sekmesinde "Son 7
+   günü yeni profile göre yeniden puanla" (paralı, onaylı; geri bildirim verilenler korunur).
+   Model, ilan metninde açık son başvuru tarihi görürse (`sonBasvuru`) kaynağın vermediği
+   tarihi doldurur — ilan.gov.tr için.
+
+Ölçüldü (uydurma bir profil, 6 ilan): profil çıkarma metne %100 sadık (uydurulmuş
+madde yok), kalibrasyon 6/6 beklenen aralıkta, değerlendirme başına ~$0,003.
 
 ## Deployment (Vercel)
 
@@ -544,20 +657,3 @@ ablam-notepad/
 - **Pin notes**: Pin important notes to the top of the sidebar
 - **Password protection**: Lock notes with a password (SHA-256 hashed)
 - **Dark theme**: Clean, modern, distraction-free UI
-
-## Ablam İş Fırsatları — yeni bölüm
-
-`/is` adresinde kişisel profil, çok kaynaklı ilan araması, açıklamalı AI uygunluk değerlendirmesi, e-posta bildirimleri ve başvuru takibi bulunur. Ana sayfadan erişilir; mevcut tema korunur.
-
-**İlk kurulum:** [docs/JOBS_SETUP.md](docs/JOBS_SETUP.md). Supabase'de [db/jobs.sql](db/jobs.sql) kurulmalı; sunucu anahtarı, ilan sağlayıcıları, e-posta ve zamanlayıcı bağlanmalıdır. Canlı anahtarlar olmadan uygulama tarama yapıldığını iddia etmez.
-
-**Türkiye kaynakları ve mevcut VPS:** [Exa araştırma raporu](exa-results/turkiye-is-kaynaklari-2026-09-18/REPORT.md). Doğrulanmış erişim yolları, önerilen bağlantılar ve henüz geliştirilmemiş entegrasyonlar ayrı belirtilmiştir. Jooble için Türkiye portalından alınan anahtar gerekir.
-
-**VPS zamanlayıcısı:** [Kurulum ve mevcut durum](docs/VPS_WORKER.md). GitHub → Vercel yayın akışını koruyan Python/systemd seçeneği; canlı tarama için önce uygulama ve sağlayıcı kurulumu tamamlanmalıdır.
-
-- Sunucu zamanlayıcısı: `npm run jobs:worker` (alternatif hosting cron örneği `deploy/` içinde).
-- Sistem testleri: `npm run test:jobs`.
-- Tarayıcı testleri: `npm run test:jobs:ui`.
-- Site içi yönetici rehberi: `/is/kurulum`.
-
----

@@ -45,6 +45,13 @@ const DENETIM_MODELI = process.env.AI_AUDIT_MODEL ?? "openai/gpt-5.6-luna";
 const GELISTIRME_MODELI = process.env.AI_REFINE_MODEL?.trim() ?? "";
 
 /**
+ * Ablam Kariyer profil çıkarma. Nadir çağrı (profil bir kez kurulur, ara sıra
+ * yenilenir) ama sonucu her ilanın puanlamasına giriyor — burada pahalı model
+ * ödenebilir. Boşsa üretim modeli.
+ */
+const PROFIL_MODELI = process.env.AI_PROFIL_MODEL?.trim() ?? "";
+
+/**
  * Düşünme derinliği (low | medium | high | xhigh). Yalnızca ÜRETİM ve ÖZ-DENETİM
  * rollerine gidiyor; denetim (Luna) ve diğerleri sağlayıcı varsayılanında.
  * Boşsa parametre hiç gönderilmez. OpenRouter bunu `reasoning.effort` olarak
@@ -121,7 +128,9 @@ function rolModeli(rol: ChatSecenekleri["rol"]): string {
       ? DENETIM_MODELI
       : rol === "gelistirme"
         ? GELISTIRME_MODELI || URETIM_MODELI
-        : URETIM_MODELI;
+        : rol === "profil"
+          ? PROFIL_MODELI || URETIM_MODELI
+          : URETIM_MODELI;
 }
 
 /** Yeniden denemeye değer geçici hata */
@@ -159,7 +168,7 @@ interface ChatSecenekleri {
   maxTokens?: number;
   timeoutMs?: number;
   /** Hangi işin modeli kullanılsın — her rolün kendi env değişkeni var */
-  rol?: "uretim" | "degerlendirme" | "denetim" | "gelistirme";
+  rol?: "uretim" | "degerlendirme" | "denetim" | "gelistirme" | "profil";
 }
 
 async function chatOnce({

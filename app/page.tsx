@@ -21,12 +21,15 @@ import {
   FolderOpen,
   FolderPlus,
   ChevronDown,
+  ChevronRight,
   MoreHorizontal,
   Pencil,
   Plus,
   Clapperboard,
   GraduationCap,
+  Briefcase,
 } from "lucide-react";
+import { KARIYER_ACIK } from "@/lib/kariyer";
 import { supabase } from "@/lib/supabase-browser";
 import { verifyPassword } from "@/lib/crypto";
 import { DynamicIcon } from "@/components/IconPicker";
@@ -692,11 +695,10 @@ export default function Home() {
         </button>
 
         {/*
-          Diğer iki uygulama. Önceden sağ üst köşede üst üste iki hap olarak
-          duruyorlardı: farklı genişlikte oldukları için kenarları hizasızdı ve
-          kazara birikmiş gibi görünüyorlardı. Burada eşit ağırlıkta, hizalı ve
-          ayrı bir bölüm olarak duruyorlar — köşe iliştirmesi değil, gerçek
-          giriş noktası.
+          Diğer uygulamalar. Üç eşit kart yan yana sığmıyordu: "Ablam Sheets"
+          iki satıra kırılıyor, kartlar farklı yükseklikte ve sıkışık duruyordu.
+          Alt alta liste: her satırda ikon ve ad. Açıklama yok — ablam üçünü de
+          biliyor, satır altı metin yalnızca kalabalık ediyordu.
         */}
         <div
           className="animate-slide-up mt-9 flex w-full max-w-sm flex-col items-center gap-3"
@@ -710,23 +712,38 @@ export default function Home() {
             <span className="h-px flex-1 bg-white/[0.07]" />
           </div>
 
-          <div className="grid w-full grid-cols-2 gap-2">
-            <Link
-              href="/sheets"
-              className="glass flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2.5 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85"
-            >
-              <Clapperboard size={14} className="text-[var(--accent)]/80" />
-              <span>Ablam Sheets</span>
-            </Link>
-
-            <Link
-              href="/ders"
-              className="glass flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2.5 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85"
-            >
-              <GraduationCap size={14} className="text-[var(--accent)]/80" />
-              <span>Ablam Ders</span>
-            </Link>
-            {/* İş Fırsatları geçici olarak ana ekranda gizli; /is adresinden erişilebilir. */}
+          <div className="glass w-full divide-y divide-[var(--border)] overflow-hidden rounded-xl border border-[var(--border)]">
+            {[
+              { href: "/sheets", Icon: Clapperboard, ad: "Ablam Sheets", acik: true },
+              { href: "/ders", Icon: GraduationCap, ad: "Ablam Ders", acik: true },
+              { href: "/kariyer", Icon: Briefcase, ad: "Ablam Kariyer", acik: KARIYER_ACIK },
+            ].map(({ href, Icon, ad, acik }) =>
+              acik ? (
+                <Link
+                  key={href}
+                  href={href}
+                  className="group flex items-center gap-3 px-3.5 py-2.5 transition-colors duration-200 hover:bg-white/[0.05]"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]/80 transition-colors duration-200 group-hover:bg-[var(--accent)]/15 group-hover:text-[var(--accent)]">
+                    <Icon size={15} />
+                  </span>
+                  <span className="flex-1 text-[13px] font-medium text-white/70 transition-colors duration-200 group-hover:text-white/90">{ad}</span>
+                  <ChevronRight size={14} className="shrink-0 text-white/20 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-white/50" />
+                </Link>
+              ) : (
+                // Henüz açılmamış bölüm: tıklanmaz, sönük, "yakında" rozeti. Satır
+                // listede duruyor ki ablam bir şeyin geldiğini bilsin.
+                <div key={href} className="flex items-center gap-3 px-3.5 py-2.5 opacity-60" aria-disabled="true">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.05] text-white/35">
+                    <Icon size={15} />
+                  </span>
+                  <span className="flex-1 text-[13px] font-medium text-white/45">{ad}</span>
+                  <span className="rounded-full border border-[var(--accent)]/25 bg-[var(--accent)]/10 px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-wider text-[var(--accent-light)]/80">
+                    Yakında
+                  </span>
+                </div>
+              )
+            )}
           </div>
         </div>
       </div>
