@@ -157,7 +157,14 @@ export function parseJsonLoose<T = unknown>(text: string): T {
     const bas = t.indexOf("{");
     const son = t.lastIndexOf("}");
     if (bas !== -1 && son > bas) {
-      return JSON.parse(t.slice(bas, son + 1)) as T;
+      // Burası da bozuksa AiHatasi fırlat: chatJsonOlculu yalnızca AiHatasi'nde
+      // "düz JSON gönder" diye ikinci deneme yapıyor; çıplak SyntaxError kaçıp
+      // yeniden denemeyi atlatıyordu (denetim bulgusu).
+      try {
+        return JSON.parse(t.slice(bas, son + 1)) as T;
+      } catch (e) {
+        throw new AiHatasi(`Model çıktısı JSON değil: ${(e as Error).message}`);
+      }
     }
     throw new AiHatasi("Model geçerli JSON döndürmedi.");
   }

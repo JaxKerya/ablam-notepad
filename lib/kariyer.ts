@@ -201,11 +201,6 @@ export interface FiltreProfili {
   /** Boş = her yer. Birden fazla olabilir; ilan bunlardan birine uyarsa geçer. */
   sehirler: string[];
   uzaktan_olur: boolean;
-  /**
-   * TL/ay. Sert filtre DEĞİL — ilanların çoğu maaş yazmıyor, yazmayanı elemek
-   * yanlış olurdu. Modele şart olarak gider: yazıyorsa ve altındaysa düşük puan.
-   */
-  asgari_maas: number | null;
 }
 
 /** Modelin "bunlar da uyabilir" dediği yakın işler — ablam tıklayıp ekler, eklemezse yok sayılır */

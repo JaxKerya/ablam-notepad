@@ -157,6 +157,12 @@ export interface DenetimGecisi {
   katman: "transkript" | "olgu" | "gelistirme";
   bulgu: number;
   valf: boolean;
+  /**
+   * Denetim çağrısının kendisi düştü (sağlayıcı hatası, zaman aşımı). "0 bulgu"
+   * ile "denetim yapılamadı" ayrılsın diye — eski kayıtlarda alan yok, 0 bulgu
+   * temiz geçiş sayılıyordu (denetim bulgusu).
+   */
+  hata?: string;
   sn: number;
   girdiToken: number;
   ciktiToken: number;

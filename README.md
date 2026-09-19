@@ -172,10 +172,10 @@ tabloları oluşturur: `ders_videos` (video başına bir kez çekilen transkript
 ```
 AI_BASE_URL=https://openrouter.ai/api/v1
 AI_API_KEY=...
-AI_MODEL=openai/gpt-5.6-sol          # soru üretimi
+AI_MODEL=openai/gpt-5.6-sol          # soru üretimi (Kariyer'de ilan puanlama AI_GRADE_MODEL)
 AI_REFINE_MODEL=                     # öz-denetim (boş = kapalı; bkz. aşağıda)
 AI_EFFORT=                           # düşünme derinliği low|medium|high|xhigh (boş = varsayılan)
-AI_GRADE_MODEL=openai/gpt-5.6-sol    # (artık kullanılmıyor — açık uçlu kapatıldı)
+AI_GRADE_MODEL=openai/gpt-5.6-sol    # Ders'te kullanılmıyor (açık uçlu kapatıldı); Kariyer ilan puanlama
 AI_AUDIT_MODEL=openai/gpt-5.6-luna   # cevap anahtarı denetimi (ucuz model yeter)
 SUPADATA_API_KEY=...
 SITE_GATE_SECRET=rastgele-uzun-bir-metin
@@ -276,10 +276,12 @@ uygulama çalışmaya devam eder, dersler yalnızca ekleme sırasına göre list
    - Ders o konuyu hiç anlatmamış (`yok`). Cevabı düzeltmek adaletsiz soruyu adil yapmaz.
    - Çoktan seçmelide düzeltilmiş şık başka bir şıkla çakışıyor; soru iki doğru cevaplı olur.
 
-   Çeldiriciler denetime hiç gönderilmez — onların yanlış olması zaten beklenen şeydir,
-   göndermek yanlış alarm üretir. Denetim soruların yarısından fazlasını işaretlerse hatalı
-   olanın denetim olduğu varsayılıp hiçbirine dokunulmaz; denetimin kendisi düşerse üretim
-   engellenmez.
+   Şıkların TAMAMI ve işaretli olan denetime gider (ilk sürümde çeldiriciler gönderilmiyordu;
+   o zaman denetim yanlış anahtarlanmış soruyu göremiyordu). Aynı soruya birden fazla bulgu
+   gelebilir, hepsi sırayla uygulanır; anahtar değişince eski şıkkı savunan açıklama düşürülür.
+   Denetim soruların yarısından fazlasını işaretlerse hatalı olanın denetim olduğu varsayılıp
+   hiçbirine dokunulmaz (valf); denetimin kendisi düşerse üretim engellenmez ama geçiş "hata"
+   olarak kaydedilir ve aiview'de "DENETİM DÜŞTÜ" görünür — "0 bulgu" ile karışmaz.
 
    Denetimin ne yaptığı `ders_sessions.denetim` alanına yazılır ve ders sonuç ekranında
    görünür ("Bu derste denetim 2 cevabı düzeltti"). Sunucu loglarında kalsa kimse bakmazdı.
@@ -499,9 +501,10 @@ içindeki üretim prompt'unu düzeltmek için kullanılmalı.
 
 ### Maliyet ve sınırlar
 
-`lib/ders.ts` içindeki `GUNLUK_URETIM_LIMITI` günde 40 ders ile sınırlar; sızan bir
-linkin faturayı şişirmesini engeller. API uçları ayrıca giriş kapısının verdiği
-imzalı çerezi arar (`lib/gate.ts`).
+`lib/ders.ts` içindeki `GUNLUK_URETIM_LIMITI` **kapalı (0)** — 40'lık sınır ablamın toplu
+çalışmasını kesiyordu. Faturayı sınırlayan şey giriş kapısının imzalı çerezi (`lib/gate.ts`);
+kapı kelimesi istemci paketinde olduğu için bu kararlı birine karşı mutlak engel değil, bilinçli
+kabul edilmiş risk.
 
 ## Ablam Kariyer — yapay zekâ destekli iş ilanı takibi (`/kariyer`)
 
@@ -530,7 +533,7 @@ Resend hesabını bildirimi alacak adresle açın: alan adı doğrulanmadan yaln
    2. sistem iki katman gösterir — metne sadık profil ("seni şöyle anladım", düzeltilebilir)
       ve "bunlar da uyabilir" önerileri (yakın işler, tıklayınca profile girer, tıklanmayan
       yok sayılır); arama terimleri açılır bölümde;
-   3. şartlar — şehirler (birden fazla; boş = her yer), uzaktan, maaş, e-posta.
+   3. şartlar — şehirler (birden fazla; boş = her yer), uzaktan, e-posta.
    "Kaydet" hepsini birlikte yazar; kaydedilmemiş değişiklik varsa düğmenin üstünde yazar.
    Tablolar eski tek `sehir` kolonuyla kurulduysa `db/kariyer-sehirler.sql` bir kez çalıştırılır.
 
@@ -559,12 +562,12 @@ Her koşu (varsayılan saat başı):
 
    | Kaynak | Ne taşıyor | Nasıl | Anahtar |
    |---|---|---|---|
-   | **İŞKUR** `iskur` | özel sektör, işyeri adı gizli | Playwright (ASP.NET postback) | — |
+   | **İŞKUR** `iskur` | özel sektör, işyeri adı gizli | Playwright (ASP.NET postback), terim×il başına 5 sayfa, 6 saatte bir | — |
    | **ilan.gov.tr** `ilangov` | kamu personel alımları (DPB, YÖK, belediye) — Resmî Gazete ile aynı gün | JSON API, şehir filtresi | — |
    | **Kariyer Kapısı** `kariyerkapisi` | başvurusu kariyerkapisi.gov.tr'den alınan kamu ilanları; pozisyon pozisyon (unvan, KPSS şartı, il kontenjanı) | JSON API; ilan kontenjan illerine göre elenir | — |
-   | **LinkedIn** `linkedin` | özel sektör, özellikle 3D/oyun/tasarım | girişsiz "guest" uç noktası, düz HTTP; **günde 2 kez** (`LINKEDIN_ARALIK_DK`) | — |
-   | **Jooble** `jooble` | toplayıcı (kariyer.net, yenibiris vb. dolaylı) | resmî REST API | `JOOBLE_API_KEY` — tr.jooble.org/api/about formu |
-   | **Careerjet** `careerjet` | toplayıcı, bu profil için ince | resmî REST API | `CAREERJET_API_KEY` — careerjet.com.tr/partners/api yayıncı hesabı |
+   | **LinkedIn** `linkedin` | özel sektör, özellikle 3D/oyun/tasarım | girişsiz "guest" uç noktası, düz HTTP; terim×şehir başına 4 sayfa, **8 saatte bir** (`LINKEDIN_ARALIK_DK`) | — |
+   | **Jooble** `jooble` | toplayıcı (kariyer.net, yenibiris vb. dolaylı) | resmî REST API, terim×şehir başına 3 sayfa | `JOOBLE_API_KEY` — tr.jooble.org/api/about formu |
+   | **Careerjet** `careerjet` | toplayıcı, bu profil için ince | resmî REST API, sorgu başına 100 | `CAREERJET_API_KEY` — careerjet.com.tr/partners/api yayıncı hesabı |
 
    Anahtarı olmayan kaynak sessizce atlanır (loga düşer). LinkedIn kullanım
    şartlarına aykırı; kişisel, düşük hacimli kullanım — engellenirse 3 koşu sonra

@@ -55,12 +55,39 @@ async function bugunkuHarcama(db: SupabaseClient): Promise<number> {
   const gun = new Date().toISOString().slice(0, 10);
   const { data, error } = await db
     .from("kariyer_eslesmeler")
-    .select("olcum->maliyetUsd")
+    .select("maliyetUsd:olcum->maliyetUsd, onceki:olcum->oncekiMaliyetUsd")
     .gte("degerlendirildi", `${gun}T00:00:00Z`)
     .limit(2000);
   // Okunamıyorsa "sıfır harcandı" değil "bilinmiyor": tavan dolu say, toplama sürsün
   if (error) return Number.POSITIVE_INFINITY;
-  return (data ?? []).reduce((t, r) => t + (Number((r as { maliyetUsd?: unknown }).maliyetUsd) || 0), 0);
+  // Yeniden puanlanan satır eski ücretini de taşır; ikisi birden sayılır
+  return (data ?? []).reduce(
+    (t, r) => t + (Number((r as { maliyetUsd?: unknown }).maliyetUsd) || 0) + (Number((r as { onceki?: unknown }).onceki) || 0),
+    0
+  );
+}
+
+/**
+ * Yeniden puanlanacak ilanlar: eşleşmesi "olcum.yeniden = true" ile
+ * işaretlenmiş olanlar (app/api/kariyer/yeniden-degerlendir). Satır silinmiyor:
+ * bildirildi korunuyor (aynı ilan ikinci kez e-postalanmasın), eski ücret
+ * yeni ölçüme "oncekiMaliyetUsd" olarak taşınıyor (inceleme bulgusu).
+ */
+async function yenidenPuanlanacaklar(db: SupabaseClient, sinir: number) {
+  const { data } = await db
+    .from("kariyer_eslesmeler")
+    .select("ilan_id, olcum, kariyer_ilanlar(id, kaynak, kaynak_id, baslik, sirket, sehir, aciklama, url, son_basvuru)")
+    .eq("olcum->>yeniden", "true")
+    .limit(sinir);
+  return (data ?? []).flatMap((r) => {
+    const i = (Array.isArray(r.kariyer_ilanlar) ? r.kariyer_ilanlar[0] : r.kariyer_ilanlar) as {
+      id: string; kaynak: string; kaynak_id: string | null; baslik: string; sirket: string | null;
+      sehir: string | null; aciklama: string | null; url: string | null; son_basvuru: string | null;
+    } | null;
+    if (!i) return [];
+    const o = (r.olcum ?? {}) as { maliyetUsd?: number; oncekiMaliyetUsd?: number };
+    return [{ ilan: i, oncekiMaliyetUsd: (Number(o.maliyetUsd) || 0) + (Number(o.oncekiMaliyetUsd) || 0) }];
+  });
 }
 
 interface ModelCevabi {
@@ -82,12 +109,15 @@ function makulTarih(v: unknown): string | null {
   const t = Date.parse(v + "T12:00:00Z");
   if (Number.isNaN(t)) return null;
   const gun = (t - Date.now()) / 86_400_000;
-  return gun >= -1 && gun <= 730 ? v : null;
+  // Geçmiş tarih de saklanır (bir yıla kadar): süresi geçmiş ilan "tarih
+  // bilinmiyor" olup filtreden geçmesin (inceleme bulgusu). İki yıldan ileri = uydurma.
+  return gun >= -365 && gun <= 730 ? v : null;
 }
 
 const metin = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+// Etiketler: en fazla 3'er, 60 karakteri geçen cümleye dönmüş madde atılır (prompt'ta kural var)
 const dizi = (v: unknown) =>
-  Array.isArray(v) ? v.map(metin).filter(Boolean).slice(0, 6) : [];
+  Array.isArray(v) ? v.map(metin).filter((x) => x && x.length <= 60).slice(0, 3) : [];
 
 /**
  * Ablamın "ilgilenmedim" dedikleri — modele olumsuz örnek. En yeni 12 tanesi
@@ -124,7 +154,9 @@ async function puanlaVeKaydet(
   filtre: FiltreProfili,
   ozet: DegerlendirmeOzeti,
   log: (m: string) => void,
-  baglam: { kalanUsd: number }
+  baglam: { kalanUsd: number },
+  /** Yeniden puanlamada önceki ölçümün ücreti — günlük tavan hesabı bunu da sayar */
+  oncekiMaliyetUsd = 0
 ) {
   const elenme = sertFiltre(ham, filtre);
   if (elenme) {
@@ -174,7 +206,11 @@ async function puanlaVeKaydet(
         uyusan: dizi(veri.uyusan),
         uyusmayan: dizi(veri.uyusmayan),
         karar,
-        olcum,
+        // degerlendirildi açıkça: upsert güncellemede varsayılanı yenilemiyor,
+        // yeniden puanlanan satır "bugün" sayılmazdı (günlük tavan + sıralama)
+        degerlendirildi: new Date().toISOString(),
+        olcum: { ...olcum, ...(oncekiMaliyetUsd ? { oncekiMaliyetUsd } : {}) },
+        // bildirildi'ye DOKUNULMUYOR: daha önce e-postalanmışsa yine gönderilmez
       },
       { onConflict: "ilan_id" }
     );
@@ -267,13 +303,16 @@ export async function yarimKalanlariTamamla(
     .is("kariyer_eslesmeler", null)
     .order("gorulme", { ascending: false })
     .limit(25);
-  if (!data?.length) return ozet;
+  const eslesmesizler = (data ?? []).map((r) => ({ ilan: r, oncekiMaliyetUsd: 0 }));
+  const yenidenler = await yenidenPuanlanacaklar(db, Math.max(0, 25 - eslesmesizler.length));
+  const liste = [...eslesmesizler, ...yenidenler];
+  if (!liste.length) return ozet;
 
   const butce = await butceyiKur(db, log);
   if (butce.kalanUsd <= 0) return ozet;
-  log(`yarım kalan ${data.length} ilan yeniden değerlendiriliyor`);
+  log(`yarım kalan ${eslesmesizler.length} + yeniden puanlanacak ${yenidenler.length} ilan değerlendiriliyor`);
   const sistem = await degerlendiriciKur(db, profil, filtre);
-  for (const r of data) {
+  for (const { ilan: r, oncekiMaliyetUsd } of liste) {
     const ham: HamIlan = {
       kaynak: r.kaynak as Kaynak,
       kaynakId: r.kaynak_id ?? undefined,
@@ -284,7 +323,7 @@ export async function yarimKalanlariTamamla(
       url: r.url ?? undefined,
       sonBasvuru: r.son_basvuru ?? undefined,
     };
-    await puanlaVeKaydet(db, r.id, ham, sistem, filtre, ozet, log, butce);
+    await puanlaVeKaydet(db, r.id, ham, sistem, filtre, ozet, log, butce, oncekiMaliyetUsd);
   }
   return ozet;
 }

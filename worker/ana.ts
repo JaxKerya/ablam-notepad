@@ -87,7 +87,7 @@ const KAYNAKLAR: KaynakTanimi[] = [
   {
     ad: "linkedin",
     etiket: "LinkedIn",
-    enAzAralikDk: Number(process.env.LINKEDIN_ARALIK_DK) || 720,
+    enAzAralikDk: Number(process.env.LINKEDIN_ARALIK_DK) || 480,
     tara: (b) => linkedinTara({ aramaTerimleri: b.aramaTerimleri, sehirler: b.sehirler, bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
   },
   {
@@ -107,7 +107,7 @@ const KAYNAKLAR: KaynakTanimi[] = [
 async function profiliOku(db: Db): Promise<Profil> {
   const { data, error } = await db
     .from("kariyer_profil")
-    .select("profil, sehirler, uzaktan_olur, asgari_maas, bildirim_eposta")
+    .select("profil, sehirler, uzaktan_olur, bildirim_eposta")
     .eq("id", 1)
     .maybeSingle();
   if (error) throw new Error(`profil okunamadı: ${error.message}`);
@@ -116,7 +116,6 @@ async function profiliOku(db: Db): Promise<Profil> {
     filtre: {
       sehirler: sehirleriDogrula(data?.sehirler),
       uzaktan_olur: data?.uzaktan_olur ?? true,
-      asgari_maas: typeof data?.asgari_maas === "number" && data.asgari_maas > 0 ? data.asgari_maas : null,
     },
     bildirimEposta: data?.bildirim_eposta ?? null,
   };

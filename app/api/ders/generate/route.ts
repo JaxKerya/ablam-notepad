@@ -129,7 +129,8 @@ interface DenetimGirdisi {
 
 /** Denetimin sonucu: uygulanacak bulgular + o geçişin kaydı (aiview için) */
 interface DenetimSonucu {
-  bulgular: Map<number, DenetimBulgusu>;
+  /** Soru indeksi -> bulgular. Liste: aynı soruya "anahtar yanlış" + "açıklama yanlış" birlikte gelebiliyor */
+  bulgular: Map<number, DenetimBulgusu[]>;
   gecis: DenetimGecisi;
 }
 
@@ -139,9 +140,9 @@ async function denetimCalistir(
   girdiler: DenetimGirdisi[],
   transkript?: string
 ): Promise<DenetimSonucu> {
-  const bos = (): DenetimSonucu => ({
+  const bos = (hata?: string): DenetimSonucu => ({
     bulgular: new Map(),
-    gecis: { katman, bulgu: 0, valf: false, sn: 0, girdiToken: 0, ciktiToken: 0 },
+    gecis: { katman, bulgu: 0, valf: false, sn: 0, girdiToken: 0, ciktiToken: 0, ...(hata ? { hata } : {}) },
   });
   if (!girdiler.length) return bos();
 
@@ -178,26 +179,37 @@ async function denetimCalistir(
     yanit = sonuc.veri;
     olcum = sonuc.olcum;
     hamCevap = sonuc.ham;
-  } catch {
-    // Denetim bir güvenlik ağı; kendisi düşerse üretimi engellemesin.
-    return bos();
+  } catch (e) {
+    // Denetim bir güvenlik ağı; kendisi düşerse üretimi engellemesin — ama
+    // düştüğü kayda geçsin, aiview "temiz geçti" demesin.
+    console.warn(`[ders] ${katman} denetimi düştü:`, (e as Error).message);
+    return bos((e as Error).message.slice(0, 200));
   }
 
   const gecerliNerede = (v: unknown): Nerede =>
     v === "sik" || v === "aciklama" || v === "dogru_sik" ? v : "anahtar";
 
-  const bulgular = new Map<number, DenetimBulgusu>();
-  for (const h of yanit.sorunlular ?? yanit.hatalar ?? []) {
+  // Geçerli JSON ama beklenen liste yoksa ({} gibi) bu "0 bulgu" değil, cevap
+  // yok demektir: hata olarak kaydedilsin (inceleme bulgusu)
+  const bulguListesi = yanit.sorunlular ?? yanit.hatalar;
+  if (!Array.isArray(bulguListesi)) return bos("denetim cevabında bulgu listesi yok");
+
+  const bulgular = new Map<number, DenetimBulgusu[]>();
+  for (const h of bulguListesi) {
     const no = h?.no;
     if (typeof no !== "number" || no < 1 || no > girdiler.length) continue;
     const harf = metin(h?.dogru).toUpperCase();
-    bulgular.set(no - 1, {
+    // Aynı soruya ikinci bulgu birinciyi EZMİYOR, ekleniyor (denetim bulgusu:
+    // "anahtar B" + "açıklama yanlış" gelince yalnız açıklama uygulanıyordu)
+    const liste = bulgular.get(no - 1) ?? [];
+    liste.push({
       tur: h?.tur === "yok" ? "yok" : "celiski",
       nerede: gecerliNerede(h?.nerede),
       gerekce: metin(h?.gerekce) || "gerekçe belirtilmedi",
       duzeltilmis: metin(h?.duzeltilmis),
       dogruIndeks: HARF.indexOf(harf) >= 0 ? HARF.indexOf(harf) : null,
     });
+    bulgular.set(no - 1, liste);
   }
 
   // Soruların yarısından fazlası işaretlendiyse hatalı olan büyük ihtimalle
@@ -289,14 +301,30 @@ function coktanUygula<
 >(
   sorular: T[],
   katman: "transkript" | "olgu",
-  bulgular: Map<number, DenetimBulgusu>,
+  bulgular: Map<number, DenetimBulgusu[]>,
   ozet: DenetimBirikimi,
   /** Birinci geçişte anahtarı düzeltilen sorular; ikinci geçiş bunlara itiraz ederse elenir */
   anahtariDuzeltilen: Set<unknown>
 ): T[] {
+  // Bir sorunun bulguları sırayla uygulanır; biri soruyu düşürürse gerisi bakılmaz.
+  // "yok" ve "dogru_sik" önce: anahtar değişince açıklama düşüyor, sonra gelen
+  // "aciklama" düzeltmesi varsa yenisini yazıyor.
+  const oncelik = (b: DenetimBulgusu) => (b.tur === "yok" ? 0 : b.nerede === "dogru_sik" ? 1 : 2);
   return sorular.filter((s, i) => {
-    const b = bulgular.get(i);
-    if (!b) return true;
+    const liste = bulgular.get(i);
+    if (!liste?.length) return true;
+    for (const b of [...liste].sort((x, y) => oncelik(x) - oncelik(y))) {
+      if (!tekBulguyuUygula(s, katman, b, ozet, anahtariDuzeltilen)) return false;
+    }
+    return true;
+  });
+}
+
+/** Tek bulguyu soruya uygular; false = soru elendi */
+function tekBulguyuUygula<
+  T extends { question: string; choices: string[] | null; correct_index: number | null; explanation: string | null },
+>(s: T, katman: "transkript" | "olgu", b: DenetimBulgusu, ozet: DenetimBirikimi, anahtariDuzeltilen: Set<unknown>): boolean {
+  {
     const gerekce = gerekceKirp(b.gerekce);
     const sikMetni = (j: number) => `${HARF[j]}) ${(s.choices ?? [])[j] ?? ""}`;
 
@@ -338,6 +366,18 @@ function coktanUygula<
       });
       s.correct_index = b.dogruIndeks;
       anahtariDuzeltilen.add(s);
+      // Açıklama eski şıkkı savunuyor; yeni anahtarla çelişen açıklama ablama
+      // gitmesin (denetim bulgusu). Aynı bulgu listesinde "aciklama" düzeltmesi
+      // varsa hemen ardından yenisini yazar; yoksa soru açıklamasız kalır —
+      // grade ucu boş açıklamayı zaten gösteriyor değil.
+      if (s.explanation) {
+        kaydet(ozet, katman, s.question, {
+          islem: "aciklama-dusuruldu",
+          eski: gerekceKirp(s.explanation),
+          gerekce: "anahtar değişti, eski şıkkı savunan açıklama düşürüldü",
+        });
+        s.explanation = null;
+      }
       ozet.duzeltilen++;
       return true;
     }
@@ -396,7 +436,7 @@ function coktanUygula<
 
     ozet.duzeltilen++;
     return true;
-  });
+  }
 }
 
 interface UretilenCoktan {
@@ -854,6 +894,12 @@ export async function POST(request: Request) {
 
       const sonrakiPozisyon = (mevcut ?? []).length;
       const sonParca = parcaNo === toplamParca - 1;
+
+      // Bitmiş oturuma tekrar istek (istemci yeniden denedi, cevap ulaşmamıştı):
+      // mevcut sonuç döner, üretim tekrarlanmaz (denetim bulgusu: 8 -> 16 soru)
+      if (oturum.status === "hazir") {
+        return NextResponse.json({ sessionId, soruSayisi: sonrakiPozisyon, coktanSayisi: 0, parca: parcaNo, parcaSayisi: toplamParca, son: true, atlandi: true });
+      }
       const soruSiniri = parcaSoruSiniri(sure);
 
       // Yarım kalan oturum tamamlanırken biten parçalar yeniden üretilmesin:
@@ -991,7 +1037,8 @@ export async function POST(request: Request) {
         );
       }
 
-      await supabase.from("ders_sessions").update({ status: "hazir" }).eq("id", sessionId);
+      const { error: hazirHatasi } = await supabase.from("ders_sessions").update({ status: "hazir" }).eq("id", sessionId);
+      if (hazirHatasi) throw new Error(`Oturum hazır işaretlenemedi: ${hazirHatasi.message}`);
 
       return NextResponse.json({ sessionId, soruSayisi: toplam, coktanSayisi: coktan.length, parca: parcaNo, parcaSayisi: toplamParca, son: true });
     }

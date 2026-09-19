@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
 /**
  * Tek kayıt noktası: serbest metin, (düzeltilmiş) profil ve sert filtre alanları.
- * Gövde: { serbestMetin?, profil?, sehirler?, uzaktanOlur?, asgariMaas?, bildirimEposta? }
+ * Gövde: { serbestMetin?, profil?, sehirler?, uzaktanOlur?, bildirimEposta? }
  * Model çağrısı yok. Satır yoksa oluşturur (upsert) — ilk kurulumda POST artık
  * satır açmıyor.
  */
@@ -88,9 +88,6 @@ export async function PATCH(request: Request) {
     if (govde.profil !== undefined) guncelleme.profil = profilDogrula(govde.profil);
     if (Array.isArray(govde.sehirler)) guncelleme.sehirler = sehirleriDogrula(govde.sehirler);
     if (typeof govde.uzaktanOlur === "boolean") guncelleme.uzaktan_olur = govde.uzaktanOlur;
-    if (govde.asgariMaas === null || typeof govde.asgariMaas === "number") {
-      guncelleme.asgari_maas = govde.asgariMaas;
-    }
     if (typeof govde.bildirimEposta === "string") {
       const e = govde.bildirimEposta.trim();
       if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) {

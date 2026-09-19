@@ -56,7 +56,7 @@ async function sorgula(anahtar: string, terim: string, konum: string): Promise<C
   url.searchParams.set("keywords", terim);
   if (konum) url.searchParams.set("location", konum);
   url.searchParams.set("sort", "date");
-  url.searchParams.set("page_size", "50");
+  url.searchParams.set("page_size", "100"); // API'nin üst sınırı
   url.searchParams.set("fragment_size", "600");
   url.searchParams.set("user_ip", process.env.CAREERJET_USER_IP || "127.0.0.1");
   url.searchParams.set("user_agent", "AblamKariyer/1.0");
@@ -79,7 +79,12 @@ export async function careerjetTara(secenekler: CareerjetSecenekleri) {
   const toplanan = new Map<string, HamIlan>();
   const gorulen = new Set<string>();
   const hatalar: string[] = [];
-  const aramalar = (sehirler.length ? sehirler : [""]).flatMap((sehir) => aramaTerimleri.map((terim) => ({ terim, sehir })));
+  // Şehir Careerjet'e verilmiyor: keywords + location birlikte gelince çok kelimeli
+  // terimlerde API 0 döndürüyor ("büro personeli" TR geneli 44, Ankara 0 — 19.09.2026'da
+  // ölçüldü; 33 sorgu × 0 sonuçla bir gece geçti). Türkiye geneli çekilip şehir elemesi
+  // sertFiltre'ye (ilanın locations alanı) bırakılıyor. sehirler yalnız log için.
+  void sehirler;
+  const aramalar = aramaTerimleri.map((terim) => ({ terim, sehir: "" }));
 
   for (const { terim, sehir } of aramalar) {
     try {

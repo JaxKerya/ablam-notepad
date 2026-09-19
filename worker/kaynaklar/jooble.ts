@@ -53,34 +53,43 @@ export async function joobleTara(secenekler: JoobleSecenekleri) {
   const hatalar: string[] = [];
   const aramalar = (sehirler.length ? sehirler : [""]).flatMap((sehir) => aramaTerimleri.map((terim) => ({ terim, sehir })));
 
+  // Terim başına 3 sayfa (~20'şer): büyük şehirde ilk sayfa havuzun küçük bir kısmı.
+  // Sayfa yeni kimlik getirmiyorsa durulur — bilinenler tekrar tekrar çekilmesin.
+  const SAYFA_SINIRI = 3;
   for (const { terim, sehir } of aramalar) {
     try {
-      const cevap = await getir(`${taban}${anahtar}`, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ keywords: terim, location: sehir, page: 1 }),
-      });
-      const veri = (await cevap.json()) as { totalCount?: number; jobs?: JoobleIlani[] };
-      if (!Array.isArray(veri.jobs)) throw new Error("cevapta 'jobs' dizisi yok (API değişmiş olabilir)");
-
-      for (const j of veri.jobs) {
-        if (!j.title) continue;
-        const kimlik = j.id != null ? String(j.id) : j.link ?? "";
-        if (!kimlik) continue;
-        gorulen.add(kimlik);
-        if (bilinenKimlikler.has(kimlik) || toplanan.has(kimlik)) continue;
-        toplanan.set(kimlik, {
-          kaynak: "jooble",
-          kaynakId: kimlik,
-          baslik: j.title.trim(),
-          sirket: j.company?.trim() || undefined,
-          sehir: j.location?.trim() || undefined,
-          aciklama: j.snippet ? metneCevir(j.snippet) : undefined,
-          maas: j.salary?.trim() || undefined,
-          url: j.link || undefined,
-          yayinTarihi: j.updated || undefined,
-          ham: j,
+      for (let sayfa = 1; sayfa <= SAYFA_SINIRI; sayfa++) {
+        const cevap = await getir(`${taban}${anahtar}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ keywords: terim, location: sehir, page: sayfa }),
         });
+        const veri = (await cevap.json()) as { totalCount?: number; jobs?: JoobleIlani[] };
+        if (!Array.isArray(veri.jobs)) throw new Error("cevapta 'jobs' dizisi yok (API değişmiş olabilir)");
+
+        let yeniKimlik = 0;
+        for (const j of veri.jobs) {
+          if (!j.title) continue;
+          const kimlik = j.id != null ? String(j.id) : j.link ?? "";
+          if (!kimlik) continue;
+          if (!gorulen.has(kimlik)) yeniKimlik++;
+          gorulen.add(kimlik);
+          if (bilinenKimlikler.has(kimlik) || toplanan.has(kimlik)) continue;
+          toplanan.set(kimlik, {
+            kaynak: "jooble",
+            kaynakId: kimlik,
+            baslik: j.title.trim(),
+            sirket: j.company?.trim() || undefined,
+            sehir: j.location?.trim() || undefined,
+            aciklama: j.snippet ? metneCevir(j.snippet) : undefined,
+            maas: j.salary?.trim() || undefined,
+            url: j.link || undefined,
+            yayinTarihi: j.updated || undefined,
+            ham: j,
+          });
+        }
+        if (veri.jobs.length < 10 || yeniKimlik === 0) break;
+        await nazikBekle();
       }
     } catch (e) {
       // Hata mesajında URL var, URL'de anahtar var — loga ve veritabanına anahtar düşmesin

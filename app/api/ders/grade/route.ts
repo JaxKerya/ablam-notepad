@@ -64,6 +64,30 @@ export async function POST(request: Request) {
     if (soruHatasi) throw new Error(soruHatasi.message);
     if (!soru) return NextResponse.json({ hata: "Soru bulunamadı." }, { status: 404 });
 
+    // Bitmiş denemeye cevap kabul edilmez: başka sekmede "bitir"den sonra
+    // gelen kayıt sonucu değiştirmesin (denetim bulgusu). Süre kontrolü de
+    // sunucuda: kolonlar yoksa (eski kurulum) kontrol atlanır, deneme yine çalışır.
+    // Kontrol istemcinin "deneme" bayrağına değil OTURUMA bakıyor: deneme
+    // oturumuna ders modundan gönderilmiş gibi cevap da geçemesin (inceleme bulgusu)
+    const { data: oturumBilgi } = await supabase
+      .from("ders_sessions")
+      .select("tur, deneme_bitti_at, deneme_sure_sn, created_at")
+      .eq("id", soru.session_id)
+      .maybeSingle();
+    if (denemeCevabi || oturumBilgi?.tur === "deneme") {
+      const oturum = oturumBilgi;
+      if (oturum?.deneme_bitti_at) {
+        return NextResponse.json({ hata: "Bu deneme bitti; cevap kaydedilmedi." }, { status: 409 });
+      }
+      if (oturum?.deneme_sure_sn && oturum.created_at) {
+        // 30 sn pay: son saniyede verilen cevap ağ gecikmesiyle düşmesin
+        const bitis = new Date(oturum.created_at).getTime() + (oturum.deneme_sure_sn + 30) * 1000;
+        if (Date.now() > bitis) {
+          return NextResponse.json({ hata: "Denemenin süresi doldu; cevap kaydedilmedi." }, { status: 409 });
+        }
+      }
+    }
+
     let verdict: Verdict;
     let feedback: string;
     let missing: string[] = [];

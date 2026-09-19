@@ -12,8 +12,8 @@
 // - Engellenirse 429 ya da 999 döner; hata fırlatılır, üç koşu sonra uyarı
 //   e-postası gider (worker/bildir.ts). Sessiz kırılma yok.
 // - Sayfa yapısı değişirse kart ayrıştırıcı boş döner; "0 kart" da hata sayılır.
-// Hacmi düşük tutmak için: kaynak günde iki kez taranır (ana.ts'te aralık),
-// her istek arası 1,5–3,5 sn beklenir, koşu başına en fazla 20 detay okunur.
+// Hacmi makul tutmak için: kaynak 8 saatte bir taranır (ana.ts'te aralık),
+// her istek arası 1,5–3,5 sn beklenir, koşu başına en fazla 60 detay okunur.
 
 import type { HamIlan } from "../../lib/kariyer";
 import { getir, metneCevir, nazikBekle, varliklariCoz } from "./http";
@@ -21,7 +21,7 @@ import { getir, metneCevir, nazikBekle, varliklariCoz } from "./http";
 const ARAMA = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search";
 const DETAY = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting";
 const SON_GUNLER = "r2592000"; // 30 gün — bilinenler zaten atlanıyor, geniş tutmak bedava
-const SAYFA_SINIRI = 2; // terim başına 2 x 10 kart
+const SAYFA_SINIRI = 4; // terim başına 4 x 10 kart (2'ydi; kapsam istendi, engellenme riski kabul)
 
 export interface LinkedinSecenekleri {
   aramaTerimleri: string[];
@@ -88,7 +88,7 @@ async function ara(terim: string, konum: string, baslangic: number): Promise<Kar
 }
 
 export async function linkedinTara(secenekler: LinkedinSecenekleri) {
-  const { aramaTerimleri, sehirler = [], bilinenKimlikler, detaySiniri = 20 } = secenekler;
+  const { aramaTerimleri, sehirler = [], bilinenKimlikler, detaySiniri = 60 } = secenekler;
   const log = secenekler.log ?? (() => {});
   const konumlar = sehirler.length ? sehirler.map((s) => `${s}, Türkiye`) : ["Türkiye"];
   const aramalar = konumlar.flatMap((konum) => aramaTerimleri.map((terim) => ({ terim, konum })));

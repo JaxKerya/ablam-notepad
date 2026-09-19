@@ -159,7 +159,9 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
       let baslik = is.baslik;
 
       try {
-        if (is.tur === "yeni") {
+        // sessionId varsa transkript ve çözümleme zaten yapılmış ("tekrar dene"
+        // ile gelen iş): ikinci bir oturum açma, doğrudan sorulara geç (inceleme bulgusu)
+        if (is.tur === "yeni" && !sessionId) {
           yaz({ durum: "transkript", hata: null });
           let tr: Record<string, unknown>;
           try {

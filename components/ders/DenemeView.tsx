@@ -106,16 +106,39 @@ export default function DenemeView({ oturum, sorular, ilkCevaplar }: Props) {
     return () => clearInterval(z);
   }, [ekran, kalanHesapla]);
 
+  const [sonucHatasi, setSonucHatasi] = useState<string | null>(null);
   const sonuclariGetir = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("ders_answers")
       .select("*")
       .eq("session_id", oturum.id);
+    // Okuma düşerse "0 net" gösterme: hata belli olsun, tekrar denenebilsin
+    if (error) {
+      setSonucHatasi(error.message);
+      setSonuclar([]);
+      return;
+    }
+    setSonucHatasi(null);
     setSonuclar((data ?? []) as DersAnswer[]);
   }, [oturum.id]);
 
+  /**
+   * Soru başına kayıt zinciri: aynı soruda A sonra B seçilirse B isteği A'nın
+   * bitmesini bekler — paralel giden iki upsert'te geç dönen eski seçim
+   * kazanabiliyordu. bekleyenler: "bitir" hepsinin inmesini bekler (denetim bulgusu).
+   */
+  const zincir = useRef<Map<string, Promise<void>>>(new Map());
+  const bekleyenler = useRef<Set<Promise<void>>>(new Set());
+
   const bitir = useCallback(async () => {
     setBitiriliyor(true);
+    // Ağda bekleyen cevaplar varsa en fazla 10 sn bekle; sonra ne varsa onunla bitir
+    if (bekleyenler.current.size) {
+      await Promise.race([
+        Promise.allSettled([...bekleyenler.current]),
+        new Promise((r) => setTimeout(r, 10_000)),
+      ]);
+    }
     await sonuclariGetir();
     // Bitiş anı kaydediliyor: bitmiş deneme "sürüyor" şeridinde görünmesin ve
     // sonuçlardan geri dönen ablam sınava geri sokulmasın. Kolon yoksa hata
@@ -145,24 +168,39 @@ export default function DenemeView({ oturum, sorular, ilkCevaplar }: Props) {
     const sureMs = Date.now() - soruAcilis.current;
     setSecimler((m) => new Map(m).set(soru.id, secim));
 
+    const onceki = zincir.current.get(soru.id) ?? Promise.resolve();
+    const is = onceki.catch(() => {}).then(() => gonder(soru.id, secim, sureMs));
+    zincir.current.set(soru.id, is);
+    bekleyenler.current.add(is);
+    try {
+      await is;
+    } finally {
+      bekleyenler.current.delete(is);
+    }
+  };
+
+  const gonder = async (soruId: string, secim: number, sureMs: number) => {
     try {
       const res = await fetch("/api/ders/grade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          questionId: soru.id,
+          questionId: soruId,
           secim,
           sureMs,
           deneme: true,
         }),
       });
       if (!res.ok) throw new Error((await res.json())?.hata ?? "Cevap kaydedilemedi.");
-      setGonderilenler((s) => new Set(s).add(soru.id));
+      setGonderilenler((s) => new Set(s).add(soruId));
     } catch (err) {
-      // Kaydedilemeyen cevap sessizce kaybolmasın: ızgarada da işaretli kalmıyor
+      // Kaydedilemeyen cevap sessizce kaybolmasın: ızgarada da işaretli kalmıyor.
+      // Ama yalnızca DÜŞEN seçim hâlâ ekrandaysa: A düşüp B başarılıysa B kalmalı
+      // (inceleme bulgusu: hata kolu B'yi de siliyordu).
       setSecimler((m) => {
+        if (m.get(soruId) !== secim) return m;
         const y = new Map(m);
-        y.delete(soru.id);
+        y.delete(soruId);
         return y;
       });
       addToast((err as Error).message, "error");
@@ -248,6 +286,20 @@ export default function DenemeView({ oturum, sorular, ilkCevaplar }: Props) {
 
   // ------------------------------------------------------------------ sonuç
   if (ekran === "sonuc") {
+    // Cevaplar okunamadıysa "0 net" gösterme: hata ve yeniden dene
+    if (sonucHatasi) {
+      return kabuk(
+        <div className="py-20 text-center">
+          <p className="text-[13px] text-red-200/80">Sonuçlar yüklenemedi: {sonucHatasi}</p>
+          <button
+            onClick={() => { setSonuclar(null); void sonuclariGetir(); }}
+            className="mt-4 rounded-xl border border-[var(--border)] px-4 py-2 text-[13px] text-white/70 transition-colors hover:bg-white/[0.06]"
+          >
+            Yeniden dene
+          </button>
+        </div>
+      );
+    }
     if (!rapor) {
       return kabuk(
         <p className="py-20 text-center text-[13px] text-white/40">Sonuçlar hesaplanıyor…</p>

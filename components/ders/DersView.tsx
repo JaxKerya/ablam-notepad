@@ -119,6 +119,8 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
   // "geri al" o notu silmek yerine eski hâline döndürsün, ablamın kendi
   // yazdıkları da taşıdığı klasör de uçmasın.
   const [onceki, setOnceki] = useState<{ content: unknown; folder_id: string | null } | null>(null);
+  /** Kaydettiğimiz notun updated_at'i: geri alırken değişmişse arada biri düzenlemiş demektir */
+  const [kayitDamgasi, setKayitDamgasi] = useState<string | null>(null);
 
   /**
    * "Soruları tekrar çöz" ile yeniden çözülmek üzere işaretlenen sorular.
@@ -412,11 +414,13 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
       // folder_id de saklanıyor: upsert onu da yazıyor, geri alma yalnızca
       // content'i döndürseydi ablamın başka klasöre taşıdığı not
       // "Ders Notları"nda kalırdı.
-      const { data: eskiNot } = await supabase
+      const { data: eskiNot, error: eskiHatasi } = await supabase
         .from("notes")
         .select("content, folder_id")
         .eq("id", notId)
         .maybeSingle();
+      // Okuma düşerse "not yoktu" sanıp geri almada silmeyelim (denetim bulgusu)
+      if (eskiHatasi) throw new Error(`Mevcut not okunamadı: ${eskiHatasi.message}`);
 
       const { error: notHatasi } = await supabase.from("notes").upsert(
         {
@@ -429,6 +433,8 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
       if (notHatasi) throw new Error(notHatasi.message);
 
       setOnceki(eskiNot ? { content: eskiNot.content, folder_id: eskiNot.folder_id } : null);
+      const { data: yeniNot } = await supabase.from("notes").select("updated_at").eq("id", notId).maybeSingle();
+      setKayitDamgasi(yeniNot?.updated_at ?? null);
       setKaydedilenNot(notId);
       addToast("Ders notu kaydedildi", "success");
     } catch (err) {
@@ -442,6 +448,23 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
   const kaydetmeyiGeriAl = async () => {
     if (!kaydedilenNot || notKaydediliyor) return;
     setNotKaydediliyor(true);
+
+    // Kaydettiğimizden beri not değiştiyse (başka sekmede düzenlendi) geri alma
+    // o emeği silerdi — dokunma, söyle (denetim bulgusu)
+    const { data: simdiki, error: okumaHatasi } = await supabase.from("notes").select("updated_at").eq("id", kaydedilenNot).maybeSingle();
+    if (okumaHatasi) {
+      // Not okunamıyorsa geri alma da yapılmaz — "okuyamadım, sildim" olmasın
+      setNotKaydediliyor(false);
+      addToast("Not okunamadı, geri alınmadı: " + okumaHatasi.message, "error");
+      return;
+    }
+    if (kayitDamgasi && simdiki?.updated_at && simdiki.updated_at !== kayitDamgasi) {
+      setNotKaydediliyor(false);
+      setKaydedilenNot(null);
+      setOnceki(null);
+      addToast("Not kaydettiğimizden beri düzenlenmiş; geri alınmadı, düzenlemen duruyor.", "error");
+      return;
+    }
 
     const { error } = onceki
       ? await supabase

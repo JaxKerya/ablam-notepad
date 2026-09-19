@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   Activity,
@@ -16,6 +17,7 @@ import {
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   UserRound,
   X,
 } from "lucide-react";
@@ -27,9 +29,11 @@ import {
   kalanGun,
   KARIYER_ACIK,
   kaynakEtiketi,
+  konumdakiIller,
   ONIZLEME_ANAHTARI,
   profilBosMu,
   profilDogrula,
+  sadelestir,
   sehirleriDogrula,
   sonBasvuruMetni,
   tarihMetni,
@@ -69,7 +73,6 @@ interface ProfilSatiri {
   profil: KariyerProfili | null;
   sehirler: string[];
   uzaktan_olur: boolean;
-  asgari_maas: number | null;
   bildirim_eposta: string | null;
   updated_at: string | null;
 }
@@ -189,6 +192,47 @@ function KariyerUygulamasi() {
   const [tumu, setTumu] = useState<Eslesme[] | null>(null);
   const [toplamInceleme, setToplamInceleme] = useState<number | null>(null);
   const [kaynaklar, setKaynaklar] = useState<KaynakDurumu[]>([]);
+  /** Eşleşme sorgusu düştü — boş liste "ilan yok" gibi görünmesin (inceleme bulgusu) */
+  const [listeHatasi, setListeHatasi] = useState<string | null>(null);
+  /** Bugünün toplamı (TR günü): kaç kaynak koştu, kaç yeni ilan geldi — şerit tek kaynağı değil günü anlatsın */
+  const [bugun, setBugun] = useState<{ kaynak: number; yeni: number } | null>(null);
+  /** Verinin yüklendiği an — "son 24 saat" eşiği render içinde Date.now() çağırmasın (saf kalsın) */
+  const [yuklenmeZamani, setYuklenmeZamani] = useState(0);
+  /**
+   * Son ziyaret: tarayıcıda tutulur. Sayfa açılınca önceki değer okunur (o
+   * zamandan sonra puanlanan kartlar "yeni"), şimdiki zaman yazılır. Bu
+   * tarayıcıya özgü — ablamın telefonuyla bilgisayarı ayrı sayar, kabul.
+   */
+  const [sonZiyaret, setSonZiyaret] = useState<string | null>(null);
+  const [secilenSehirler, setSecilenSehirler] = useState<string[]>([]);
+  const [son24, setSon24] = useState(false);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      try {
+        setSonZiyaret(localStorage.getItem("kariyer-son-ziyaret"));
+        localStorage.setItem("kariyer-son-ziyaret", new Date().toISOString());
+        const s = localStorage.getItem("kariyer-suzgec");
+        if (s) {
+          const v = JSON.parse(s) as { sehirler?: string[]; son24?: boolean };
+          setSecilenSehirler(Array.isArray(v.sehirler) ? v.sehirler : []);
+          setSon24(!!v.son24);
+        }
+      } catch {
+        // gizli pencere vb.
+      }
+    });
+  }, []);
+
+  const suzgecYaz = (sehirler: string[], s24: boolean) => {
+    setSecilenSehirler(sehirler);
+    setSon24(s24);
+    try {
+      localStorage.setItem("kariyer-suzgec", JSON.stringify({ sehirler, son24: s24 }));
+    } catch {
+      // yazılamazsa oturumluk kalır
+    }
+  };
 
   const getir = useCallback(async () => {
     const [p, e, t, n] = await Promise.all([
@@ -205,10 +249,17 @@ function KariyerUygulamasi() {
       supabase.from("kariyer_eslesmeler").select("ilan_id", { count: "exact", head: true }),
     ]);
     setToplamInceleme(n.count ?? null);
+    setYuklenmeZamani(Date.now());
     setKaynaklar(kaynakDurumlari((t.data ?? []) as Tarama[]));
+    // TR günü: tarama satırları UTC, günü Europe/Istanbul'a göre kes
+    const gunTR = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Istanbul" }).format(new Date(iso));
+    const bugunTR = gunTR(new Date().toISOString());
+    const bugunku = ((t.data ?? []) as Tarama[]).filter((x) => gunTR(x.baslangic) === bugunTR && !x.hata);
+    setBugun({ kaynak: new Set(bugunku.map((x) => x.kaynak)).size, yeni: bugunku.reduce((a, x) => a + (x.yeni ?? 0), 0) });
     if (p.data) {
       setProfilSatiri({ ...p.data, profil: p.data.profil ? profilDogrula(p.data.profil) : null, sehirler: p.data.sehirler ?? [] });
     }
+    setListeHatasi(e.error?.message ?? null);
     setEslesmeler(
       (e.data ?? [])
         .map((r) => {
@@ -259,12 +310,33 @@ function KariyerUygulamasi() {
   const profilBos = !yukleniyor && profilBosMu(profilSatiri?.profil);
   const etkinSekme: Sekme = profilBos ? "profil" : sekme;
 
+  /**
+   * Şehir süzgeci: ilanın konumunda tanınan il varsa ona göre; il tanınmıyorsa
+   * ("Sincan", "Türkiye") gizlenmez — sert filtredeki ilkeyle aynı, süzgeç
+   * belirsiz olanı saklamasın.
+   */
+  const suzulmus = useMemo(() => {
+    const istenen = secilenSehirler.map(sadelestir);
+    const esik = yuklenmeZamani - 24 * 3600_000;
+    return eslesmeler.filter((e) => {
+      if (son24 && new Date(e.degerlendirildi).getTime() < esik) return false;
+      if (!istenen.length) return true;
+      const iller = konumdakiIller(e.ilan?.sehir ?? "");
+      return !iller.length || iller.some((il) => istenen.includes(il));
+    });
+  }, [eslesmeler, secilenSehirler, son24, yuklenmeZamani]);
+
   const gruplar = useMemo(() => {
     const g: Record<Karar, Eslesme[]> = { bildir: [], ozet: [], listele: [], ele: [] };
-    for (const e of eslesmeler) g[e.karar]?.push(e);
+    for (const e of suzulmus) g[e.karar]?.push(e);
     for (const k of SIRA) g[k].sort((a, b) => b.puan - a.puan);
     return g;
-  }, [eslesmeler]);
+  }, [suzulmus]);
+
+  const ziyarettenBeriYeni = useMemo(
+    () => (sonZiyaret ? eslesmeler.filter((e) => e.degerlendirildi > sonZiyaret).length : 0),
+    [eslesmeler, sonZiyaret]
+  );
 
   /**
    * gb = null: geri al. Not yalnızca "ilgilenmedim"de anlamlı; kartın içindeki
@@ -360,6 +432,14 @@ function KariyerUygulamasi() {
             onTumuGit={() => setSekme("tumu")}
             toplamInceleme={toplamInceleme}
             kaynaklar={kaynaklar}
+            listeHatasi={listeHatasi}
+            bugun={bugun}
+            sonZiyaret={sonZiyaret}
+            ziyarettenBeriYeni={ziyarettenBeriYeni}
+            sehirSecenekleri={profilSatiri?.sehirler ?? []}
+            secilenSehirler={secilenSehirler}
+            son24={son24}
+            onSuzgec={suzgecYaz}
           />
         )}
       </div>
@@ -435,6 +515,84 @@ function TumuEkrani({ liste, onGeri }: { liste: Eslesme[] | null; onGeri: () => 
   );
 }
 
+// ---------------------------------------------------------------- kaynak paneli
+
+/**
+ * "N kaynak çalışıyor" hapı ve açılır paneli. Panel createPortal ile
+ * document.body'ye takılıyor, Notepad'deki menüler gibi (components/Toolbar.tsx):
+ * sayfa ağacının içinde kalınca animate-fade-in atasının kalıcı transform'u
+ * yüzünden Chromium backdrop-filter'ı uygulamıyor, cam düz yarı saydam kalıyordu.
+ */
+function KaynakPaneli({ kaynaklar, sorunlu }: { kaynaklar: KaynakDurumu[]; sorunlu: number }) {
+  const [acik, setAcik] = useState(false);
+  const [konum, setKonum] = useState<{ top: number; left: number } | null>(null);
+  const dugme = useRef<HTMLButtonElement>(null);
+
+  const ac = () => {
+    const r = dugme.current?.getBoundingClientRect();
+    if (r) setKonum({ top: r.bottom + 8, left: r.left + r.width / 2 });
+    setAcik((a) => !a);
+  };
+
+  // Dışarı tıklayınca, Escape'te ve sayfa kayınca kapan
+  useEffect(() => {
+    if (!acik) return;
+    const kapat = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e instanceof MouseEvent && dugme.current?.contains(e.target as Node)) return;
+      setAcik(false);
+    };
+    document.addEventListener("mousedown", kapat);
+    document.addEventListener("keydown", kapat);
+    window.addEventListener("scroll", kapat, true);
+    return () => {
+      document.removeEventListener("mousedown", kapat);
+      document.removeEventListener("keydown", kapat);
+      window.removeEventListener("scroll", kapat, true);
+    };
+  }, [acik]);
+
+  return (
+    <>
+      <button
+        ref={dugme}
+        type="button"
+        onClick={ac}
+        aria-expanded={acik}
+        className={`glass flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12px] transition-colors hover:border-[var(--border-hover)] hover:text-white/85 ${
+          sorunlu ? "border-amber-400/40 text-amber-200/80" : "border-[var(--border)] text-white/50"
+        }`}
+      >
+        <Activity size={13} />
+        {sorunlu ? `${kaynaklar.length} kaynak, ${sorunlu} sorunlu` : `${kaynaklar.length} kaynak çalışıyor`}
+      </button>
+      {acik &&
+        konum &&
+        createPortal(
+          <div
+            style={{ top: konum.top, left: konum.left }}
+            className="animate-fade-in-scale fixed z-[var(--z-panel)] w-[min(92vw,22rem)] -translate-x-1/2 divide-y divide-[var(--border)] overflow-hidden rounded-xl border border-[var(--border)] glass-strong shadow-xl shadow-black/40"
+          >
+            {kaynaklar.map((k) => (
+              <div key={k.kaynak} className="flex items-start gap-2.5 px-3.5 py-2.5 text-left">
+                <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${k.sonHata ? "bg-red-400" : k.bayat ? "bg-amber-400" : "bg-emerald-400"}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12.5px] text-white/85">
+                    {kaynakEtiketi(k.kaynak)}
+                    <span className="text-white/35"> · {k.sonBasari ? `${tarihMetni(k.sonBasari)}, ${k.bulunan} ilan` : "hiç başarılı tarama yok"}</span>
+                  </p>
+                  {k.sonHata && <p className="mt-0.5 truncate text-[11.5px] text-red-200/70" title={k.sonHata}>son koşu hata: {k.sonHata}</p>}
+                  {!k.sonHata && k.bayat && <p className="mt-0.5 text-[11.5px] text-amber-200/70">beklenenden uzun süredir taranmadı</p>}
+                </div>
+              </div>
+            ))}
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
 // ---------------------------------------------------------------- eşleşmeler
 
 function EslesmeEkrani({
@@ -446,6 +604,14 @@ function EslesmeEkrani({
   onTumuGit,
   toplamInceleme,
   kaynaklar,
+  listeHatasi,
+  bugun,
+  sonZiyaret,
+  ziyarettenBeriYeni,
+  sehirSecenekleri,
+  secilenSehirler,
+  son24,
+  onSuzgec,
 }: {
   gruplar: Record<Karar, Eslesme[]>;
   sonTarama: Tarama | null;
@@ -455,9 +621,24 @@ function EslesmeEkrani({
   onTumuGit: () => void;
   toplamInceleme: number | null;
   kaynaklar: KaynakDurumu[];
+  listeHatasi: string | null;
+  bugun: { kaynak: number; yeni: number } | null;
+  sonZiyaret: string | null;
+  ziyarettenBeriYeni: number;
+  sehirSecenekleri: string[];
+  secilenSehirler: string[];
+  son24: boolean;
+  onSuzgec: (sehirler: string[], son24: boolean) => void;
 }) {
   const toplam = SIRA.reduce((n, k) => n + gruplar[k].length, 0);
   const sorunlu = kaynaklar.filter((k) => k.bayat || k.sonHata);
+  const suzgecAcik = secilenSehirler.length > 0 || son24;
+  const sehirDegistir = (sehir: string) =>
+    onSuzgec(secilenSehirler.includes(sehir) ? secilenSehirler.filter((x) => x !== sehir) : [...secilenSehirler, sehir], son24);
+  const cipSinifi = (aktif: boolean) =>
+    `rounded-full border px-3 py-1 text-[12px] transition-colors ${
+      aktif ? "border-[var(--accent)]/50 bg-[var(--accent)]/20 text-[var(--accent-light)]" : "border-white/15 bg-white/[0.04] text-white/50 hover:border-white/30 hover:text-white/80"
+    }`;
 
   return (
     <div className="animate-fade-in">
@@ -474,8 +655,16 @@ function EslesmeEkrani({
             </span>
           ) : (
             <>
-              Son tarama {tarihMetni(sonTarama.baslangic)} · {kaynakEtiketi(sonTarama.kaynak)}&apos;da {sonTarama.bulunan} ilan
-              görüldü, {sonTarama.yeni} yeni
+              Son tarama {tarihMetni(sonTarama.baslangic)}
+              {bugun && ` · bugün ${bugun.kaynak} kaynaktan ${bugun.yeni} yeni ilan`}
+              {sonZiyaret && (
+                <>
+                  {" · "}
+                  <span className={ziyarettenBeriYeni ? "text-[var(--accent-light)]/80" : ""}>
+                    son bakışından beri {ziyarettenBeriYeni ? `${ziyarettenBeriYeni} yeni` : "yeni yok"}
+                  </span>
+                </>
+              )}
             </>
           )
         ) : (
@@ -493,33 +682,33 @@ function EslesmeEkrani({
             <ListChecks size={13} />
             İncelenen tüm ilanlar{toplamInceleme ? ` (${toplamInceleme})` : ""}
           </button>
-          {kaynaklar.length > 0 && (
-            <details className="group relative">
-              <summary
-                className={`glass flex cursor-pointer list-none items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12px] transition-colors hover:border-[var(--border-hover)] hover:text-white/85 ${
-                  sorunlu.length ? "border-amber-400/40 text-amber-200/80" : "border-[var(--border)] text-white/50"
-                }`}
-              >
-                <Activity size={13} />
-                {sorunlu.length ? `${kaynaklar.length} kaynak, ${sorunlu.length} sorunlu` : `${kaynaklar.length} kaynak çalışıyor`}
-              </summary>
-              <div className="glass absolute left-1/2 z-20 mt-2 w-[min(92vw,22rem)] -translate-x-1/2 divide-y divide-[var(--border)] rounded-xl border border-[var(--border)] shadow-xl shadow-black/30">
-                {kaynaklar.map((k) => (
-                  <div key={k.kaynak} className="flex items-start gap-2.5 px-3.5 py-2.5 text-left">
-                    <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${k.sonHata ? "bg-red-400" : k.bayat ? "bg-amber-400" : "bg-emerald-400"}`} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12.5px] text-white/85">
-                        {kaynakEtiketi(k.kaynak)}
-                        <span className="text-white/35"> · {k.sonBasari ? `${tarihMetni(k.sonBasari)}, ${k.bulunan} ilan` : "hiç başarılı tarama yok"}</span>
-                      </p>
-                      {k.sonHata && <p className="mt-0.5 truncate text-[11.5px] text-red-200/70" title={k.sonHata}>son koşu hata: {k.sonHata}</p>}
-                      {!k.sonHata && k.bayat && <p className="mt-0.5 text-[11.5px] text-amber-200/70">beklenenden uzun süredir taranmadı</p>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </details>
+          {kaynaklar.length > 0 && <KaynakPaneli kaynaklar={kaynaklar} sorunlu={sorunlu.length} />}
+        </div>
+      )}
+
+      {/* Süzgeç: birden fazla şehir varsa şehir çipleri, her zaman "son 24 saat". Belirsiz konum gizlenmez. */}
+      {!profilBos && (sehirSecenekleri.length > 1 || son24 || eslesmeVarMi(gruplar)) && (
+        <div className="-mt-1 mb-6 flex flex-wrap items-center justify-center gap-1.5">
+          {sehirSecenekleri.length > 1 &&
+            sehirSecenekleri.map((sehir) => (
+              <button key={sehir} type="button" onClick={() => sehirDegistir(sehir)} className={cipSinifi(secilenSehirler.includes(sehir))}>
+                {sehir}
+              </button>
+            ))}
+          <button type="button" onClick={() => onSuzgec(secilenSehirler, !son24)} className={cipSinifi(son24)}>
+            Son 24 saat
+          </button>
+          {suzgecAcik && (
+            <button type="button" onClick={() => onSuzgec([], false)} className="rounded-full px-2.5 py-1 text-[12px] text-white/35 transition-colors hover:text-white/70">
+              temizle
+            </button>
           )}
+        </div>
+      )}
+
+      {listeHatasi && (
+        <div className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-center text-[12.5px] text-red-200/80">
+          Eşleşmeler yüklenemedi: {listeHatasi}. Sayfayı yenile; sürerse veritabanına bakılmalı.
         </div>
       )}
 
@@ -535,7 +724,7 @@ function EslesmeEkrani({
         </div>
       ) : toplam === 0 ? (
         <div className="glass rounded-2xl border border-[var(--border)] px-5 py-10 text-center text-[13.5px] text-white/45">
-          Henüz eşleşme yok. Sistem saat başı tarıyor; bir şey bulunca burada ve e-postanda olacak.
+          {suzgecAcik ? "Bu süzgeçle eşleşme yok." : "Henüz eşleşme yok. Sistem saat başı tarıyor; bir şey bulunca burada ve e-postanda olacak."}
         </div>
       ) : (
         <>
@@ -549,7 +738,7 @@ function EslesmeEkrani({
                   </h2>
                   <div className="space-y-2.5">
                     {gruplar[k].map((e) => (
-                      <EslesmeKarti key={e.ilan_id} e={e} onGeriBildir={onGeriBildir} />
+                      <EslesmeKarti key={e.ilan_id} e={e} onGeriBildir={onGeriBildir} yeni={!!sonZiyaret && e.degerlendirildi > sonZiyaret} />
                     ))}
                   </div>
                 </section>
@@ -563,9 +752,12 @@ function EslesmeEkrani({
 
 /** Hızlı sebepler — ablam tıklasın, yazmasın. Metin kutusu yine var, isteyen yazar. */
 // "Zaten başvurdum" burada YOK: ilgisizlik değil ilgi; olumsuz örnek olarak modele gidiyordu (denetim bulgusu)
-const SEBEPLER = ["Alanım değil", "Şartları taşımıyorum", "Şehir / mesafe", "Maaş"] as const;
+const SEBEPLER = ["Alanım değil", "Şartları taşımıyorum", "Şehir / mesafe", "Maaş düşük"] as const;
 
-function EslesmeKarti({ e, onGeriBildir }: { e: Eslesme; onGeriBildir: (e: Eslesme, gb: GeriBildirim | null, not?: string | null) => void }) {
+/** Eşleşme var mı — süzgeç satırı boş listede de görünsün ama hiç eşleşme yokken görünmesin */
+const eslesmeVarMi = (g: Record<Karar, Eslesme[]>) => SIRA.some((k) => g[k].length > 0);
+
+function EslesmeKarti({ e, onGeriBildir, yeni = false }: { e: Eslesme; onGeriBildir: (e: Eslesme, gb: GeriBildirim | null, not?: string | null) => void; yeni?: boolean }) {
   const alt = [e.ilan.sirket, e.ilan.sehir].filter(Boolean).join(" · ");
   const sonuk = e.geri_bildirim === "ilgilenmedim";
   // "İlgilenmedim" iki adım: önce sebep paneli açılır, kaydedince işaretlenir.
@@ -605,9 +797,14 @@ function EslesmeKarti({ e, onGeriBildir }: { e: Eslesme; onGeriBildir: (e: Esles
           </h3>
           {alt && <p className="mt-0.5 text-[12.5px] text-white/45">{alt}</p>}
         </div>
-        <span className={`flex-shrink-0 rounded-md border px-2 py-0.5 text-[12px] font-medium tabular-nums ${KARAR_STIL[e.karar]}`}>
-          {e.puan}
-        </span>
+        <div className="flex flex-shrink-0 items-center gap-1.5">
+          {yeni && (
+            <span className="rounded-md bg-[var(--accent)]/15 px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wider text-[var(--accent-light)]">
+              yeni
+            </span>
+          )}
+          <span className={`rounded-md border px-2 py-0.5 text-[12px] font-medium tabular-nums ${KARAR_STIL[e.karar]}`}>{e.puan}</span>
+        </div>
       </div>
 
       {e.gerekce && <p className="mt-2.5 text-[13px] leading-relaxed text-white/70">{e.gerekce}</p>}
@@ -729,11 +926,32 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
   const [oneriler, setOneriler] = useState<ProfilOnerisi[]>([]);
   const [sehirler, setSehirler] = useState<string[]>(satir?.sehirler ?? []);
   const [uzaktan, setUzaktan] = useState(satir?.uzaktan_olur ?? true);
-  const [maas, setMaas] = useState(satir?.asgari_maas ? String(satir.asgari_maas) : "");
   const [eposta, setEposta] = useState(satir?.bildirim_eposta ?? "");
   const [cikariliyor, setCikariliyor] = useState(false);
   const [kaydediliyor, setKaydediliyor] = useState(false);
   const [sifirlaniyor, setSifirlaniyor] = useState(false);
+  const [temizleniyor, setTemizleniyor] = useState(false);
+
+  /**
+   * Bütün ilanlar ve eşleşmeler silinir; profil ve tarama geçmişi kalır.
+   * Sonraki tarama her şeyi sıfırdan çekip yeniden puanlar — onay bunu söylüyor.
+   */
+  const ilanlariTemizle = async () => {
+    if (temizleniyor) return;
+    if (!window.confirm("Bütün ilanlar, puanlar ve geri bildirimler silinecek; profil kalır. Bir sonraki tarama her şeyi sıfırdan çekip yeniden puanlar (ilk koşu paralı, günlük tavan geçerli). Devam?")) return;
+    setTemizleniyor(true);
+    try {
+      const res = await fetch("/api/kariyer/ilanlar", { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.hata ?? "Temizlenemedi.");
+      addToast(`${data.silinen} ilan silindi — liste bir sonraki taramada yeniden dolar`, "success");
+      onKaydedildi();
+    } catch (err) {
+      addToast((err as Error).message, "error");
+    } finally {
+      setTemizleniyor(false);
+    }
+  };
   const [yenidenSayi, setYenidenSayi] = useState<number | null>(null);
   const [yenideniliyor, setYenideniliyor] = useState(false);
 
@@ -776,12 +994,11 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
         profil: satir?.profil ?? BOS_PROFIL,
         sehirler: satir?.sehirler ?? [],
         uzaktan: satir?.uzaktan_olur ?? true,
-        maas: satir?.asgari_maas ? String(satir.asgari_maas) : "",
         eposta: satir?.bildirim_eposta ?? "",
       }),
     [satir]
   );
-  const simdiki = JSON.stringify({ metin, profil, sehirler, uzaktan, maas, eposta });
+  const simdiki = JSON.stringify({ metin, profil, sehirler, uzaktan, eposta });
   const degisti = simdiki !== kayitli;
   const bos = profilBosMu(profil);
 
@@ -818,7 +1035,6 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
           profil,
           sehirler,
           uzaktanOlur: uzaktan,
-          asgariMaas: maas.trim() ? Number(maas.replace(/\D/g, "")) : null,
           bildirimEposta: eposta,
         }),
       });
@@ -839,19 +1055,19 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
   };
 
   /**
-   * Profili baştan kurmak için: metin, profil, şehirler ve maaş silinir.
+   * Profili baştan kurmak için: metin, profil ve şehirler silinir.
    * E-posta ve "uzaktan olur" kalır — kimlik bilgisi, profil değil. İlanlar ve
    * eşleşmeler de kalır; sıfırlama "beni yeniden anlat" demek, "geçmişi sil" değil.
    */
   const sifirla = async () => {
     if (sifirlaniyor) return;
-    if (!window.confirm("Profil silinecek: anlattığın metin, çıkarılan profil, şehirler ve maaş. İlanlar ve eşleşmeler kalır. Devam?")) return;
+    if (!window.confirm("Profil silinecek: anlattığın metin, çıkarılan profil ve şehirler. İlanlar ve eşleşmeler kalır. Devam?")) return;
     setSifirlaniyor(true);
     try {
       const res = await fetch("/api/kariyer/profil", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ serbestMetin: "", profil: BOS_PROFIL, sehirler: [], asgariMaas: null }),
+        body: JSON.stringify({ serbestMetin: "", profil: BOS_PROFIL, sehirler: [] }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.hata ?? "Sıfırlanamadı.");
@@ -877,7 +1093,7 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
         <h2 className="text-[14px] font-medium text-white/90">1 · Kendini anlat</h2>
         <p className="mt-1 text-[12.5px] leading-relaxed text-white/40">
           Eğitimin, yaptığın işler, bildiğin programlar, ne istediğin, ne istemediğin — kendi cümlelerinle.
-          Şehir ve maaşı aşağıda ayrıca soruyoruz.
+          Şehri aşağıda ayrıca soruyoruz.
         </p>
         <textarea
           value={metin}
@@ -962,22 +1178,17 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
       <section className="glass rounded-2xl border border-[var(--border)] p-5">
         <h2 className="text-[14px] font-medium text-white/90">{bos ? "2" : "3"} · Şartlar</h2>
         <p className="mt-1 text-[12.5px] text-white/40">Bunlar kesin filtre — uymayan ilan hiç değerlendirilmez.</p>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <Alan etiket="Şehirler" aciklama="Birden fazla olabilir. Boş bırakırsan her yer.">
-              <EtiketGirdisi deger={sehirler} onChange={(v) => setSehirler(sehirleriDogrula(v))} placeholder="Şehir yaz, Enter'a bas" />
-            </Alan>
-          </div>
-          <Alan etiket="Asgari maaş (TL, isteğe bağlı)">
-            <input value={maas} onChange={(e) => setMaas(e.target.value)} inputMode="numeric" placeholder="örn. 30000" className={girdiSinifi} />
+        <div className="mt-4 space-y-4">
+          <Alan etiket="Şehirler" aciklama="Birden fazla olabilir. Boş bırakırsan her yer." sarmalama={false}>
+            <EtiketGirdisi deger={sehirler} onChange={(v) => setSehirler(sehirleriDogrula(v))} placeholder="Şehir yaz, Enter'a bas" />
           </Alan>
-          <Alan etiket="Bildirim e-postası">
-            <input value={eposta} onChange={(e) => setEposta(e.target.value)} type="email" placeholder="sen@ornek.com" className={girdiSinifi} />
-          </Alan>
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-3 sm:col-span-2">
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-3">
             <input type="checkbox" checked={uzaktan} onChange={(e) => setUzaktan(e.target.checked)} className="h-4 w-4 accent-[var(--accent)]" />
             <span className="text-[13px] text-white/80">Uzaktan çalışma olur (şehir dışı ilan uzaktansa geçer)</span>
           </label>
+          <Alan etiket="Bildirim e-postası" aciklama="Güçlü eşleşmeler ve akşam özeti buraya gelir.">
+            <input value={eposta} onChange={(e) => setEposta(e.target.value)} type="email" placeholder="sen@ornek.com" className={girdiSinifi} />
+          </Alan>
         </div>
       </section>
 
@@ -1015,6 +1226,15 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
           >
             {sifirlaniyor ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
             Profili sıfırla
+          </button>
+          <button
+            type="button"
+            onClick={ilanlariTemizle}
+            disabled={temizleniyor}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-white/30 transition-colors hover:bg-red-500/10 hover:text-red-200/80 disabled:opacity-40"
+          >
+            {temizleniyor ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+            Tüm ilanları temizle
           </button>
         </div>
       )}
@@ -1065,13 +1285,20 @@ function EtiketGirdisi({ deger, onChange, placeholder }: { deger: string[]; onCh
 const girdiSinifi =
   "focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-[13.5px] text-white/90 placeholder-white/25";
 
-function Alan({ etiket, aciklama, children }: { etiket: string; aciklama?: string; children: React.ReactNode }) {
+/**
+ * Alan başlığı + girdi. Varsayılan <label>: başlığa tıklayınca girdi odaklanır.
+ * `sarmalama`: içinde DÜĞME olan girdiler (etiket listesi) için — <label>'a
+ * tıklamak içindeki ilk etiketlenebilir öğeyi tetikler, o da ilk şehrin "×"
+ * düğmesi oluyordu: başlığa her tıklamada bir şehir siliniyordu.
+ */
+function Alan({ etiket, aciklama, children, sarmalama = true }: { etiket: string; aciklama?: string; children: React.ReactNode; sarmalama?: boolean }) {
+  const Sarici = sarmalama ? "label" : "div";
   return (
-    <label className="block">
+    <Sarici className="block">
       <span className="mb-1.5 block text-[11.5px] font-medium uppercase tracking-wider text-white/35">{etiket}</span>
       {aciklama && <span className="mb-1.5 block text-[12px] text-white/30">{aciklama}</span>}
       {children}
-    </label>
+    </Sarici>
   );
 }
 

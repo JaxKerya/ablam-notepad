@@ -20,7 +20,7 @@ import type { HamIlan } from "../../lib/kariyer";
 
 const ARAMA_SAYFASI = "https://esube.iskur.gov.tr/Istihdam/AcikIsIlanAra.aspx";
 const DETAY_SAYFASI = "https://esube.iskur.gov.tr/Istihdam/AcikIsIlanDetay.aspx";
-const SAYFA_SINIRI = 3; // terim başına en fazla kaç sonuç sayfası
+const SAYFA_SINIRI = 5; // terim başına en fazla kaç sonuç sayfası (3'tü; kapsam istendi)
 
 export interface IskurSecenekleri {
   aramaTerimleri: string[];
@@ -56,7 +56,7 @@ export async function tarayiciAc(): Promise<Browser> {
 }
 
 export async function iskurTara(secenekler: IskurSecenekleri): Promise<IskurSonucu> {
-  const { aramaTerimleri, iller = [], bilinenKimlikler, detaySiniri = 30 } = secenekler;
+  const { aramaTerimleri, iller = [], bilinenKimlikler, detaySiniri = 60 } = secenekler;
   const log = secenekler.log ?? (() => {});
   const tarayici = await tarayiciAc();
   const baglam = await tarayici.newContext({ locale: "tr-TR" });

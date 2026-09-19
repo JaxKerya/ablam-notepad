@@ -8,7 +8,7 @@ create extension if not exists "pgcrypto";
 --
 -- serbest_metin: ablamın kendi cümleleriyle yazdığı. profil: modelin bundan
 -- çıkardığı yapılandırılmış hâl — ablam düzenleyebilir, eşleştirme BUNU okur.
--- Şehirler / uzaktan / maaş ayrı kolon: bunlar yargı değil sert filtre, model
+-- Şehirler / uzaktan ayrı kolon: bunlar yargı değil sert filtre, model
 -- çağrılmadan uygulanır. Şehir birden fazla olabilir (Ankara + İstanbul gibi);
 -- boş dizi = her yer.
 -- ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@ create table if not exists kariyer_profil (
   profil           jsonb,
   sehirler         text[] not null default '{}',
   uzaktan_olur     boolean not null default true,
-  asgari_maas      integer,                 -- TL, boşsa filtre yok
+  asgari_maas      integer,                 -- KULLANILMIYOR (2026-09-19'da kaldırıldı; kolon uyumluluk için duruyor)
   calisma_sekli    text[] not null default '{}',  -- tam | yari | uzaktan | staj
   bildirim_eposta  text,
   updated_at       timestamptz default now()

@@ -90,7 +90,7 @@ async function detayAl(id: string): Promise<string | null> {
 }
 
 export async function ilangovTara(secenekler: IlangovSecenekleri) {
-  const { sehirler = [], bilinenKimlikler, detaySiniri = 40 } = secenekler;
+  const { sehirler = [], bilinenKimlikler, detaySiniri = 80 } = secenekler;
   const log = secenekler.log ?? (() => {});
 
   // İlk sayfa filtresiz: hem şehir kimliklerini verir hem şehir yoksa 1. sayfadır

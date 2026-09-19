@@ -202,7 +202,8 @@ function AdimBlogu({ a }: { a: DenetimAdimi }) {
             {g.valf && <TriangleAlert size={10} className="mr-1 inline align-[-1px]" />}
             {KATMAN[g.katman]}: {g.bulgu} bulgu
             {g.valf && " — VALF DEVREDE, hiçbiri uygulanmadı"}
-            {!g.valf && ` · ${g.sn.toFixed(1)} sn`}
+            {g.hata && <span className="text-red-300/80"> — DENETİM DÜŞTÜ, uygulanmadı: {g.hata}</span>}
+            {!g.valf && !g.hata && ` · ${g.sn.toFixed(1)} sn`}
             {g.maliyetUsd !== undefined && ` · ${g.maliyetUsd.toFixed(4)}`}
             {g.model && <span className="text-white/25"> · {g.model}</span>}
           </span>
