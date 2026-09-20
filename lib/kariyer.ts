@@ -32,7 +32,7 @@ export interface KariyerProfili {
 export const KARIYER_ACIK = process.env.NEXT_PUBLIC_KARIYER_ACIK !== "false";
 export const ONIZLEME_ANAHTARI = "kariyer-onizleme";
 
-export type Kaynak = "iskur" | "ilangov" | "kariyerkapisi" | "linkedin" | "jooble" | "careerjet" | "kariyer" | "indeed" | "eposta";
+export type Kaynak = "iskur" | "ilangov" | "kariyerkapisi" | "linkedin" | "jooble" | "careerjet" | "isbul" | "eleman" | "kariyer" | "indeed" | "eposta";
 export type Karar = "bildir" | "ozet" | "listele" | "ele";
 
 /** Arayüzde ve e-postada görünen kaynak adı */
@@ -43,6 +43,8 @@ export const KAYNAK_ETIKETI: Record<string, string> = {
   linkedin: "LinkedIn",
   jooble: "Jooble",
   careerjet: "Careerjet",
+  isbul: "İş Bul",
+  eleman: "Eleman.net",
 };
 export const kaynakEtiketi = (k: string) => KAYNAK_ETIKETI[k] ?? k;
 export type GeriBildirim = "ilgilendim" | "ilgilenmedim";

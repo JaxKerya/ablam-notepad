@@ -91,7 +91,14 @@ const sadelestir = (metin: string): string =>
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]/g, "");
 
-type Nerede = "anahtar" | "sik" | "aciklama" | "dogru_sik";
+/**
+ * Bulgunun yeri. "kok": soru kökündeki/öncüldeki bilgi yanlış — onarılmaz, soru
+ * elenir (kök değişince şıklar geçersizleşebilir). "bilinmiyor": denetim tanımsız
+ * bir değer yazdı; eskiden bu sessizce açıklama düzeltmesi sayılıyordu ve öncül
+ * metni açıklamanın yerine yazılabiliyordu (Sevr dersinde görüldü). Artık kayda
+ * geçip atlanıyor.
+ */
+type Nerede = "sik" | "aciklama" | "dogru_sik" | "kok" | "bilinmiyor";
 
 interface DenetimBulgusu {
   tur: "yok" | "celiski";
@@ -187,7 +194,7 @@ async function denetimCalistir(
   }
 
   const gecerliNerede = (v: unknown): Nerede =>
-    v === "sik" || v === "aciklama" || v === "dogru_sik" ? v : "anahtar";
+    v === "sik" || v === "aciklama" || v === "dogru_sik" || v === "kok" ? v : "bilinmiyor";
 
   // Geçerli JSON ama beklenen liste yoksa ({} gibi) bu "0 bulgu" değil, cevap
   // yok demektir: hata olarak kaydedilsin (inceleme bulgusu)
@@ -309,7 +316,7 @@ function coktanUygula<
   // Bir sorunun bulguları sırayla uygulanır; biri soruyu düşürürse gerisi bakılmaz.
   // "yok" ve "dogru_sik" önce: anahtar değişince açıklama düşüyor, sonra gelen
   // "aciklama" düzeltmesi varsa yenisini yazıyor.
-  const oncelik = (b: DenetimBulgusu) => (b.tur === "yok" ? 0 : b.nerede === "dogru_sik" ? 1 : 2);
+  const oncelik = (b: DenetimBulgusu) => (b.tur === "yok" || b.nerede === "kok" ? 0 : b.nerede === "dogru_sik" ? 1 : 2);
   return sorular.filter((s, i) => {
     const liste = bulgular.get(i);
     if (!liste?.length) return true;
@@ -334,6 +341,17 @@ function tekBulguyuUygula<
         islem: "elendi", sebep: "derste yok", gerekce, tamMetin: tamSoruMetni(s),
       });
       return false;
+    }
+    if (b.nerede === "kok") {
+      ozet.elenen++;
+      kaydet(ozet, katman, s.question, {
+        islem: "elendi", sebep: "kök hatalı", gerekce, tamMetin: tamSoruMetni(s),
+      });
+      return false;
+    }
+    if (b.nerede === "bilinmiyor") {
+      kaydet(ozet, katman, s.question, { islem: "bulgu-atlandi", sebep: "yer belirtilmedi", gerekce });
+      return true;
     }
     if (b.nerede === "dogru_sik") {
       const secenekSayisi = (s.choices ?? []).length;

@@ -90,7 +90,10 @@ ilan veriliyor. Görevin: bu ilan bu kişi için ne kadar uygun, 0-100 puanla.
 KİŞİNİN PROFİLİ:
 ${profilMetni(profil)}
 ${sartlariYaz(sartlar)}${olumsuzOrnekler.length ? `
-KİŞİNİN DAHA ÖNCE "İLGİLENMEDİM" DEDİĞİ İLANLAR — bunlara benzeyenlere düşük puan ver:
+KİŞİNİN DAHA ÖNCE "İLGİLENMEDİM" DEDİĞİ İLANLAR — bunlara benzeyenlere düşük puan ver.
+Benzerliği tırnak içindeki SEBEBE göre kur: sebep "alanım değil" ise aynı tür işleri düşür;
+sebep şehir, mesafe ya da maaşsa aynı işin başka şehirdeki ya da maaşı yazmayan ilanını
+DÜŞÜRME. Sebep yoksa iş türü benzerliğine bak:
 ${olumsuzOrnekler.map((o) => `- ${o}`).join("\n")}
 ` : ""}
 PUAN ÖLÇEĞİ — bu sayılar bildirim eşiklerine bağlı, dikkatli kullan:

@@ -132,6 +132,7 @@ export type DenetimIslemi =
   | "anahtar-duzeltildi"   // açık uçlunun beklenen cevabı düzeltildi
   | "celdirici"            // öz-denetim: çeldiriciler/kök güçlendirildi (anahtar aynı)
   | "gelistirme-reddedildi" // öz-denetimin önerisi biçim ya da anahtar koruması yüzünden alınmadı
+  | "bulgu-atlandi"        // denetim bulgunun yerini ("nerede") söylemedi; uygulanmadı, soru kaldı
   | "elendi"               // soru atıldı
   | "bicim-elendi";        // soru daha denetime girmeden biçim şartına takıldı
 

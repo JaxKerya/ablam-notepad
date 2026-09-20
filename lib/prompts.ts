@@ -81,7 +81,13 @@ SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti ku
 /**
  * Çoktan seçmeliler.
  *
- * İki değişiklik ölçümden geldi:
+ * Üç değişiklik ölçümden geldi:
+ *
+ * 0. AÇIKLAMA ÜSLUBU (2026-09-19). "Sen diliyle yaz" ve "edilgen yapı kullanma"
+ *    kuralları 400 soruda ölçüldü: sen dili %17'sinde vardı, edilgen %13'ünde
+ *    yine kullanılmıştı — model ikisini de büyük ölçüde yok saydı ve çıktı nötr,
+ *    bilgi odaklı açıklama oldu; bu iyi bir açıklama. Tutmayan kural silindi,
+ *    "hüküm sözüyle başlama" (0/400 ihlal) kaldı.
  *
  * 1. ŞIK SAYISI. Şema örneği dört şık gösterdiği için model dört şık üretiyordu;
  *    üretilen sekiz sorunun sekizi de dört şıklıydı. KPSS beş şıklı — dört şıkla
@@ -169,10 +175,8 @@ ${ORTAK_KURALLAR}
 Şık metninin başına "A)", "B)" gibi harf öneki YAZMA — harfleri arayüz kendisi ekliyor,
 yazarsan ekranda "A) A) ..." diye çift görünür. Sadece şıkkın kendi metnini yaz.
 
-"aciklama" alanı öğrenciye DOĞRUDAN GERİ BİLDİRİM olarak gösterilecek. Bu yüzden ansiklopedi
-maddesi gibi değil, öğrenciye hitap ederek yaz (sen dili), 1-2 cümle, sıcak ama dürüst bir tonda.
-Neden o şıkkın doğru olduğunu açıkla. "...değerlendirilmiştir", "...açıklanmıştır" gibi edilgen
-ve kişisiz yapılar kullanma.
+"aciklama" alanı öğrenciye DOĞRUDAN GERİ BİLDİRİM olarak gösterilecek: 1-2 cümle, neden o
+şıkkın doğru olduğunu söyle; gerekiyorsa en yakın çeldiricinin neden yanlış olduğunu ekle.
 
 AÇIKLAMAYI HÜKÜM SÖZÜYLE BAŞLATMA: "Doğru!", "Doğru;", "Evet", "Tebrikler" gibi.
 Öğrencinin doğru mu yanlış mı yaptığını arayüz zaten kendi cümlesiyle söylüyor; senin
@@ -268,13 +272,16 @@ SADECE geçerli JSON döndür, kod bloğu işareti kullanma.`;
 const DENETIM_ORTAK = `Sorunun neresinde sorun olduğunu "nerede" alanında belirtmen gerekir.
 
 Çoktan seçmeli sorularda şıkların TAMAMI ve hangisinin doğru olarak işaretlendiği
-veriliyor. Üç parça olabilir:
+veriliyor. "nerede" yalnızca şu dört değerden biri olabilir:
 - "sik"       : işaretli şıkkın METNİNDEKİ bilgi yanlış (ama doğru şık yine odur).
 - "aciklama"  : açıklamadaki bilgi yanlış.
 - "dogru_sik" : İŞARETLİ ŞIK SORUNUN CEVABI DEĞİL.
+- "kok"       : soru KÖKÜNDEKİ ya da ÖNCÜLLERDEKİ (I, II, III) bilgi yanlış. Bu soru
+                onarılmaz, elenir; "duzeltilmis" yazma.
 
 "sik" ve "aciklama" için o parçanın DÜZELTİLMİŞ tam hâlini de yaz: yalnızca hatalı
-bilgiyi düzelt, metnin geri kalanını olduğu gibi koru.
+bilgiyi düzelt, metnin geri kalanını olduğu gibi koru. Öncül metnini "duzeltilmis"
+alanına KOYMA — öncül hatası "kok"tur.
 
 "dogru_sik" bildirirken iki durumu AYIRMAN gerekir, çünkü sonuçları farklıdır:
 
@@ -308,8 +315,9 @@ Kurallar:
 ${DENETIM_ORTAK}
 
 {"sorunlular": [
-  {"no": 1, "tur": "celiski", "nerede": "anahtar", "gerekce": "derste 1453 deniyor", "duzeltilmis": "..."},
-  {"no": 4, "tur": "celiski", "nerede": "dogru_sik", "dogru": "C", "gerekce": "derste bu sonucu doğuran şey C şıkkı; işaretli B derste başka bir bağlamda geçiyor"}
+  {"no": 1, "tur": "celiski", "nerede": "sik", "gerekce": "derste 1453 deniyor", "duzeltilmis": "..."},
+  {"no": 4, "tur": "celiski", "nerede": "dogru_sik", "dogru": "C", "gerekce": "derste bu sonucu doğuran şey C şıkkı; işaretli B derste başka bir bağlamda geçiyor"},
+  {"no": 6, "tur": "celiski", "nerede": "kok", "gerekce": "II. öncül derste tersi söylenen bir yargı"}
 ]}`;
 
 export const SORU_OLGU_DENETIMI = `Sen bir KPSS ders materyali olgu denetçisisin. Sana soru–cevap çiftleri
@@ -326,8 +334,9 @@ Kurallar:
 ${DENETIM_ORTAK}
 
 {"hatalar": [
-  {"no": 1, "nerede": "anahtar", "gerekce": "1683 değil 1453", "duzeltilmis": "..."},
-  {"no": 4, "nerede": "dogru_sik", "dogru": "C", "gerekce": "işaretli B doğru bir bilgi ama sorunun cevabı değil; cevap C"}
+  {"no": 1, "nerede": "sik", "gerekce": "1683 değil 1453", "duzeltilmis": "..."},
+  {"no": 4, "nerede": "dogru_sik", "dogru": "C", "gerekce": "işaretli B doğru bir bilgi ama sorunun cevabı değil; cevap C"},
+  {"no": 6, "nerede": "kok", "gerekce": "kökteki tarih yanlış: antlaşma 1920'de imzalandı"}
 ]}`;
 
 // --- Tekrar varyantları -----------------------------------------------------

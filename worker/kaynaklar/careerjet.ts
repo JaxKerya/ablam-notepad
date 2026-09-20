@@ -16,8 +16,28 @@
 // Bu profil için kapsamı ince (Ankara "animatör" = 1 ilan) ama bedava ve
 // sağlam; kariyer.net/yenibiris gibi Türk sitelerini dolaylı tarıyor.
 
+import { createHash } from "node:crypto";
 import type { HamIlan } from "../../lib/kariyer";
 import { getir, metneCevir, nazikBekle } from "./http";
+
+/**
+ * Careerjet ilanının kimliği İÇERİKTEN türetilir, URL'den değil.
+ *
+ * API'nin "url" alanı her istekte farklı bir takip bağlantısıdır
+ * (jobviewtrack.com/v2/<rastgele>); aynı ilan her aramada yeni URL ile gelir.
+ * Kimlik URL olunca her saatlik tarama bütün ilanları "yeni" saydı: 95 ilan
+ * için 858 satır, hepsi ayrı ayrı puanlandı (20.09.2026'da bulundu). "date"
+ * de sabit değil (37/95 grupta değişmişti), "description" arama terimine göre
+ * vurgulanan parça. Başlık + şirket + konum kalıyor; aynı şirketin aynı
+ * şehirdeki aynı başlıklı iki ilanı tek sayılır, bu kabul edilebilir.
+ * Yönlendirmeyi izleyip gerçek jobad kimliğini almak mümkün ama her ilan için
+ * yayıncı hesabına tıklama yazar; o yola girilmedi.
+ */
+function careerjetKimlik(j: CareerjetIlani): string {
+  const sade = (v?: string) => (v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const ozet = [sade(j.title), sade(j.company), sade(j.locations)].join("|");
+  return "cj_" + createHash("sha1").update(ozet).digest("hex").slice(0, 24);
+}
 
 const UC_NOKTA = "https://search.api.careerjet.net/v4/query";
 
@@ -98,12 +118,13 @@ export async function careerjetTara(secenekler: CareerjetSecenekleri) {
       }
       for (const j of veri.jobs) {
         if (!j.title || !j.url) continue;
-        gorulen.add(j.url);
-        if (bilinenKimlikler.has(j.url) || toplanan.has(j.url)) continue;
+        const kimlik = careerjetKimlik(j);
+        gorulen.add(kimlik);
+        if (bilinenKimlikler.has(kimlik) || toplanan.has(kimlik)) continue;
         const zaman = j.date ? Date.parse(j.date) : NaN; // "Wed,15 Nov 2025 19:13:43 GMT"
-        toplanan.set(j.url, {
+        toplanan.set(kimlik, {
           kaynak: "careerjet",
-          kaynakId: j.url,
+          kaynakId: kimlik,
           baslik: j.title.trim(),
           sirket: j.company?.trim() || undefined,
           sehir: j.locations?.trim() || undefined,

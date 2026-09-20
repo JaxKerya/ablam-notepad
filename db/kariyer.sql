@@ -33,7 +33,7 @@ insert into kariyer_profil (id) values (1) on conflict (id) do nothing;
 -- ---------------------------------------------------------------------------
 create table if not exists kariyer_ilanlar (
   id            uuid primary key default gen_random_uuid(),
-  kaynak        text not null,             -- iskur | ilangov | linkedin | jooble | careerjet | ...
+  kaynak        text not null,             -- iskur | ilangov | kariyerkapisi | linkedin | jooble | careerjet | isbul | eleman | ...
   kaynak_id     text,                      -- kaynaktaki kimlik (varsa)
   parmak_izi    text not null unique,
   baslik        text not null,

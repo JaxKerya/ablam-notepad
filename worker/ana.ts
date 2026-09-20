@@ -27,6 +27,8 @@ import { kariyerKapisiTara } from "./kaynaklar/kariyerkapisi";
 import { linkedinTara } from "./kaynaklar/linkedin";
 import { joobleHazir, joobleTara } from "./kaynaklar/jooble";
 import { careerjetHazir, careerjetTara } from "./kaynaklar/careerjet";
+import { isbulTara } from "./kaynaklar/isbul";
+import { elemanTara } from "./kaynaklar/eleman";
 import { bosOzet, ilanlariDegerlendir, yarimKalanlariTamamla, type DegerlendirmeOzeti } from "./degerlendir";
 import { bildirimleriGonder, kirilmaUyarisi } from "./bildir";
 
@@ -101,6 +103,19 @@ const KAYNAKLAR: KaynakTanimi[] = [
     etiket: "Careerjet",
     hazir: careerjetHazir,
     tara: (b) => careerjetTara({ aramaTerimleri: b.aramaTerimleri, sehirler: b.sehirler, bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
+  },
+  {
+    ad: "isbul",
+    etiket: "İş Bul",
+    // Anahtarsız JSON API; arama terimi almıyor, il başına en yeni 50 ilan
+    tara: (b) => isbulTara({ sehirler: b.sehirler, bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
+  },
+  {
+    ad: "eleman",
+    etiket: "Eleman.net",
+    // HTML tarama; terim çözümü + sayfa + yeni ilan detayı = onlarca istek. Saatte bir gereksiz
+    enAzAralikDk: Number(process.env.ELEMAN_ARALIK_DK) || 180,
+    tara: (b) => elemanTara({ aramaTerimleri: b.aramaTerimleri, sehirler: b.sehirler, bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
   },
 ];
 
