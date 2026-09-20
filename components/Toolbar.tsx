@@ -14,9 +14,6 @@ import {
   CheckSquare,
   Undo2,
   Redo2,
-  RefreshCw,
-  CheckCircle2,
-  AlertCircle,
   Heading1,
   Heading2,
   Heading3,
@@ -25,7 +22,6 @@ import {
   Unlink,
   ImagePlus,
   ImageUpscale,
-  WifiOff,
   Highlighter,
   Quote,
   Code,
@@ -36,7 +32,7 @@ import { uploadImage } from "@/lib/upload";
 
 interface ToolbarProps {
   editor: Editor | null;
-  syncStatus: "synced" | "syncing" | "error" | "offline";
+  /** Görsel yüklemede depo yolu için */
   noteId: string;
 }
 
@@ -100,52 +96,6 @@ function ToolbarButton({
 
 function Separator() {
   return <div className="mx-1.5 h-4 w-px flex-shrink-0 bg-white/[0.10]" />;
-}
-
-function NoteBadge({
-  noteId,
-  syncStatus,
-}: {
-  noteId: string;
-  syncStatus: "synced" | "syncing" | "error" | "offline";
-}) {
-  const [showTooltip, setShowTooltip] = useState(false);
-
-  const syncIcon = {
-    syncing: <RefreshCw size={15} className="animate-spin text-[var(--accent)]" />,
-    synced: <CheckCircle2 size={15} className="text-[var(--accent)]/50 transition-colors" />,
-    error: <AlertCircle size={15} className="text-red-400 animate-pulse" />,
-    offline: <WifiOff size={15} className="text-amber-400/70 animate-pulse" />,
-  }[syncStatus];
-
-  const tooltipText = {
-    syncing: "Kaydediliyor...",
-    synced: "Kaydedildi",
-    error: "Kaydetme başarısız!",
-    offline: "Çevrimdışı — bağlantı bekleniyor",
-  }[syncStatus];
-
-  return (
-    <div
-      className={`relative ml-auto flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${syncStatus === "error" ? "bg-red-500/[0.06]" : syncStatus === "offline" ? "bg-amber-500/[0.06]" : "bg-white/[0.03]"
-        }`}
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-    >
-      {syncIcon}
-
-      {showTooltip && (
-        <div className={`pointer-events-none absolute right-0 top-full z-50 mt-2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs shadow-xl shadow-black/20 ${syncStatus === "error"
-          ? "border-red-500/15 bg-red-950/80 text-red-300"
-          : syncStatus === "offline"
-            ? "border-amber-500/15 bg-amber-950/80 text-amber-300"
-            : "border-[var(--border)] bg-[var(--surface)] text-white/85"
-          }`}>
-          {tooltipText}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function LinkPopup({
@@ -234,12 +184,12 @@ const HIGHLIGHT_COLORS = [
   { name: "Turuncu", color: "rgba(251, 146, 60, 0.25)" },
 ];
 
-export default function Toolbar({ editor, syncStatus, noteId }: ToolbarProps) {
+export default function Toolbar({ editor, noteId }: ToolbarProps) {
   if (!editor) return null;
-  return <ToolbarInner editor={editor} syncStatus={syncStatus} noteId={noteId} />;
+  return <ToolbarInner editor={editor} noteId={noteId} />;
 }
 
-function ToolbarInner({ editor, syncStatus, noteId }: { editor: Editor; syncStatus: ToolbarProps["syncStatus"]; noteId: string }) {
+function ToolbarInner({ editor, noteId }: { editor: Editor; noteId: string }) {
   const [linkPopupOpen, setLinkPopupOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [imageSizeOpen, setImageSizeOpen] = useState(false);

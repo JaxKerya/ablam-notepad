@@ -21,9 +21,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { chatJsonOlculu } from "../lib/ai";
 import {
+  ILAN_GUVENILIRLIGI,
   kararVer,
   parmakIzi,
   profilBosMu,
+  riskDogrula,
+  riskliPuan,
   sertFiltre,
   type FiltreProfili,
   type HamIlan,
@@ -97,6 +100,9 @@ interface ModelCevabi {
   uyusmayan?: unknown;
   /** Modelin ilan metninden okuduğu son başvuru tarihi, YYYY-AA-GG; yoksa null */
   sonBasvuru?: unknown;
+  /** İlan güvenilirliği: kritik | orta | null ve kısa etiketler (bkz. lib/kariyer.ts RISK_TAVANI) */
+  risk?: unknown;
+  uyarilar?: unknown;
 }
 
 /**
@@ -191,6 +197,10 @@ async function puanlaVeKaydet(
     let puan = Math.max(0, Math.min(100, Math.round(veri.puan)));
     // Açıklamasız ilanda tavan 80 — prompt'ta da yazıyor ama kural kodda dursun
     if (!ham.aciklama && puan > 80) puan = 80;
+    // Kırmızı bayrak puanı içine gizlenmez, tavan koyar: kritik ≤ 40, orta ≤ 74
+    const risk = ILAN_GUVENILIRLIGI ? riskDogrula(veri.risk) : null;
+    const uyarilar = ILAN_GUVENILIRLIGI ? dizi(veri.uyarilar).slice(0, 3) : [];
+    puan = riskliPuan(puan, risk);
     const karar = kararVer(puan);
     ozet.degerlendirilen++;
     ozet.maliyetUsd += olcum.maliyetUsd ?? 0;
@@ -205,6 +215,8 @@ async function puanlaVeKaydet(
         gerekce: metin(veri.gerekce) || null,
         uyusan: dizi(veri.uyusan),
         uyusmayan: dizi(veri.uyusmayan),
+        risk,
+        uyarilar,
         karar,
         // degerlendirildi açıkça: upsert güncellemede varsayılanı yenilemiyor,
         // yeniden puanlanan satır "bugün" sayılmazdı (günlük tavan + sıralama)
@@ -220,7 +232,7 @@ async function puanlaVeKaydet(
     if (sonBasvuru) {
       await db.from("kariyer_ilanlar").update({ son_basvuru: sonBasvuru }).eq("id", ilanId);
     }
-    log(`  ${String(puan).padStart(3)}  ${karar.padEnd(7)}  ${ham.baslik} (${ham.sehir ?? "-"})${sonBasvuru ? ` son başvuru ${sonBasvuru}` : ""}`);
+    log(`  ${String(puan).padStart(3)}  ${karar.padEnd(7)}  ${ham.baslik} (${ham.sehir ?? "-"})${sonBasvuru ? ` son başvuru ${sonBasvuru}` : ""}${risk ? ` ⚠ ${risk}: ${uyarilar.join(", ")}` : ""}`);
   } catch (e) {
     // Model düşerse ilan kayıtlı kalıyor ama eşleşmesi yok; bir sonraki koşu
     // yarimKalanlariTamamla ile yeniden dener.

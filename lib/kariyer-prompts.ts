@@ -2,7 +2,7 @@
 // her kuralın altında nedeni var, ölçülmemiş kural kısa tutulur.
 
 import type { FiltreProfili, KariyerProfili } from "./kariyer";
-import { profilMetni } from "./kariyer";
+import { ILAN_GUVENILIRLIGI, profilMetni } from "./kariyer";
 
 // --- Profil çıkarma -----------------------------------------------------------
 
@@ -123,8 +123,26 @@ KURALLAR:
 - İlan metninde son başvuru tarihi AÇIKÇA yazıyorsa "sonBasvuru" alanına YYYY-AA-GG olarak
   yaz; yazmıyorsa null. Tahmin etme, "15 gün içinde" gibi göreli ifadeyi tarihe çevirme.
 
+${ILAN_GUVENILIRLIGI ? GUVENILIRLIK_BOLUMU : ""}
 SADECE geçerli JSON döndür:
-{"puan": 0, "gerekce": "...", "uyusan": ["..."], "uyusmayan": ["..."], "sonBasvuru": null}`;
+{"puan": 0, "gerekce": "...", "uyusan": ["..."], "uyusmayan": ["..."], "sonBasvuru": null${
+    ILAN_GUVENILIRLIGI ? `,\n "risk": null, "uyarilar": []` : ""
+  }}`;
+
+/** İlan güvenilirliği bölümü — yalnızca ILAN_GUVENILIRLIGI açıkken prompt'a girer */
+const GUVENILIRLIK_BOLUMU = `İLAN GÜVENİLİRLİĞİ — uygunluktan AYRI değerlendir; uygun görünen ilan da tuzak olabilir.
+"risk" alanı:
+- "kritik": dolandırıcılık ya da istismar işareti. Örnekler: adaydan ücret/eğitim/sertifika/
+  malzeme parası ya da kimlik-kart bilgisi isteniyor; vasıfsız işe orantısız maaş vaadi;
+  "evden sınırsız kazanç", ağ pazarlaması, prim dışında maaş yok; kamu alımı gibi yazılmış
+  özel ilan ("KPSS şartsız memur alımı"); şirket adı gizli VE başvuru yalnızca WhatsApp/telefon.
+- "orta": kesin değil ama şüpheli: şirket adı yok ve açıklama çok kısa; iş tanımı yok, yalnız
+  "eleman aranıyor"; maaş "dolgun/yüksek" gibi belirsiz abartı; aynı metin birçok şehre yapıştırılmış.
+- null: normal ilan. Çoğu ilan normaldir; şüphe için bayrak kaldırma.
+"uyarilar": bayrağın sebebi, 1-3 kısa etiket (2-5 kelime: "Eğitim ücreti istiyor",
+"Yalnızca WhatsApp başvurusu"). risk null ise boş liste. Etiketleri gerekçede tekrar etme.
+Kritik bayrakta puan otomatik olarak 40'ın altına çekilir; sen puanı yine uygunluğa göre ver.
+`;
 
 /**
  * Arayüzde "Şartlar" diye kaydedilenler. Şehir sert filtrede zaten eleniyor,

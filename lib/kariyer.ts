@@ -120,6 +120,51 @@ export const KARAR_ETIKETI: Record<Karar, string> = {
   ele: "Uyumsuz",
 };
 
+// --- İlan güvenilirliği --------------------------------------------------------
+
+/**
+ * Kırmızı bayrak, puanın içine gizlenmez; ayrı tutulur ve puana TAVAN koyar
+ * (career-ops'un "risk caps" fikri): kritik ≤ 40 (asla bildirilmez), orta ≤ 74.
+ *
+ * KAPALI (kullanıcı kararı, 20.09.2026): prompt bölümü gönderilmez, model risk
+ * döndürse de kaydedilmez ve tavan uygulanmaz; arayüz/e-posta boş risk gördüğü
+ * için hiçbir şey göstermez. Açmak için true yap — kolonlar ve kod yerinde.
+ */
+export const ILAN_GUVENILIRLIGI = false;
+export type Risk = "kritik" | "orta";
+export const RISK_TAVANI: Record<Risk, number> = { kritik: 40, orta: 74 };
+export const riskDogrula = (v: unknown): Risk | null => (v === "kritik" || v === "orta" ? v : null);
+export const riskliPuan = (puan: number, risk: Risk | null) => (risk ? Math.min(puan, RISK_TAVANI[risk]) : puan);
+
+// --- Başvuru takibi ----------------------------------------------------------
+
+/** basvurdu → gorusme → olumsuz | kabul. Ablam işaretler, sistem hatırlatır. */
+export type BasvuruDurumu = "basvurdu" | "gorusme" | "olumsuz" | "kabul";
+export const BASVURU_DURUMLARI: BasvuruDurumu[] = ["basvurdu", "gorusme", "olumsuz", "kabul"];
+export const BASVURU_ETIKETI: Record<BasvuruDurumu, string> = {
+  basvurdu: "Başvurdum",
+  gorusme: "Görüşmedeyim",
+  olumsuz: "Olumsuz",
+  kabul: "Kabul",
+};
+export const basvuruDogrula = (v: unknown): BasvuruDurumu | null =>
+  BASVURU_DURUMLARI.includes(v as BasvuruDurumu) ? (v as BasvuruDurumu) : null;
+
+/**
+ * Hatırlatma takvimi (career-ops cadence'inden): başvurudan 10 gün sonra ilk,
+ * sonra 7 günde bir; yalnız cevap beklenen durumlarda (basvurdu). Görüşme
+ * sonrası hatırlatma yok — orası ablamın kendi takibi.
+ */
+export const TAKIP_ILK_GUN = 10;
+export const TAKIP_ARALIK_GUN = 7;
+export function takipGerekli(durum: BasvuruDurumu | null, basvuruTs: string | null, sonHatirlatma: string | null, simdi = new Date()): number | null {
+  if (durum !== "basvurdu" || !basvuruTs) return null;
+  const gun = Math.floor((simdi.getTime() - new Date(basvuruTs).getTime()) / 86_400_000);
+  if (gun < TAKIP_ILK_GUN) return null;
+  if (sonHatirlatma && (simdi.getTime() - new Date(sonHatirlatma).getTime()) / 86_400_000 < TAKIP_ARALIK_GUN) return null;
+  return gun;
+}
+
 // --- Metin yardımcıları -------------------------------------------------------
 
 const TR_HARF: Record<string, string> = {

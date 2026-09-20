@@ -13,7 +13,7 @@
 
 import { Resend } from "resend";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { kalanGun, kaynakEtiketi, sonBasvuruMetni } from "../lib/kariyer";
+import { kalanGun, kaynakEtiketi, sonBasvuruMetni, takipGerekli, type BasvuruDurumu } from "../lib/kariyer";
 
 const OZET_SAATI = 18; // Türkiye saati — bu saatten sonra, günde bir kez
 
@@ -71,6 +71,8 @@ interface EslesmeSatiri {
   gerekce: string | null;
   uyusan: string[];
   uyusmayan: string[];
+  risk?: string | null;
+  uyarilar?: string[];
   kariyer_ilanlar: {
     baslik: string;
     sirket: string | null;
@@ -97,6 +99,7 @@ function ilanHtml(e: EslesmeSatiri): string {
       <div style="margin-top:8px;font-size:15px;color:#111">${kacis(e.gerekce ?? "")}</div>
       ${e.uyusan.length ? `<div style="margin-top:6px;font-size:13px;color:#166534">+ ${kacis(e.uyusan.join(", "))}</div>` : ""}
       ${e.uyusmayan.length ? `<div style="font-size:13px;color:#991b1b">− ${kacis(e.uyusmayan.join(", "))}</div>` : ""}
+      ${e.uyarilar?.length ? `<div style="margin-top:6px;font-size:13px;font-weight:600;color:#b91c1c">⚠ Dikkat: ${kacis(e.uyarilar.join(", "))}</div>` : ""}
       ${sonBasvuruSatiri(i.son_basvuru)}
       <div style="margin-top:6px;font-size:12px;color:#9ca3af">uygunluk ${e.puan}/100 · ${kacis(kaynakEtiketi(i.kaynak))}</div>
     </div>`;
@@ -120,6 +123,7 @@ function ilanMetin(e: EslesmeSatiri): string {
     i.baslik,
     [i.sirket, i.sehir].filter(Boolean).join(" · "),
     e.gerekce ?? "",
+    e.uyarilar?.length ? `DİKKAT: ${e.uyarilar.join(", ")}` : "",
     sonBasvuruMetni(i.son_basvuru) ?? "",
     i.url ?? "",
     `uygunluk ${e.puan}/100`,
@@ -134,7 +138,7 @@ const sarmala = (icerik: string) =>
 async function bekleyenler(db: SupabaseClient, karar: "bildir" | "ozet"): Promise<EslesmeSatiri[]> {
   const { data, error } = await db
     .from("kariyer_eslesmeler")
-    .select("ilan_id, puan, gerekce, uyusan, uyusmayan, kariyer_ilanlar(baslik, sirket, sehir, url, kaynak, son_basvuru)")
+    .select("ilan_id, puan, gerekce, uyusan, uyusmayan, risk, uyarilar, kariyer_ilanlar(baslik, sirket, sehir, url, kaynak, son_basvuru)")
     .eq("karar", karar)
     .is("bildirildi", null)
     .order("puan", { ascending: false })
@@ -203,32 +207,95 @@ export async function bildirimleriGonder(
     log(`güçlü eşleşme e-postası: ${guclu.length} ilan`);
   }
 
-  // Akşam özeti — 18'den sonra, bugün gitmediyse
+  // Akşam özeti — 18'den sonra, bugün gitmediyse. İçinde iki bölüm olabilir:
+  // bakmaya değer ilanlar ve başvuru takip hatırlatmaları; ikisi de boşsa gitmez.
   if (turkiyeSaati() >= OZET_SAATI && !(await bugunOzetGittiMi(db))) {
     const ozet = await gecmisleriAyikla((await bekleyenler(db, "ozet")).filter((e) => e.kariyer_ilanlar));
-    if (ozet.length) {
-      await isaretleyipGonder(
-        db,
-        ozet.map((e) => e.ilan_id),
-        () =>
-          gonder(
-            adres,
-            `Bugünün özeti: bakmaya değer ${ozet.length} ilan`,
-            ozet.map(ilanMetin).join(AYRAC),
-            sarmala(
-              `<p style="color:#6b7280;font-size:14px">Bunlar güçlü eşleşme değil ama bakmaya değer olabilir.</p>` +
-                ozet.map(ilanHtml).join("")
-            )
-          ),
-        log
+    const takip = await takipBekleyenler(db);
+    if (ozet.length || takip.length) {
+      const konu = ozet.length
+        ? `Bugünün özeti: bakmaya değer ${ozet.length} ilan${takip.length ? ` · ${takip.length} başvuru takibi` : ""}`
+        : `Başvuru takibi: ${takip.length} ilana cevap bekliyorsun`;
+      const metin = [...ozet.map(ilanMetin), ...(takip.length ? [takipMetin(takip)] : [])].join(AYRAC);
+      const html = sarmala(
+        (ozet.length
+          ? `<p style="color:#6b7280;font-size:14px">Bunlar güçlü eşleşme değil ama bakmaya değer olabilir.</p>` + ozet.map(ilanHtml).join("")
+          : "") + (takip.length ? takipHtml(takip) : "")
       );
+      // Önce ilanlar işaretlenir (gönderim düşerse geri alınır); takip damgası gönderim sonrası
+      await isaretleyipGonder(db, ozet.map((e) => e.ilan_id), () => gonder(adres, konu, metin, html), log);
+      if (takip.length) {
+        const { error } = await db
+          .from("kariyer_eslesmeler")
+          .update({ basvuru_hatirlatma: new Date().toISOString() })
+          .in("ilan_id", takip.map((t) => t.ilan_id));
+        if (error) log(`UYARI: takip hatırlatma damgası yazılamadı: ${error.message}`);
+      }
       await db.from("kariyer_taramalar").insert({ kaynak: "ozet", bitis: new Date().toISOString(), bulunan: ozet.length, yeni: ozet.length });
       gonderilen += ozet.length;
-      log(`akşam özeti: ${ozet.length} ilan`);
+      log(`akşam özeti: ${ozet.length} ilan, ${takip.length} takip hatırlatması`);
     }
   }
 
   return gonderilen;
+}
+
+// --- Başvuru takibi -------------------------------------------------------------
+//
+// Ablam "Başvurdum" dediği ilanlara cevap gelmediyse 10. günden itibaren 7 günde
+// bir akşam özetinde hatırlatılır (career-ops'un cadence fikri). Görüşme/olumsuz/
+// kabul durumlarında hatırlatma yok. Hatırlatma "başvurunu sor" demek; sistem
+// kimseye e-posta yazmaz, ablamın kendisi arar/yazar.
+
+interface TakipSatiri {
+  ilan_id: string;
+  gun: number;
+  baslik: string;
+  sirket: string | null;
+  url: string | null;
+}
+
+async function takipBekleyenler(db: SupabaseClient): Promise<TakipSatiri[]> {
+  const { data, error } = await db
+    .from("kariyer_eslesmeler")
+    .select("ilan_id, basvuru_durumu, basvuru_ts, basvuru_hatirlatma, kariyer_ilanlar(baslik, sirket, url)")
+    .eq("basvuru_durumu", "basvurdu")
+    .limit(50);
+  if (error) {
+    // Takip, özetin ikincil parçası; düşerse özet yine gitsin
+    console.warn("[kariyer] takip listesi okunamadı:", error.message);
+    return [];
+  }
+  const simdi = new Date();
+  return (data ?? [])
+    .map((r) => {
+      const i = (Array.isArray(r.kariyer_ilanlar) ? r.kariyer_ilanlar[0] : r.kariyer_ilanlar) as { baslik: string; sirket: string | null; url: string | null } | null;
+      const gun = takipGerekli(r.basvuru_durumu as BasvuruDurumu, r.basvuru_ts, r.basvuru_hatirlatma, simdi);
+      return i && gun !== null ? { ilan_id: r.ilan_id, gun, baslik: i.baslik, sirket: i.sirket, url: i.url } : null;
+    })
+    .filter((x): x is TakipSatiri => x !== null)
+    .sort((a, b) => b.gun - a.gun);
+}
+
+function takipHtml(liste: TakipSatiri[]): string {
+  return `
+    <div style="margin-top:8px;padding:14px 16px;border-radius:12px;background:#fffbeb;border:1px solid #fde68a">
+      <div style="font-size:15px;font-weight:600;color:#92400e">Başvuru takibi</div>
+      <div style="font-size:13px;color:#78350f;margin-top:2px">Bu başvurulara henüz cevap gelmemiş görünüyor. Kurumu arayıp durumu sorabilir ya da uygulamada durumu güncelleyebilirsin.</div>
+      ${liste
+        .map(
+          (t) => `<div style="margin-top:10px;font-size:14px;color:#111">
+            ${t.url ? `<a href="${kacis(t.url)}" style="color:#1d4ed8;text-decoration:none">${kacis(t.baslik)}</a>` : kacis(t.baslik)}
+            ${t.sirket ? `<span style="color:#6b7280"> · ${kacis(t.sirket)}</span>` : ""}
+            <div style="font-size:12.5px;color:#b45309">${t.gun} gün önce başvurdun, cevap yok</div>
+          </div>`
+        )
+        .join("")}
+    </div>`;
+}
+
+function takipMetin(liste: TakipSatiri[]): string {
+  return ["BAŞVURU TAKİBİ — cevap gelmemiş görünüyor:", ...liste.map((t) => `- ${t.baslik}${t.sirket ? ` · ${t.sirket}` : ""} — ${t.gun} gün önce başvurdun`)].join("\n");
 }
 
 /**

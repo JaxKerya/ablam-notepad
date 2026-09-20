@@ -230,8 +230,9 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
       return;
     }
 
-    // Create new note with new id
-    const { id: _oldId, ...rest } = current;
+    // Create new note with new id — eski id nesneden düşürülüyor
+    const rest = { ...current };
+    delete (rest as { id?: string }).id;
     const { error: insertError } = await supabase
       .from("notes")
       .insert({ id: slug, ...rest });
@@ -652,7 +653,7 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
             "0 0 60px -12px rgb(var(--accent-rgb) / 0.08), 0 0 30px -8px rgb(var(--accent-rgb) / 0.05), 0 25px 50px -12px rgba(0,0,0,0.4)",
         }}
       >
-        <Toolbar editor={editor} syncStatus={syncStatus} noteId={noteId} />
+        <Toolbar editor={editor} noteId={noteId} />
         <EditorContent editor={editor} />
         {/* Word/character counter */}
         {editor && <CharCount editor={editor} syncStatus={syncStatus} />}

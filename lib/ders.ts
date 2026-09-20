@@ -267,7 +267,12 @@ export const EN_AZ_SORU = 4;
  * Üst sınır modeli seçmeye zorluyor; eski sabit tavan (26) ise 3 saatlik dersi
  * 25 soruda kesiyordu. 1/2 dk, KPSS'nin kendi yoğunluğuna yakın (30 soru ≈ 60 dk).
  * Süre: 10 soruluk parça ~60-100 sn, Vercel'de öz-denetim açıkken de 300 sn'ye
- * sığar. 20 dakikaya kadar ders tek parça.
+ * sığar.
+ *
+ * Parça sayısı EN YAKIN tam sayıya yuvarlanır, yukarı değil: 22 dk'lık ders
+ * 11'er dakikalık iki parçaya bölünmesin (çift üretim + bindirme yüzünden çift
+ * soru riski, kazanç sıfır). Tolerans böylece ±10 dk: 30 dk'ya kadar tek parça,
+ * 31-50 dk iki parça (15-25 dk), ondan sonra parçalar 17-23 dk bandında.
  */
 export const PARCA_SURESI_SN = 20 * 60;
 /** Bölümün her bu kadar saniyesi için en fazla 1 soru */
@@ -286,9 +291,9 @@ export function parcaSoruSiniri(sureSaniye: number): number {
  */
 export const PARCA_BINDIRME_SN = 3 * 60;
 
-/** Parça sayısı: 30 dakikalık dilimler, parçalar eşit uzunlukta */
+/** Parça sayısı: süre / 20 dk, en yakına yuvarlanır (bkz. PARCA_SURESI_SN); parçalar eşit uzunlukta */
 export function parcaSayisi(sureSaniye: number): number {
-  return Math.max(1, Math.ceil(Math.max(0, sureSaniye) / PARCA_SURESI_SN));
+  return Math.max(1, Math.round(Math.max(0, sureSaniye) / PARCA_SURESI_SN));
 }
 
 /** Parçanın zaman aralığı (sn); parçalar eşit uzunlukta, uçlarda bindirme */
