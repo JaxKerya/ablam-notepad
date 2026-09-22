@@ -28,8 +28,10 @@ import {
   Clapperboard,
   GraduationCap,
   Briefcase,
+  Youtube,
 } from "lucide-react";
 import { KARIYER_ACIK } from "@/lib/kariyer";
+import { YOUTUBE_ACIK } from "@/lib/ablam-youtube";
 import { supabase } from "@/lib/supabase-browser";
 import { verifyPassword } from "@/lib/crypto";
 import { DynamicIcon } from "@/components/IconPicker";
@@ -695,13 +697,12 @@ export default function Home() {
         </button>
 
         {/*
-          Diğer uygulamalar. Üç eşit kart yan yana sığmıyordu: "Ablam Sheets"
-          iki satıra kırılıyor, kartlar farklı yükseklikte ve sıkışık duruyordu.
-          Alt alta liste: her satırda ikon ve ad. Açıklama yok — ablam üçünü de
-          biliyor, satır altı metin yalnızca kalabalık ediyordu.
+          Diğer uygulamalar. 2+2 ızgara, tek satırlık kompakt kartlar: ikon + ad.
+          Açıklama yok — ablam hepsini biliyor. Dar ekranda da 2 sütun kalıyor
+          (kartlar küçük, ad kısa).
         */}
         <div
-          className="animate-slide-up mt-9 flex w-full max-w-sm flex-col items-center gap-3"
+          className="animate-slide-up mt-9 flex w-full max-w-md flex-col items-center gap-3"
           style={{ animationDelay: "220ms" }}
         >
           <div className="flex w-full items-center gap-3">
@@ -712,35 +713,35 @@ export default function Home() {
             <span className="h-px flex-1 bg-white/[0.07]" />
           </div>
 
-          <div className="glass w-full divide-y divide-[var(--border)] overflow-hidden rounded-xl border border-[var(--border)]">
+          <div className="grid w-full grid-cols-2 gap-2">
             {[
               { href: "/sheets", Icon: Clapperboard, ad: "Ablam Sheets", acik: true },
               { href: "/ders", Icon: GraduationCap, ad: "Ablam Ders", acik: true },
               { href: "/kariyer", Icon: Briefcase, ad: "Ablam Kariyer", acik: KARIYER_ACIK },
+              { href: "/youtube", Icon: Youtube, ad: "Ablam YouTube", acik: YOUTUBE_ACIK },
             ].map(({ href, Icon, ad, acik }) =>
               acik ? (
                 <Link
                   key={href}
                   href={href}
-                  className="group flex items-center gap-3 px-3.5 py-2.5 transition-colors duration-200 hover:bg-white/[0.05]"
+                  className="glass group flex items-center gap-2.5 rounded-xl border border-[var(--border)] px-3 py-2.5 transition-all duration-200 hover:border-[var(--border-hover)] hover:bg-white/[0.04]"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]/80 transition-colors duration-200 group-hover:bg-[var(--accent)]/15 group-hover:text-[var(--accent)]">
                     <Icon size={15} />
                   </span>
-                  <span className="flex-1 text-[13px] font-medium text-white/70 transition-colors duration-200 group-hover:text-white/90">{ad}</span>
-                  <ChevronRight size={14} className="shrink-0 text-white/20 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-white/50" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-white/75 transition-colors duration-200 group-hover:text-white/95">{ad}</span>
+                  <ChevronRight size={13} className="shrink-0 text-white/15 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-white/50" />
                 </Link>
               ) : (
-                // Henüz açılmamış bölüm: tıklanmaz, sönük, "yakında" rozeti. Satır
-                // listede duruyor ki ablam bir şeyin geldiğini bilsin.
-                <div key={href} className="flex items-center gap-3 px-3.5 py-2.5 opacity-60" aria-disabled="true">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.05] text-white/35">
+                // Henüz açılmamış bölüm: tıklanmaz, sönük; ikonun köşesinde küçük bir
+                // nokta ve "Yakında" başlığı. Rozet adı kesiyordu, kompakt kartta yer yok.
+                <div key={href} className="glass flex items-center gap-2.5 rounded-xl border border-[var(--border)] px-3 py-2.5 opacity-55" aria-disabled="true" title="Yakında">
+                  <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.05] text-white/35">
                     <Icon size={15} />
+                    <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full border border-[var(--background)] bg-[var(--accent)]/70" />
                   </span>
-                  <span className="flex-1 text-[13px] font-medium text-white/45">{ad}</span>
-                  <span className="rounded-full border border-[var(--accent)]/25 bg-[var(--accent)]/10 px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-wider text-[var(--accent-light)]/80">
-                    Yakında
-                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-white/45">{ad}</span>
+                  <span className="shrink-0 text-[10px] uppercase tracking-wider text-white/25">yakında</span>
                 </div>
               )
             )}

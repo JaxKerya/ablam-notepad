@@ -660,3 +660,19 @@ ablam-notepad/
 - **Pin notes**: Pin important notes to the top of the sidebar
 - **Password protection**: Lock notes with a password (SHA-256 hashed)
 - **Dark theme**: Clean, modern, distraction-free UI
+
+## Ablam YouTube
+
+Uzun formatlı uyku anlatımı bölümleri: konu yazılır, senaryo/ses/video evdeki
+bilgisayarda hazırlanır, sitede onaylanıp YouTube'a yüklenir. Mimari Kariyer ile
+aynı — site yalnızca Supabase'e yazar, üretimi "stüdyo" yapar.
+
+1. `db/youtube.sql` dosyasını Supabase SQL Editor'da çalıştır (tablolar, realtime, `youtube` bucket'ı).
+2. Vercel'de `NEXT_PUBLIC_YOUTUBE_ACIK=true` (kapalıyken `/youtube?onizleme=1` ile görülür).
+3. Stüdyo: `AblamYT/gece/config.toml` içine `[supabase] url/key` (bu projenin `NEXT_PUBLIC_SUPABASE_*` değerleri) ve
+   `AblamYT/gece/client_secret.json` (Google Cloud → YouTube Data API v3 → OAuth masaüstü istemcisi).
+   Bir kez `gece.bat yt-auth`, sonra sürekli `gece.bat studyo`.
+
+Akış: **Seriler** sekmesinde seri + sahne tarifi → stüdyo sahneyi üretir (fal.ai) →
+**Bölümler**'de konu + süre → senaryo yazılır → sitede okunur/düzenlenir, onaylanır →
+ses + video → önizleme sitede → "YouTube'a yükle".
