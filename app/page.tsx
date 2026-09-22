@@ -733,15 +733,14 @@ export default function Home() {
                   <ChevronRight size={13} className="shrink-0 text-white/15 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-white/50" />
                 </Link>
               ) : (
-                // Henüz açılmamış bölüm: açık kartla aynı görünür, yalnızca tıklanmaz.
-                // İkonun köşesindeki nokta ve sağdaki "yakında" yazısı kalır.
-                <div key={href} className="glass flex cursor-default items-center gap-2.5 rounded-xl border border-[var(--border)] px-3 py-2.5" aria-disabled="true" title="Yakında">
-                  <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]/80">
+                // Henüz açılmamış bölüm: rozet ve "yakında" yazısı yok; kapalı olduğunu
+                // yalnızca soluk renk ve tıklanamaması anlatır.
+                <div key={href} className="glass flex cursor-default items-center gap-2.5 rounded-xl border border-[var(--border)] px-3 py-2.5 opacity-50" aria-disabled="true">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]/80">
                     <Icon size={15} />
-                    <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full border border-[var(--background)] bg-[var(--accent)]/70" />
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-white/75">{ad}</span>
-                  <span className="shrink-0 text-[10px] uppercase tracking-wider text-white/30">yakında</span>
+                  <ChevronRight size={13} className="shrink-0 text-white/15" />
                 </div>
               )
             )}
