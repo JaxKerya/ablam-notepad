@@ -40,23 +40,16 @@ export interface Sahne {
   /** loop'un 3 tur oynayan 720p önizlemesi (Storage); null = henüz yok, "" = üretilemedi */
   onizleme_url: string | null;
   hata: string | null;
+  /** dolu: sahne bu bölümün konusundan otomatik üretildi (db/youtube-bolum-sahnesi.sql) */
+  bolum_id?: string | null;
   created_at: string;
   updated_at: string;
 }
-
-/** Bir sahne en fazla bu kadar bölümde kullanılır (stüdyo config [sahne].en_fazla_kullanim ile aynı olmalı). */
-export const SAHNE_KULLANIM_SINIRI = 8;
 
 /** Sahnenin üretilmiş bölümlerde kaç kez kullanıldığı */
 export function sahneKullanimi(sahneId: string, bolumler: Pick<Bolum, "sahne_id" | "durum">[]): number {
   const uretilmis = ["render", "hazir", "yayinla", "yayinda"];
   return bolumler.filter((b) => b.sahne_id === sahneId && uretilmis.includes(b.durum)).length;
-}
-
-/** Serinin dönüşüm havuzu (eski kayıtlarda tek sahne) */
-export function seriHavuzu(s: Pick<Seri, "sahne_id" | "sahne_idler">): string[] {
-  const h = (s.sahne_idler ?? []).filter(Boolean);
-  return h.length ? h : s.sahne_id ? [s.sahne_id] : [];
 }
 
 /** Senaryo ve başlık üslubu */
@@ -66,15 +59,14 @@ export const KALIP_ETIKETI: Record<Kalip, string> = {
   deneyim: "Deneyim — bir mekânda bir gece, saat saat",
 };
 
-/** Seri — konu evreni + senaryo kalıbı + sahne (tablo: youtube_seriler) */
+/** Seri — konu evreni + senaryo kalıbı + süre + kapak stili (tablo: youtube_seriler). Sahne bölüme özel üretilir. */
 export interface Seri {
   id: string;
   ad: string;
   aciklama: string | null;
   kalip: Kalip;
-  /** varsayılan sahne (eski alan; dönüşüm havuzunun ilki) */
+  /** eski alanlar: sahne artık bölüme özel üretiliyor, seriye bağlı değil */
   sahne_id: string | null;
-  /** dönüşüm havuzu: stüdyo her bölümde kurallara göre birini seçer */
   sahne_idler: string[] | null;
   sure_dk: number;
   /** Seriye özel kapak stili (İngilizce, teknik + palet). Boşsa stil konudan seçilir. */
@@ -164,6 +156,31 @@ export const sayiBicimle = (n: number) => new Intl.NumberFormat("tr-TR", { notat
 /** Derlemeye eklenebilir: yüklenmiş, sesi stüdyoda duran, kendisi derleme olmayan bölüm */
 export const derlemeyeUygun = (b: Bolum) => b.durum === "yayinda" && !!b.youtube_id && !(b.derleme_idler?.length) && !!b.sure_sn;
 
+/** Harcama kaydı (tablo: youtube_maliyet) — gizli /youtube/maliyet sayfası */
+export type MaliyetKalemi = "arastirma" | "senaryo" | "ses" | "sahne" | "kapak" | "metin";
+export const KALEM_ETIKETI: Record<MaliyetKalemi, string> = {
+  arastirma: "Araştırma",
+  senaryo: "Senaryo",
+  ses: "Seslendirme",
+  sahne: "Sahne",
+  kapak: "Kapak",
+  metin: "Başlık ve diğer metinler",
+};
+export interface MaliyetKaydi {
+  id: string;
+  zaman: string;
+  kalem: MaliyetKalemi;
+  tutar: number;
+  bolum_id: string | null;
+  sahne_id: string | null;
+  aciklama: string | null;
+  /** eski günlüklerden sonradan çıkarılmış kayıt */
+  tahmini: boolean;
+}
+
+/** 1.234 → "$1.23" */
+export const dolar = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export interface Nabiz {
   son_gorulme: string | null;
   mesaj: string | null;
@@ -211,7 +228,7 @@ export function planliMi(b: Pick<Bolum, "durum" | "yayin_zamani">): boolean {
 }
 
 /** Haftalık yayın düzeni: günler (0 = Pazar … 6 = Cumartesi) ve saat. Takvim boş günleri buna göre gösterir. */
-export const YAYIN_GUNLERI = [0, 1, 3, 4];
+export const YAYIN_GUNLERI = [0, 2, 4]; // pazar, salı, perşembe
 export const YAYIN_SAATI = 20;
 /** Önerilen boş gün en az bu kadar saat sonra olsun (90 dk'lık bölüm ~1,5 saatte üretiliyor; sıra ve pay) */
 export const URETIM_PAYI_SAAT = 6;

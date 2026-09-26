@@ -54,9 +54,7 @@ import {
   type Sahne,
   type Kalip,
   KALIP_ETIKETI,
-  SAHNE_KULLANIM_SINIRI,
   sahneKullanimi,
-  seriHavuzu,
   sayiBicimle,
   derlemeyeUygun,
   type KaliteRaporu,
@@ -205,10 +203,9 @@ function YoutubeUygulamasi() {
     derlemeIdler: string[] = [],
   ): Promise<boolean> => {
     const ek = yayin === "elle" ? {} : { otomatik_yukle: true, gizlilik: "public", yayin_zamani: yayin === "planli" ? yayin_zamani : null };
-    // Sahne elle seçildiyse o kullanılır; seçilmediyse stüdyo üretim anında serinin havuzundan dönüşümle seçer
-    // (sahne_id burada yalnızca yer tutucu: sütun boş olamıyor).
-    const seri = seriler.find((s) => s.id === seri_id);
-    const sahne_id = elleSahne ?? (seri ? seriHavuzu(seri)[0] : null) ?? null;
+    // Sahne elle seçildiyse o kullanılır; seçilmediyse stüdyo bölüme özel üretir (olmazsa genel havuzdan seçer).
+    // sahne_id burada yalnızca yer tutucu: sütun boş olamıyor.
+    const sahne_id = elleSahne ?? sahneler.find((sh) => sh.loop_durum === "hazir" && !sh.bolum_id)?.id ?? null;
     const sahneAlani = elleSahne ? { sahne_elle: true } : {};
     // Derlemenin senaryosu yok: doğrudan üretim sırasına girer
     const derlemeAlani = derlemeIdler.length ? { derleme_idler: derlemeIdler, durum: "onaylandi" } : {};
@@ -245,8 +242,9 @@ function YoutubeUygulamasi() {
   };
 
   const sahneSil = async (sh: Sahne) => {
-    if (seriler.some((s) => seriHavuzu(s).includes(sh.id))) return addToast("Bu sahne bir serinin havuzunda; önce seriden çıkar.", "error");
     if (!confirm(`"${sh.ad}" sahnesi silinsin mi?`)) return;
+    // Eski serilerde sahne_id olarak kayıtlı olabilir: bağlantıyı kopar ki silme engellenmesin
+    await supabase.from("youtube_seriler").update({ sahne_id: null }).eq("sahne_id", sh.id);
     const { error } = await supabase.from("youtube_sahneler").delete().eq("id", sh.id);
     if (error) return addToast("Silinemedi: " + error.message, "error");
     getir();
@@ -329,7 +327,7 @@ function YoutubeUygulamasi() {
                 <Loader2 size={20} className="animate-spin" />
               </div>
             ) : sekme === "sahneler" ? (
-              <SahnelerEkrani sahneler={sahneler} seriler={seriler} bolumler={bolumler} onYeni={yeniSahne} onSil={sahneSil} />
+              <SahnelerEkrani sahneler={sahneler} bolumler={bolumler} onYeni={yeniSahne} onSil={sahneSil} />
             ) : sekme === "takvim" ? (
               <TakvimEkrani
                 bolumler={bolumler}
@@ -343,7 +341,7 @@ function YoutubeUygulamasi() {
                 }}
               />
             ) : sekme === "seriler" ? (
-              <SerilerEkrani seriler={seriler} sahneler={sahneler} bolumler={bolumler} onKaydet={seriKaydet} onSil={seriSil} onSahnelereGit={() => setSekme("sahneler")} />
+              <SerilerEkrani seriler={seriler} sahneler={sahneler} bolumler={bolumler} onKaydet={seriKaydet} onSil={seriSil} />
             ) : (
               <BolumlerEkrani
                 key={planZamani?.toISOString() ?? "form"}
@@ -356,6 +354,7 @@ function YoutubeUygulamasi() {
                 onYeni={yeniBolum}
                 onAc={setSeciliId}
                 onSerilereGit={() => setSekme("seriler")}
+                onSahnelereGit={() => setSekme("sahneler")}
               />
             )}
           </>
@@ -398,6 +397,7 @@ function BolumlerEkrani({
   onYeni,
   onAc,
   onSerilereGit,
+  onSahnelereGit,
 }: {
   /** takvimden gelindiyse formun planlı yayın tarihi */
   planZamani: Date | null;
@@ -417,11 +417,11 @@ function BolumlerEkrani({
   ) => Promise<boolean>;
   onAc: (id: string) => void;
   onSerilereGit: () => void;
+  onSahnelereGit: () => void;
 }) {
-  // Sahnesi hazır olan seriler; en yenisi varsayılan
-  const hazirSahne = (s: Seri) => seriHavuzu(s).some((id) => sahneler.find((sh) => sh.id === id)?.loop_durum === "hazir");
-  const hazirSeriler = seriler
-    .filter(hazirSahne)
+  // Sahne bölüme özel üretilir; yine de yedek için en az bir hazır genel sahne gerekir. En yeni seri varsayılan.
+  const yedekSahneVar = sahneler.some((sh) => sh.loop_durum === "hazir" && !sh.bolum_id);
+  const hazirSeriler = (yedekSahneVar ? seriler : [])
     .slice()
     .reverse()
     .sort((a, b) => Number(!!a.derleme) - Number(!!b.derleme));
@@ -487,11 +487,21 @@ function BolumlerEkrani({
         </h2>
         {hazirSeriler.length === 0 ? (
           <p className="text-[13px] leading-relaxed text-white/45">
-            Önce bir seri lazım — konu evreni, anlatım kalıbı ve arkada dönecek sahne.{" "}
-            <button onClick={onSerilereGit} className="text-[var(--accent-light)]/80 underline-offset-2 hover:underline">
-              Seri ekle
-            </button>
-            {seriler.length > 0 ? " (serinin sahnesi hazırlanınca burada görünür)" : ""}
+            {seriler.length === 0 ? (
+              <>
+                Önce bir seri lazım — konu evreni ve anlatım kalıbı.{" "}
+                <button onClick={onSerilereGit} className="text-[var(--accent-light)]/80 underline-offset-2 hover:underline">
+                  Seri ekle
+                </button>
+              </>
+            ) : (
+              <>
+                Yedek olarak en az bir hazır genel sahne lazım.{" "}
+                <button onClick={onSahnelereGit} className="text-[var(--accent-light)]/80 underline-offset-2 hover:underline">
+                  Sahne ekle
+                </button>
+              </>
+            )}
           </p>
         ) : (
           <div className="space-y-3">
@@ -531,10 +541,10 @@ function BolumlerEkrani({
                 deger={elleSahne}
                 onChange={setElleSahne}
                 secenekler={[
-                  { deger: "", etiket: "Sahne: otomatik", aciklama: "Serinin havuzundan dönüşümle seçilir" },
+                  { deger: "", etiket: "Sahne: konuya özel", aciklama: "Bölümün konusundan yeni sahne üretilir" },
                   ...sahneler
-                    .filter((sh) => sh.loop_durum === "hazir")
-                    .map((sh) => ({ deger: sh.id, etiket: `Sahne: ${sh.ad}`, aciklama: `${sahneKullanimi(sh.id, bolumler)}/${SAHNE_KULLANIM_SINIRI} bölümde kullanıldı` })),
+                    .filter((sh) => sh.loop_durum === "hazir" && !sh.bolum_id)
+                    .map((sh) => ({ deger: sh.id, etiket: `Sahne: ${sh.ad}`, aciklama: `${sahneKullanimi(sh.id, bolumler)} bölümde kullanıldı` })),
                 ]}
               />
             </div>
@@ -1416,14 +1426,12 @@ function SerilerEkrani({
   bolumler,
   onKaydet,
   onSil,
-  onSahnelereGit,
 }: {
   seriler: Seri[];
   sahneler: Sahne[];
   bolumler: Bolum[];
   onKaydet: (yeni: Partial<Seri>, id?: string) => Promise<void>;
   onSil: (s: Seri) => void;
-  onSahnelereGit: () => void;
 }) {
   const [duzenlenen, setDuzenlenen] = useState<string | null>(null);
   const [yeniAcik, setYeniAcik] = useState(false);
@@ -1448,18 +1456,16 @@ function SerilerEkrani({
           )}
         </div>
         <p className="mt-3 text-[12px] leading-relaxed text-white/40">
-          Seri, bölümlerin konu evrenini ve anlatım kalıbını belirler; arkada dönen sahneyi de seriden alır.
+          Seri, bölümlerin konu evrenini, anlatım kalıbını ve kapak stilini belirler. Arkada dönen sahne her bölümde konuya göre ayrıca üretilir.
         </p>
         {yeniAcik && (
           <div className="mt-4">
             <SeriFormu
-              sahneler={sahneler}
               onIptal={() => setYeniAcik(false)}
               onKaydet={async (v) => {
                 await onKaydet(v);
                 setYeniAcik(false);
               }}
-              onSahnelereGit={onSahnelereGit}
             />
           </div>
         )}
@@ -1470,9 +1476,9 @@ function SerilerEkrani({
       ) : (
         <div className="space-y-2">
           {seriler.map((s) => {
-            const havuz = seriHavuzu(s).map((id) => sahneler.find((sh) => sh.id === id)).filter((x): x is Sahne => !!x);
-            const sahne = havuz[0] ?? null;
-            const aktif = havuz.filter((sh) => sahneKullanimi(sh.id, bolumler) < SAHNE_KULLANIM_SINIRI).length;
+            // Kartta serinin en son bölümünün sahnesi görünür
+            const sonBolum = bolumler.find((b) => b.seri_id === s.id && b.sahne_id);
+            const sahne = sahneler.find((sh) => sh.id === sonBolum?.sahne_id) ?? null;
             const adet = bolumler.filter((b) => b.seri_id === s.id).length;
             const acik = duzenlenen === s.id;
             return (
@@ -1492,14 +1498,8 @@ function SerilerEkrani({
                     <p className="truncate text-[14px] font-medium text-white/90">{s.ad}</p>
                     <p className="truncate text-[12px] text-white/40">{s.aciklama || KALIP_ETIKETI[s.kalip]}</p>
                     <p className="mt-0.5 text-[11px] text-white/30">
-                      {adet} bölüm · {s.sure_dk} dk · {havuz.length > 1 ? `${havuz.length} sahne dönüşümde` : `sahne: ${sahne?.ad ?? "seçilmedi"}`}
-                      {sahne && sahne.loop_durum !== "hazir" ? " (hazırlanıyor)" : ""}
+                      {adet} bölüm · {s.sure_dk} dk{s.derleme ? " · derleme" : ""}
                     </p>
-                    {havuz.length > 0 && aktif < 2 && (
-                      <p className="mt-0.5 text-[11px] text-amber-100/70">
-                        {aktif === 0 ? "Bütün sahneler emekli — yeni sahne ekleyin." : "Dönüşüm için en az bir sahne daha ekleyin."}
-                      </p>
-                    )}
                   </div>
                   <button onClick={() => setDuzenlenen(acik ? null : s.id)} className="shrink-0 p-1.5 text-white/25 transition-colors hover:text-white/70" title="Düzenle">
                     <Pencil size={13} />
@@ -1512,13 +1512,11 @@ function SerilerEkrani({
                   <div className="mt-3 border-t border-[var(--border)] pt-3">
                     <SeriFormu
                       seri={s}
-                      sahneler={sahneler}
                       onIptal={() => setDuzenlenen(null)}
                       onKaydet={async (v) => {
                         await onKaydet(v, s.id);
                         setDuzenlenen(null);
                       }}
-                      onSahnelereGit={onSahnelereGit}
                     />
                   </div>
                 )}
@@ -1533,22 +1531,16 @@ function SerilerEkrani({
 
 function SeriFormu({
   seri,
-  sahneler,
   onKaydet,
   onIptal,
-  onSahnelereGit,
 }: {
   seri?: Seri;
-  sahneler: Sahne[];
   onKaydet: (v: Partial<Seri>) => Promise<void>;
   onIptal: () => void;
-  onSahnelereGit: () => void;
 }) {
   const [ad, setAd] = useState(seri?.ad ?? "");
   const [aciklama, setAciklama] = useState(seri?.aciklama ?? "");
   const [kalip, setKalip] = useState<Kalip>(seri?.kalip ?? "aciklayici");
-  const [secili, setSecili] = useState<string[]>(() => (seri ? seriHavuzu(seri) : sahneler[0] ? [sahneler[0].id] : []));
-  const secimDegistir = (id: string) => setSecili((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]));
   const [sure, setSure] = useState<number>(seri?.sure_dk ?? 60);
   const [kapakStil, setKapakStil] = useState(seri?.kapak_stil ?? "");
   const [kaydediliyor, setKaydediliyor] = useState(false);
@@ -1556,13 +1548,10 @@ function SeriFormu({
   const gonder = async () => {
     if (ad.trim().length < 2) return;
     setKaydediliyor(true);
-    if (secili.length === 0) return;
     await onKaydet({
       ad: ad.trim(),
       aciklama: aciklama.trim() || null,
       kalip,
-      sahne_id: secili[0] ?? null,
-      sahne_idler: secili,
       sure_dk: sure,
       kapak_stil: kapakStil.trim() || null,
     });
@@ -1588,45 +1577,6 @@ function SeriFormu({
           <label className="mb-1 block text-[11px] uppercase tracking-wider text-white/35">Varsayılan süre</label>
           <Secici deger={sure} onChange={setSure} secenekler={SURE_SECENEKLERI.map((d) => ({ deger: d as number, etiket: `${d} dakika` }))} />
         </div>
-      </div>
-      <div>
-        <label className="mb-1 block text-[11px] uppercase tracking-wider text-white/35">Sahneler (dönüşüm havuzu)</label>
-        {sahneler.length === 0 ? (
-          <p className="text-[12.5px] text-white/40">
-            Önce bir sahne lazım.{" "}
-            <button onClick={onSahnelereGit} className="text-[var(--accent-light)]/80 underline-offset-2 hover:underline">
-              Sahne ekle
-            </button>
-          </p>
-        ) : (
-          <>
-            <div className="flex flex-wrap gap-2">
-              {sahneler.map((sh) => {
-                const on = secili.includes(sh.id);
-                return (
-                  <button
-                    key={sh.id}
-                    type="button"
-                    onClick={() => secimDegistir(sh.id)}
-                    className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-[12px] transition-colors ${
-                      on ? "border-[var(--accent)]/50 bg-[var(--accent)]/15 text-[var(--accent-light)]" : "border-[var(--border)] text-white/50 hover:text-white/80"
-                    }`}
-                  >
-                    {sh.kapak_url && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={sh.kapak_url} alt="" className="h-6 w-10 rounded object-cover" />
-                    )}
-                    {sh.ad}
-                    {sh.loop_durum !== "hazir" && <span className="text-white/30">(hazırlanıyor)</span>}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-1.5 text-[11px] text-white/30">
-              Birden fazla seçersen stüdyo her bölümde sırayla seçer: art arda aynı sahne gelmez, bir sahne en fazla {SAHNE_KULLANIM_SINIRI} bölümde kullanılır.
-            </p>
-          </>
-        )}
       </div>
       <div>
         <label className="mb-1 block text-[11px] uppercase tracking-wider text-white/35">Kapak stili (isteğe bağlı)</label>
@@ -1655,13 +1605,11 @@ function SeriFormu({
 
 function SahnelerEkrani({
   sahneler,
-  seriler,
   bolumler,
   onYeni,
   onSil,
 }: {
   sahneler: Sahne[];
-  seriler: Seri[];
   bolumler: Bolum[];
   onYeni: (ad: string, sahne: string, aciklama: string) => Promise<void>;
   onSil: (s: Sahne) => void;
@@ -1682,44 +1630,14 @@ function SahnelerEkrani({
     setGonderiliyor(false);
   };
 
-  return (
-    <div className="animate-fade-in space-y-6">
-      <section className="glass rounded-xl border border-[var(--border)] p-4">
-        <h2 className="mb-1 flex items-center gap-2 text-[13px] font-medium text-white/80">
-          <Plus size={14} className="text-[var(--accent)]/80" />
-          Yeni sahne
-        </h2>
-        <p className="mb-3 text-[12px] leading-relaxed text-white/40">
-          Bölüm boyunca arkada dönen tek görsel. Bir kez üretilir, sonraki her bölümde kullanılır. Şömine ışığı ve camda yağmur her sahneye kendiliğinden eklenir; sen sadece odayı/mekânı tarif et.
-        </p>
-        <div className="space-y-2">
-          <input value={ad} onChange={(e) => setAd(e.target.value)} placeholder="Sahne adı — örn. Kış Kulübesi" className={girdiSinifi} />
-          <textarea
-            value={sahne}
-            onChange={(e) => setSahne(e.target.value)}
-            rows={3}
-            placeholder="Mekân — örn. Ahşap bir dağ kulübesinin içi; yün battaniyeli koltuk, masada bir fincan çay, pencerede gece"
-            className={girdiSinifi + " resize-none leading-relaxed"}
-          />
-          <input value={aciklama} onChange={(e) => setAciklama(e.target.value)} placeholder="Kısa not (isteğe bağlı) — sadece listede görünür" className={girdiSinifi} />
-          <div className="flex justify-end">
-            <button onClick={gonder} disabled={gonderiliyor || ad.trim().length < 2 || sahne.trim().length < 10} className={birincilDugme}>
-              {gonderiliyor ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
-              Sahneyi ekle
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {sahneler.length === 0 ? (
-        <p className="py-6 text-center text-[13px] text-white/35">Henüz sahne yok.</p>
-      ) : (
-        <div className="space-y-2">
-          {sahneler.map((s) => {
-            const adet = seriler.filter((x) => seriHavuzu(x).includes(s.id)).length;
+  // Genel sahneler: yedek, derlemeler ve elle seçim. Bölüme özel olanlar ayrı grupta (her bölüm kendi sahnesini üretir).
+  const genel = sahneler.filter((x) => !x.bolum_id);
+  const ozel = sahneler.filter((x) => x.bolum_id).reverse();
+  const sahneKarti = (s: Sahne) => {
             const kullanim = sahneKullanimi(s.id, bolumler);
-            const emekli = kullanim >= SAHNE_KULLANIM_SINIRI;
             const acik = acikSahne === s.id && !!s.onizleme_url;
+            const ob = s.bolum_id ? bolumler.find((b) => b.id === s.bolum_id) : null;
+            const ozelBolum = ob ? (ob.yt_baslik ?? ob.baslik ?? ob.konu).split(" | ")[0] : "";
             return (
               <div key={s.id} className="glass rounded-xl border border-[var(--border)] p-3">
               <div className="flex items-center gap-3">
@@ -1749,7 +1667,11 @@ function SahnelerEkrani({
                   <p className="truncate text-[14px] font-medium text-white/90">{s.ad}</p>
                   <p className="truncate text-[12px] text-white/40">{s.aciklama || s.sahne}</p>
                   <p className="mt-0.5 text-[11px] text-white/30">
-                    {adet} seri · {kullanim}/{SAHNE_KULLANIM_SINIRI} bölüm{emekli && <span className="text-amber-100/70"> · emekli</span>} ·{" "}
+                    {s.bolum_id ? (
+                      <>bölüme özel{ozelBolum ? ` · ${ozelBolum}` : ""} ·{" "}</>
+                    ) : (
+                      <>{kullanim} bölümde kullanıldı ·{" "}</>
+                    )}
                     {s.loop_durum === "hazir" ? "hazır" : s.loop_durum === "uretiliyor" ? "görsel üretiliyor" : s.loop_durum === "hata" ? `hata: ${s.hata ?? ""}` : "sırada"}
                   </p>
                 </div>
@@ -1765,8 +1687,51 @@ function SahnelerEkrani({
               )}
               </div>
             );
-          })}
+  };
+
+  return (
+    <div className="animate-fade-in space-y-6">
+      <section className="glass rounded-xl border border-[var(--border)] p-4">
+        <h2 className="mb-1 flex items-center gap-2 text-[13px] font-medium text-white/80">
+          <Plus size={14} className="text-[var(--accent)]/80" />
+          Yeni sahne
+        </h2>
+        <p className="mb-3 text-[12px] leading-relaxed text-white/40">
+          Her bölüm kendi konusuna özel sahnesini kendiliğinden üretir. Buradan eklediğin genel sahneler derlemelerde, elle seçimde ve bölüm sahnesi üretilemezse yedek olarak kullanılır. Şömine ışığı ve camda yağmur her sahneye kendiliğinden eklenir; sen sadece odayı/mekânı tarif et.
+        </p>
+        <div className="space-y-2">
+          <input value={ad} onChange={(e) => setAd(e.target.value)} placeholder="Sahne adı — örn. Kış Kulübesi" className={girdiSinifi} />
+          <textarea
+            value={sahne}
+            onChange={(e) => setSahne(e.target.value)}
+            rows={3}
+            placeholder="Mekân — örn. Ahşap bir dağ kulübesinin içi; yün battaniyeli koltuk, masada bir fincan çay, pencerede gece"
+            className={girdiSinifi + " resize-none leading-relaxed"}
+          />
+          <input value={aciklama} onChange={(e) => setAciklama(e.target.value)} placeholder="Kısa not (isteğe bağlı) — sadece listede görünür" className={girdiSinifi} />
+          <div className="flex justify-end">
+            <button onClick={gonder} disabled={gonderiliyor || ad.trim().length < 2 || sahne.trim().length < 10} className={birincilDugme}>
+              {gonderiliyor ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
+              Sahneyi ekle
+            </button>
+          </div>
         </div>
+      </section>
+
+      {genel.length === 0 ? (
+        <p className="py-6 text-center text-[13px] text-white/35">Henüz genel sahne yok.</p>
+      ) : (
+        <div className="space-y-2">
+          {genel.map(sahneKarti)}
+        </div>
+      )}
+      {ozel.length > 0 && (
+        <details className="group">
+          <summary className="cursor-pointer select-none px-1 text-[11px] font-medium uppercase tracking-wider text-white/35 hover:text-white/60">
+            Bölüme özel sahneler ({ozel.length})
+          </summary>
+          <div className="mt-2 space-y-2">{ozel.map(sahneKarti)}</div>
+        </details>
       )}
     </div>
   );
