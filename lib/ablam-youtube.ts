@@ -44,6 +44,21 @@ export interface Sahne {
   updated_at: string;
 }
 
+/** Bir sahne en fazla bu kadar bölümde kullanılır (stüdyo config [sahne].en_fazla_kullanim ile aynı olmalı). */
+export const SAHNE_KULLANIM_SINIRI = 8;
+
+/** Sahnenin üretilmiş bölümlerde kaç kez kullanıldığı */
+export function sahneKullanimi(sahneId: string, bolumler: Pick<Bolum, "sahne_id" | "durum">[]): number {
+  const uretilmis = ["render", "hazir", "yayinla", "yayinda"];
+  return bolumler.filter((b) => b.sahne_id === sahneId && uretilmis.includes(b.durum)).length;
+}
+
+/** Serinin dönüşüm havuzu (eski kayıtlarda tek sahne) */
+export function seriHavuzu(s: Pick<Seri, "sahne_id" | "sahne_idler">): string[] {
+  const h = (s.sahne_idler ?? []).filter(Boolean);
+  return h.length ? h : s.sahne_id ? [s.sahne_id] : [];
+}
+
 /** Senaryo ve başlık üslubu */
 export type Kalip = "aciklayici" | "deneyim";
 export const KALIP_ETIKETI: Record<Kalip, string> = {
@@ -57,11 +72,16 @@ export interface Seri {
   ad: string;
   aciklama: string | null;
   kalip: Kalip;
+  /** varsayılan sahne (eski alan; dönüşüm havuzunun ilki) */
   sahne_id: string | null;
+  /** dönüşüm havuzu: stüdyo her bölümde kurallara göre birini seçer */
+  sahne_idler: string[] | null;
   sure_dk: number;
   /** Seriye özel kapak stili (İngilizce, teknik + palet). Boşsa stil konudan seçilir. */
   kapak_stil: string | null;
   oynatma_listesi: string | null;
+  /** true: yeni senaryo yazılmaz; yayındaki bölümler tek uzun videoda birleştirilir (db/youtube-buyume.sql) */
+  derleme?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -71,6 +91,8 @@ export interface Bolum {
   seri_id: string | null;
   /** üretimde kullanılan sahne; boşsa serininki */
   sahne_id: string | null;
+  /** true: sahne bu bölüm için elle seçildi, dönüşüm dokunmaz */
+  sahne_elle: boolean;
   konu: string;
   sure_dk: number;
   durum: Durum;
@@ -98,11 +120,49 @@ export interface Bolum {
   kapak_istek: boolean;
   /** true: stüdyo başlık/açıklamayı YouTube'a yazıyor; bitince false */
   yt_guncelle: boolean;
+  /** Senaryodan önce web'den çıkarılan bilgi dosyası (markdown); araştırma kapalıysa null */
+  arastirma_md: string | null;
+  /** Derleme bölümünde arka arkaya eklenen bölümler (sırasıyla) */
+  derleme_idler?: string[];
+  /** Yüklemeden önceki teknik kontrol */
+  kalite?: KaliteRaporu | null;
+  /** YouTube istatistikleri (stüdyo birkaç saatte bir günceller; veriler 2-3 gün gecikmeli) */
+  istatistik?: Istatistik | null;
+  istatistik_zaman?: string | null;
   hata: string | null;
   gunluk: string[];
   created_at: string;
   updated_at: string;
 }
+
+export interface KaliteKontrolu {
+  ad: string;
+  durum: "ok" | "uyari" | "hata";
+  detay: string;
+}
+export interface KaliteRaporu {
+  sonuc: "ok" | "uyari" | "hata";
+  zaman: string;
+  kontroller: KaliteKontrolu[];
+}
+
+export interface Istatistik {
+  goruntulenme?: number;
+  izlenme_dk?: number;
+  ort_sure_sn?: number;
+  ort_yuzde?: number;
+  abone?: number;
+  begeni?: number;
+  gosterim?: number;
+  /** yüzde (4.2 = %4,2); gösterim verisi yoksa null */
+  tiklanma_orani?: number | null;
+}
+
+/** 1234 → "1,2 B" */
+export const sayiBicimle = (n: number) => new Intl.NumberFormat("tr-TR", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+
+/** Derlemeye eklenebilir: yüklenmiş, sesi stüdyoda duran, kendisi derleme olmayan bölüm */
+export const derlemeyeUygun = (b: Bolum) => b.durum === "yayinda" && !!b.youtube_id && !(b.derleme_idler?.length) && !!b.sure_sn;
 
 export interface Nabiz {
   son_gorulme: string | null;
@@ -148,6 +208,36 @@ export function yayinDurumu(b: Pick<Bolum, "durum" | "gizlilik" | "yayin_zamani"
 /** yayinda + gelecekte yayin_zamani → YouTube'da planlı bekliyor */
 export function planliMi(b: Pick<Bolum, "durum" | "yayin_zamani">): boolean {
   return b.durum === "yayinda" && !!b.yayin_zamani && new Date(b.yayin_zamani).getTime() > Date.now();
+}
+
+/** Haftalık yayın düzeni: günler (0 = Pazar … 6 = Cumartesi) ve saat. Takvim boş günleri buna göre gösterir. */
+export const YAYIN_GUNLERI = [0, 1, 3, 4];
+export const YAYIN_SAATI = 20;
+/** Önerilen boş gün en az bu kadar saat sonra olsun (90 dk'lık bölüm ~1,5 saatte üretiliyor; sıra ve pay) */
+export const URETIM_PAYI_SAAT = 6;
+
+/** Yerel takvim günü anahtarı */
+export const gunAnahtari = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+/** İçinde bulunulan haftanın pazartesisi, 00:00 */
+export function haftaBasi(t: number): Date {
+  const d = new Date(t);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/** Yayın düzenindeki ilk boş gün (yayın saatinde); üretime yetişecek kadar ileride olanlardan */
+export function siradakiBosGun(bolumler: Pick<Bolum, "yayin_zamani">[], simdi: number): Date | null {
+  const dolu = new Set(bolumler.filter((b) => b.yayin_zamani).map((b) => gunAnahtari(new Date(b.yayin_zamani!))));
+  const d = new Date(simdi);
+  d.setHours(YAYIN_SAATI, 0, 0, 0);
+  for (let i = 0; i < 60; i++, d.setDate(d.getDate() + 1)) {
+    if (YAYIN_GUNLERI.includes(d.getDay()) && !dolu.has(gunAnahtari(d)) && d.getTime() >= simdi + URETIM_PAYI_SAAT * 3_600_000) {
+      return new Date(d);
+    }
+  }
+  return null;
 }
 
 /** "24 Eyl 21:00" */

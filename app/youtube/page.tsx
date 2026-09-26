@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   CalendarClock,
+  CalendarDays,
   Check,
   ChevronRight,
   Clapperboard,
@@ -53,9 +54,21 @@ import {
   type Sahne,
   type Kalip,
   KALIP_ETIKETI,
+  SAHNE_KULLANIM_SINIRI,
+  sahneKullanimi,
+  seriHavuzu,
+  sayiBicimle,
+  derlemeyeUygun,
+  type KaliteRaporu,
+  type Istatistik,
+  YAYIN_GUNLERI,
+  YAYIN_SAATI,
+  gunAnahtari,
+  haftaBasi,
+  siradakiBosGun,
 } from "@/lib/ablam-youtube";
 
-type Sekme = "bolumler" | "seriler" | "sahneler";
+type Sekme = "bolumler" | "takvim" | "seriler" | "sahneler";
 
 const girdiSinifi =
   "focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-[13.5px] text-white/90 placeholder-white/25";
@@ -137,6 +150,8 @@ function YoutubeUygulamasi() {
   const [seciliId, setSeciliId] = useState<string | null>(null);
   /** "şimdi": nabız ve "x dk önce" hesapları render içinde Date.now() çağırmasın */
   const [simdi, setSimdi] = useState(0);
+  /** Takvimde boş bir güne "bölüm ekle" denince yeni bölüm formu bu tarihle açılır */
+  const [planZamani, setPlanZamani] = useState<Date | null>(null);
 
   const getir = useCallback(async () => {
     const [b, s, sh, n] = await Promise.all([
@@ -180,17 +195,29 @@ function YoutubeUygulamasi() {
 
   // --- eylemler: hepsi iyimser değil; stüdyo satırı değiştirince realtime getiriyor ---
 
-  const yeniBolum = async (seri_id: string, konu: string, sure_dk: number, yayin: YayinModu, yayin_zamani: string | null): Promise<boolean> => {
+  const yeniBolum = async (
+    seri_id: string,
+    konu: string,
+    sure_dk: number,
+    yayin: YayinModu,
+    yayin_zamani: string | null,
+    elleSahne: string | null,
+    derlemeIdler: string[] = [],
+  ): Promise<boolean> => {
     const ek = yayin === "elle" ? {} : { otomatik_yukle: true, gizlilik: "public", yayin_zamani: yayin === "planli" ? yayin_zamani : null };
-    // Sahne seriden gelir ve bölüme yazılır: seri sonradan başka bir sahneye geçse de
-    // sıradaki bölüm eklendiği andaki sahneyle üretilir.
-    const sahne_id = seriler.find((s) => s.id === seri_id)?.sahne_id ?? null;
-    const { error } = await supabase.from("youtube_bolumler").insert({ seri_id, sahne_id, konu, sure_dk, ...ek });
+    // Sahne elle seçildiyse o kullanılır; seçilmediyse stüdyo üretim anında serinin havuzundan dönüşümle seçer
+    // (sahne_id burada yalnızca yer tutucu: sütun boş olamıyor).
+    const seri = seriler.find((s) => s.id === seri_id);
+    const sahne_id = elleSahne ?? (seri ? seriHavuzu(seri)[0] : null) ?? null;
+    const sahneAlani = elleSahne ? { sahne_elle: true } : {};
+    // Derlemenin senaryosu yok: doğrudan üretim sırasına girer
+    const derlemeAlani = derlemeIdler.length ? { derleme_idler: derlemeIdler, durum: "onaylandi" } : {};
+    const { error } = await supabase.from("youtube_bolumler").insert({ seri_id, sahne_id, konu, sure_dk, ...sahneAlani, ...derlemeAlani, ...ek });
     if (error) {
       addToast("Eklenemedi: " + error.message, "error");
       return false;  // konu metni formda kalsın, kullanıcı yeniden yazmasın
     }
-    addToast("Sıraya alındı. Senaryo hazır olunca burada görünür.");
+    addToast(derlemeIdler.length ? "Derleme sıraya alındı; video birleştirilince burada görünür." : "Sıraya alındı. Senaryo hazır olunca burada görünür.");
     getir();
     return true;
   };
@@ -218,7 +245,7 @@ function YoutubeUygulamasi() {
   };
 
   const sahneSil = async (sh: Sahne) => {
-    if (seriler.some((s) => s.sahne_id === sh.id)) return addToast("Bu sahneyi kullanan seriler var; önce serinin sahnesini değiştir.", "error");
+    if (seriler.some((s) => seriHavuzu(s).includes(sh.id))) return addToast("Bu sahne bir serinin havuzunda; önce seriden çıkar.", "error");
     if (!confirm(`"${sh.ad}" sahnesi silinsin mi?`)) return;
     const { error } = await supabase.from("youtube_sahneler").delete().eq("id", sh.id);
     if (error) return addToast("Silinemedi: " + error.message, "error");
@@ -279,6 +306,7 @@ function YoutubeUygulamasi() {
               {(
                 [
                   ["bolumler", "Bölümler", Film],
+                  ["takvim", "Takvim", CalendarDays],
                   ["seriler", "Seriler", Layers],
                   ["sahneler", "Sahneler", Clapperboard],
                 ] as const
@@ -286,11 +314,11 @@ function YoutubeUygulamasi() {
                 <button
                   key={ad}
                   onClick={() => setSekme(ad)}
-                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-[13px] transition-colors ${
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-2 py-2 text-[13px] transition-colors sm:px-3 ${
                     sekme === ad ? "bg-[var(--accent)]/15 text-[var(--accent-light)]" : "text-white/45 hover:text-white/75"
                   }`}
                 >
-                  <Ikon size={14} />
+                  <Ikon size={14} className="hidden shrink-0 sm:block" />
                   {etiket}
                 </button>
               ))}
@@ -301,11 +329,27 @@ function YoutubeUygulamasi() {
                 <Loader2 size={20} className="animate-spin" />
               </div>
             ) : sekme === "sahneler" ? (
-              <SahnelerEkrani sahneler={sahneler} seriler={seriler} onYeni={yeniSahne} onSil={sahneSil} />
+              <SahnelerEkrani sahneler={sahneler} seriler={seriler} bolumler={bolumler} onYeni={yeniSahne} onSil={sahneSil} />
+            ) : sekme === "takvim" ? (
+              <TakvimEkrani
+                bolumler={bolumler}
+                seriler={seriler}
+                simdi={simdi}
+                onAc={setSeciliId}
+                onEkle={(d) => {
+                  setPlanZamani(d);
+                  setSekme("bolumler");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              />
             ) : sekme === "seriler" ? (
               <SerilerEkrani seriler={seriler} sahneler={sahneler} bolumler={bolumler} onKaydet={seriKaydet} onSil={seriSil} onSahnelereGit={() => setSekme("sahneler")} />
             ) : (
               <BolumlerEkrani
+                key={planZamani?.toISOString() ?? "form"}
+                planZamani={planZamani}
+                onPlanKullanildi={() => setPlanZamani(null)}
+                simdi={simdi}
                 bolumler={bolumler}
                 seriler={seriler}
                 sahneler={sahneler}
@@ -345,6 +389,9 @@ function NabizRozeti({ cevrimici, nabiz }: { cevrimici: boolean; nabiz: Nabiz | 
 // ---------------------------------------------------------------- bölümler
 
 function BolumlerEkrani({
+  planZamani,
+  onPlanKullanildi,
+  simdi,
   bolumler,
   seriler,
   sahneler,
@@ -352,37 +399,79 @@ function BolumlerEkrani({
   onAc,
   onSerilereGit,
 }: {
+  /** takvimden gelindiyse formun planlı yayın tarihi */
+  planZamani: Date | null;
+  onPlanKullanildi: () => void;
+  simdi: number;
   bolumler: Bolum[];
   seriler: Seri[];
   sahneler: Sahne[];
-  onYeni: (seri_id: string, konu: string, sure_dk: number, yayin: YayinModu, yayin_zamani: string | null) => Promise<boolean>;
+  onYeni: (
+    seri_id: string,
+    konu: string,
+    sure_dk: number,
+    yayin: YayinModu,
+    yayin_zamani: string | null,
+    elleSahne: string | null,
+    derlemeIdler?: string[],
+  ) => Promise<boolean>;
   onAc: (id: string) => void;
   onSerilereGit: () => void;
 }) {
   // Sahnesi hazır olan seriler; en yenisi varsayılan
-  const hazirSahne = (s: Seri) => sahneler.find((sh) => sh.id === s.sahne_id)?.loop_durum === "hazir";
-  const hazirSeriler = seriler.filter(hazirSahne).slice().reverse();
+  const hazirSahne = (s: Seri) => seriHavuzu(s).some((id) => sahneler.find((sh) => sh.id === id)?.loop_durum === "hazir");
+  const hazirSeriler = seriler
+    .filter(hazirSahne)
+    .slice()
+    .reverse()
+    .sort((a, b) => Number(!!a.derleme) - Number(!!b.derleme));
   const [seriId, setSeriId] = useState(hazirSeriler[0]?.id ?? "");
   const [konu, setKonu] = useState("");
   const [sure, setSure] = useState<number>(60);
   const [sureSecildi, setSureSecildi] = useState(false);
-  const [yayin, setYayin] = useState<YayinModu>("elle");
-  const [yayinZamani, setYayinZamani] = useState(() => yerelTarihGirdisi());
+  /** "" = otomatik (dönüşüm); bir sahne kimliği = bu bölüm için elle seçim */
+  const [elleSahne, setElleSahne] = useState("");
+  const [yayin, setYayin] = useState<YayinModu>(planZamani ? "planli" : "elle");
+  // Planlı yayının varsayılanı: takvimden seçilen gün, yoksa yayın düzenindeki ilk boş gün
+  const [yayinZamani, setYayinZamani] = useState(() => yerelTarihGirdisi(planZamani ?? siradakiBosGun(bolumler, simdi) ?? undefined));
   const [zamanGecersiz, setZamanGecersiz] = useState(false);
   const [gonderiliyor, setGonderiliyor] = useState(false);
   const etkinSeri = hazirSeriler.some((s) => s.id === seriId) ? seriId : (hazirSeriler[0]?.id ?? "");
   // Süre serinin varsayılanından gelir; kullanıcı elle değiştirdiyse ona dokunma
   const seriSure = seriler.find((s) => s.id === etkinSeri)?.sure_dk ?? 60;
   const etkinSure = sureSecildi ? sure : seriSure;
+  // Derleme serisi: konu yazılmaz, yayındaki bölümler seçilir
+  const derlemeModu = !!seriler.find((s) => s.id === etkinSeri)?.derleme;
+  const [secilenler, setSecilenler] = useState<string[]>([]);
+  const adaylar = bolumler.filter(derlemeyeUygun);
+  const secilenBolumler = secilenler.map((id) => adaylar.find((b) => b.id === id)).filter((b): b is Bolum => !!b);
+  const derlemeSn = secilenBolumler.reduce((t, b) => t + (b.sure_sn ?? 0), 0);
+  const sadeBaslik = (b: Bolum) => (b.yt_baslik ?? b.baslik ?? b.konu).split(" | ")[0];
 
-  const gonderilebilir = !!etkinSeri && konu.trim().length >= 4 && !(yayin === "planli" && zamanGecersiz);
+  const gonderilebilir =
+    !!etkinSeri && (derlemeModu ? secilenBolumler.length >= 2 : konu.trim().length >= 4) && !(yayin === "planli" && zamanGecersiz);
 
   const gonder = async () => {
     if (!gonderilebilir || gonderiliyor) return;
     setGonderiliyor(true);
-    const oldu = await onYeni(etkinSeri, konu.trim(), etkinSure, yayin, yayin === "planli" ? new Date(yayinZamani).toISOString() : null);
-    if (oldu) setKonu("");
+    const zaman = yayin === "planli" ? new Date(yayinZamani).toISOString() : null;
+    const oldu = derlemeModu
+      ? await onYeni(
+          etkinSeri,
+          ("Derleme: " + secilenBolumler.map(sadeBaslik).join(" · ")).slice(0, 300),
+          Math.round(derlemeSn / 60),
+          yayin,
+          zaman,
+          elleSahne || null,
+          secilenBolumler.map((b) => b.id),
+        )
+      : await onYeni(etkinSeri, konu.trim(), etkinSure, yayin, zaman, elleSahne || null);
     setGonderiliyor(false);
+    if (oldu) {
+      setKonu("");
+      setSecilenler([]);
+      if (planZamani) onPlanKullanildi();  // form sıfırlansın; aynı güne ikinci bölüm yanlışlıkla eklenmesin
+    }
   };
 
   const onayBekleyen = bolumler.filter((b) => b.durum === "senaryo_onay" || b.durum === "hazir");
@@ -406,6 +495,9 @@ function BolumlerEkrani({
           </p>
         ) : (
           <div className="space-y-3">
+            {derlemeModu ? (
+              <DerlemeSecici adaylar={adaylar} secilenler={secilenler} onDegis={setSecilenler} toplamSn={derlemeSn} baslik={sadeBaslik} />
+            ) : (
             <textarea
               value={konu}
               onChange={(e) => setKonu(e.target.value)}
@@ -413,22 +505,38 @@ function BolumlerEkrani({
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) gonder();
               }}
               rows={2}
+              autoFocus={!!planZamani}
               placeholder="Bu gece ne anlatılsın? Örn: İnsanlık neden takvim kullanıyor? · Bir şehrin kanalizasyonu nasıl çalışır?"
               className={girdiSinifi + " resize-none leading-relaxed"}
             />
+            )}
             <div className="flex flex-col gap-2 sm:flex-row">
               {hazirSeriler.length > 1 && (
                 <div className="sm:flex-1">
                   <Secici deger={etkinSeri} onChange={setSeriId} secenekler={hazirSeriler.map((s) => ({ deger: s.id, etiket: s.ad, aciklama: KALIP_ETIKETI[s.kalip] }))} />
                 </div>
               )}
-              <div className="sm:flex-1">
-                <Secici deger={etkinSure} onChange={(d) => { setSure(d); setSureSecildi(true); }} secenekler={SURE_SECENEKLERI.map((d) => ({ deger: d as number, etiket: `${d} dakika` }))} />
-              </div>
+              {!derlemeModu && (
+                <div className="sm:flex-1">
+                  <Secici deger={etkinSure} onChange={(d) => { setSure(d); setSureSecildi(true); }} secenekler={SURE_SECENEKLERI.map((d) => ({ deger: d as number, etiket: `${d} dakika` }))} />
+                </div>
+              )}
               <button onClick={gonder} disabled={gonderiliyor || !gonderilebilir} className={birincilDugme + " sm:w-32"}>
                 {gonderiliyor ? <Loader2 size={14} className="animate-spin" /> : <Clapperboard size={14} />}
                 Hazırla
               </button>
+            </div>
+            <div>
+              <Secici
+                deger={elleSahne}
+                onChange={setElleSahne}
+                secenekler={[
+                  { deger: "", etiket: "Sahne: otomatik", aciklama: "Serinin havuzundan dönüşümle seçilir" },
+                  ...sahneler
+                    .filter((sh) => sh.loop_durum === "hazir")
+                    .map((sh) => ({ deger: sh.id, etiket: `Sahne: ${sh.ad}`, aciklama: `${sahneKullanimi(sh.id, bolumler)}/${SAHNE_KULLANIM_SINIRI} bölümde kullanıldı` })),
+                ]}
+              />
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="sm:flex-1">
@@ -483,20 +591,22 @@ function BolumlerEkrani({
   );
 }
 
+const TON_SINIFI = {
+  bekle: "border-white/10 text-white/45",
+  calis: "border-[var(--accent)]/25 text-[var(--accent-light)]/80",
+  onay: "border-amber-300/30 bg-amber-300/10 text-amber-100/90",
+  hazir: "border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent-light)]",
+  yayin: "border-white/15 bg-white/10 text-white/80",
+  hata: "border-red-300/30 bg-red-400/10 text-red-100/90",
+} as const;
+
 function DurumRozeti({ bolum }: { bolum: Bolum }) {
   const { etiket, ton } = planliMi(bolum)
     ? { etiket: `Planlandı · ${tarihBicimle(bolum.yayin_zamani!)}`, ton: "hazir" as const }
     : bolum.durum === "yayinda"
       ? { etiket: yayinDurumu(bolum), ton: bolum.gizlilik === "public" ? ("yayin" as const) : ("bekle" as const) }
       : (DURUM_BILGISI[bolum.durum] ?? { etiket: bolum.durum, ton: "bekle" as const });
-  const sinif = {
-    bekle: "border-white/10 text-white/45",
-    calis: "border-[var(--accent)]/25 text-[var(--accent-light)]/80",
-    onay: "border-amber-300/30 bg-amber-300/10 text-amber-100/90",
-    hazir: "border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent-light)]",
-    yayin: "border-white/15 bg-white/10 text-white/80",
-    hata: "border-red-300/30 bg-red-400/10 text-red-100/90",
-  }[ton];
+  const sinif = TON_SINIFI[ton];
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ${sinif}`}>
       {ton === "calis" && <Loader2 size={10} className="animate-spin" />}
@@ -542,7 +652,296 @@ function BolumKarti({ bolum, onAc, vurgu }: { bolum: Bolum; onAc: () => void; vu
       </div>
       <IlerlemeCubugu bolum={bolum} />
       {bolum.durum === "hata" && bolum.hata && <p className="mt-2 text-[12px] text-red-100/70">{hataMetni(bolum.hata)}</p>}
+      {bolum.istatistik && <IstatistikSatiri ist={bolum.istatistik} />}
+      {bolum.kalite && bolum.kalite.sonuc !== "ok" && bolum.durum !== "yayinda" && (
+        <p className={`mt-1.5 text-[11.5px] ${bolum.kalite.sonuc === "hata" ? "text-red-100/70" : "text-amber-100/60"}`}>
+          Teknik kontrol: {bolum.kalite.kontroller.filter((k) => k.durum !== "ok").map((k) => k.ad).join(", ")}
+        </p>
+      )}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------- takvim
+
+const TAKVIM_HAFTA = 4;
+const GUN_KISA = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
+
+/** Takvimdeki kısa durum: tarih zaten satırda yazdığı için "Planlandı · tarih" yerine */
+function takvimDurumu(b: Bolum, simdi: number): { etiket: string; ton: keyof typeof TON_SINIFI } {
+  const gecti = new Date(b.yayin_zamani!).getTime() <= simdi;
+  if (b.durum === "yayinda") return gecti ? { etiket: "Yayında", ton: "yayin" } : { etiket: "YouTube'da planlı", ton: "hazir" };
+  if (b.durum === "hata") return { etiket: "Hata", ton: "hata" };
+  if (gecti) return { etiket: "Tarih geçti", ton: "onay" };
+  return DURUM_BILGISI[b.durum] ?? { etiket: b.durum, ton: "bekle" };
+}
+
+function TakvimEkrani({
+  bolumler,
+  seriler,
+  simdi,
+  onAc,
+  onEkle,
+}: {
+  bolumler: Bolum[];
+  seriler: Seri[];
+  simdi: number;
+  onAc: (id: string) => void;
+  onEkle: (zaman: Date) => void;
+}) {
+  const bas = haftaBasi(simdi);
+  const bugun = gunAnahtari(new Date(simdi));
+  const gunIcin = new Map<string, Bolum[]>();
+  for (const b of bolumler) {
+    if (!b.yayin_zamani) continue;
+    const k = gunAnahtari(new Date(b.yayin_zamani));
+    gunIcin.set(k, [...(gunIcin.get(k) ?? []), b]);
+  }
+  const seriAdi = (id: string | null) => seriler.find((s) => s.id === id)?.ad ?? "";
+  // Tarihi olmayan ve henüz yüklenmemiş bölümler: planlanmayı bekleyenler
+  const tarihsiz = bolumler.filter((b) => !b.yayin_zamani && b.durum !== "yayinda");
+
+  const haftalar = Array.from({ length: TAKVIM_HAFTA }, (_, h) =>
+    Array.from({ length: 7 }, (_, g) => {
+      const d = new Date(bas);
+      d.setDate(bas.getDate() + h * 7 + g);
+      return d;
+    }),
+  );
+  // İleriye dönük yayın günlerinin doluluğu (bugünün geçmiş saati sayılmaz)
+  const ilerideki = haftalar.flat().filter((d) => {
+    const saat = new Date(d);
+    saat.setHours(YAYIN_SAATI, 0, 0, 0);
+    return YAYIN_GUNLERI.includes(d.getDay()) && saat.getTime() > simdi;
+  });
+  const bos = ilerideki.filter((d) => !gunIcin.has(gunAnahtari(d))).length;
+
+  return (
+    <div className="animate-fade-in space-y-4">
+      <p className="px-1 text-[12.5px] leading-relaxed text-white/45">
+        Yayın günleri: {YAYIN_GUNLERI.map((g) => GUN_KISA[g]).join(", ")} · {String(YAYIN_SAATI).padStart(2, "0")}:00.{" "}
+        {bos === 0 ? (
+          <span className="text-white/70">Önümüzdeki {TAKVIM_HAFTA} hafta dolu.</span>
+        ) : (
+          <>
+            Önümüzdeki {TAKVIM_HAFTA} haftada <span className="text-amber-100/80">{bos} boş gün</span> var.
+          </>
+        )}
+      </p>
+
+      {haftalar.map((gunler, h) => {
+        const son = gunler[6];
+        const aralik = `${gunler[0].toLocaleDateString("tr-TR", { day: "numeric", month: gunler[0].getMonth() === son.getMonth() ? undefined : "short" })} – ${son.toLocaleDateString("tr-TR", { day: "numeric", month: "long" })}`;
+        const gorunen = gunler.filter((d) => YAYIN_GUNLERI.includes(d.getDay()) || gunIcin.has(gunAnahtari(d)));
+        const doluGun = gunler.filter((d) => YAYIN_GUNLERI.includes(d.getDay()) && gunIcin.has(gunAnahtari(d))).length;
+        return (
+          <section key={h} className="glass rounded-xl border border-[var(--border)] p-2">
+            <div className="flex items-baseline justify-between px-2 pb-1.5 pt-1">
+              <h3 className="text-[12px] font-medium text-white/70">{h === 0 ? "Bu hafta" : h === 1 ? "Gelecek hafta" : aralik}</h3>
+              <span className="text-[11px] text-white/30">
+                {h < 2 ? `${aralik} · ` : ""}
+                {doluGun}/{YAYIN_GUNLERI.length}
+              </span>
+            </div>
+            <div className="divide-y divide-white/[0.05]">
+              {gorunen.map((d) => {
+                const k = gunAnahtari(d);
+                const liste = (gunIcin.get(k) ?? []).slice().sort((a, b) => a.yayin_zamani!.localeCompare(b.yayin_zamani!));
+                const slot = new Date(d);
+                slot.setHours(YAYIN_SAATI, 0, 0, 0);
+                const gecmis = slot.getTime() <= simdi;
+                return (
+                  <div key={k} className={`flex gap-3 px-2 py-2 ${k === bugun ? "rounded-lg bg-[var(--accent)]/[0.07]" : ""}`}>
+                    <div className={`w-10 shrink-0 text-center ${gecmis && liste.length === 0 ? "opacity-40" : ""}`}>
+                      <p className="text-[10.5px] uppercase tracking-wider text-white/35">{GUN_KISA[d.getDay()]}</p>
+                      <p className={`text-[15px] leading-tight ${k === bugun ? "text-[var(--accent-light)]" : "text-white/80"}`}>{d.getDate()}</p>
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      {liste.map((b) => {
+                        const { etiket, ton } = takvimDurumu(b, simdi);
+                        return (
+                          <button
+                            key={b.id}
+                            onClick={() => onAc(b.id)}
+                            className="group flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-white/[0.04]"
+                          >
+                            <span className="shrink-0 text-[11.5px] tabular-nums text-white/35">
+                              {new Date(b.yayin_zamani!).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] text-white/85">{b.baslik ?? b.konu}</span>
+                              <span className="block truncate text-[11px] text-white/30">
+                                {seriAdi(b.seri_id)} · {b.sure_dk} dk
+                              </span>
+                            </span>
+                            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10.5px] ${TON_SINIFI[ton]}`}>{etiket}</span>
+                          </button>
+                        );
+                      })}
+                      {liste.length === 0 &&
+                        (gecmis ? (
+                          <p className="px-1.5 py-1.5 text-[12px] text-white/20">Yayın yok</p>
+                        ) : (
+                          <button
+                            onClick={() => onEkle(slot)}
+                            className="flex w-full items-center gap-2 rounded-lg border border-dashed border-white/10 px-2.5 py-1.5 text-[12px] text-white/40 transition-colors hover:border-[var(--accent)]/40 hover:text-[var(--accent-light)]"
+                          >
+                            <Plus size={12} />
+                            Boş · {String(YAYIN_SAATI).padStart(2, "0")}:00 için bölüm ekle
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+
+      {tarihsiz.length > 0 && (
+        <section>
+          <h3 className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wider text-white/30">Tarihi olmayanlar</h3>
+          <div className="space-y-1">
+            {tarihsiz.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => onAc(b.id)}
+                className="glass flex w-full items-center gap-3 rounded-lg border border-[var(--border)] px-3 py-2 text-left transition-colors hover:bg-white/[0.04]"
+              >
+                <span className="min-w-0 flex-1 truncate text-[13px] text-white/75">{b.baslik ?? b.konu}</span>
+                <span className="shrink-0 text-[11px] text-white/30">{b.otomatik_yukle ? "hazır olunca yayınlanır" : "elle yüklenecek"}</span>
+                <DurumRozeti bolum={b} />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- derleme, istatistik, kalite
+
+function DerlemeSecici({
+  adaylar,
+  secilenler,
+  onDegis,
+  toplamSn,
+  baslik,
+}: {
+  adaylar: Bolum[];
+  secilenler: string[];
+  onDegis: (ids: string[]) => void;
+  toplamSn: number;
+  baslik: (b: Bolum) => string;
+}) {
+  const degistir = (id: string) => onDegis(secilenler.includes(id) ? secilenler.filter((x) => x !== id) : [...secilenler, id]);
+  const saat = toplamSn / 3600;
+  if (adaylar.length < 2) {
+    return <p className="text-[13px] leading-relaxed text-white/45">Derleme için YouTube&apos;a yüklenmiş en az iki bölüm gerekiyor.</p>;
+  }
+  return (
+    <div>
+      <p className="mb-2 text-[12px] leading-relaxed text-white/45">
+        Arka arkaya eklenecek bölümleri sırayla seç. Yeni ses üretilmez; sonunda 30 dakika ortam sesi eklenir.
+      </p>
+      <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
+        {adaylar.map((b) => {
+          const sira = secilenler.indexOf(b.id);
+          return (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => degistir(b.id)}
+              className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                sira >= 0 ? "border-[var(--accent)]/40 bg-[var(--accent)]/10" : "border-[var(--border)] hover:bg-white/[0.03]"
+              }`}
+            >
+              <span
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] ${
+                  sira >= 0 ? "border-[var(--accent)]/60 text-[var(--accent-light)]" : "border-white/15 text-transparent"
+                }`}
+              >
+                {sira >= 0 ? sira + 1 : "·"}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[13px] text-white/80">{baslik(b)}</span>
+              <span className="shrink-0 text-[11px] text-white/35">{sureBicimle(b.sure_sn)}</span>
+            </button>
+          );
+        })}
+      </div>
+      {secilenler.length > 0 && (
+        <p className={`mt-2 text-[12px] ${saat > 4.5 ? "text-amber-100/70" : "text-white/50"}`}>
+          {secilenler.length} bölüm · toplam {sureBicimle(toplamSn)}
+          {saat > 4.5 ? " — 4,5 saati aşıyor; dosya ve yükleme çok büyür, bir bölüm çıkarmayı düşün." : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function istatistikParcalari(ist: Istatistik): string[] {
+  const p: string[] = [];
+  if (ist.goruntulenme != null) p.push(`${sayiBicimle(ist.goruntulenme)} izlenme`);
+  if (ist.ort_sure_sn) p.push(`ort. ${Math.round(ist.ort_sure_sn / 60)} dk`);
+  if (ist.tiklanma_orani != null) p.push(`TO %${ist.tiklanma_orani.toLocaleString("tr-TR")}`);
+  if (ist.abone) p.push(`+${ist.abone} abone`);
+  return p;
+}
+
+function IstatistikSatiri({ ist }: { ist: Istatistik }) {
+  const p = istatistikParcalari(ist);
+  if (!p.length) return null;
+  return <p className="mt-1.5 text-[11.5px] text-white/40">{p.join(" · ")}</p>;
+}
+
+function IstatistikPaneli({ ist, zaman }: { ist: Istatistik; zaman: string | null }) {
+  const kutular: [string, string][] = [
+    ["İzlenme", ist.goruntulenme != null ? sayiBicimle(ist.goruntulenme) : "—"],
+    ["İzlenme süresi", ist.izlenme_dk != null ? `${sayiBicimle(Math.round(ist.izlenme_dk / 60))} saat` : "—"],
+    ["Ort. izleme", ist.ort_sure_sn ? `${Math.round(ist.ort_sure_sn / 60)} dk${ist.ort_yuzde ? ` · %${ist.ort_yuzde.toLocaleString("tr-TR")}` : ""}` : "—"],
+    ["Gösterim", ist.gosterim != null ? sayiBicimle(ist.gosterim) : "—"],
+    ["Tıklanma oranı", ist.tiklanma_orani != null ? `%${ist.tiklanma_orani.toLocaleString("tr-TR")}` : "—"],
+    ["Abone", ist.abone != null ? `+${ist.abone}` : "—"],
+  ];
+  return (
+    <section className="glass rounded-xl border border-[var(--border)] p-4">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h3 className="text-[12px] font-medium uppercase tracking-wider text-white/40">İstatistik</h3>
+        {zaman && <span className="text-[11px] text-white/25">güncellendi {zamanOnce(zaman)} · YouTube verisi 2-3 gün gecikmeli</span>}
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {kutular.map(([ad, deger]) => (
+          <div key={ad} className="rounded-lg border border-white/[0.06] px-3 py-2">
+            <p className="text-[11px] text-white/35">{ad}</p>
+            <p className="text-[15px] text-white/85">{deger}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function KalitePaneli({ rapor }: { rapor: KaliteRaporu }) {
+  const renk = { ok: "text-[var(--accent-light)]/70", uyari: "text-amber-100/75", hata: "text-red-100/80" } as const;
+  const isaret = { ok: "✓", uyari: "!", hata: "✕" } as const;
+  return (
+    <details className="glass rounded-xl border border-[var(--border)] px-4 py-3" open={rapor.sonuc !== "ok"}>
+      <summary className="cursor-pointer select-none text-[12.5px] text-white/55">
+        Teknik kontrol ·{" "}
+        <span className={renk[rapor.sonuc]}>{rapor.sonuc === "ok" ? "sorun yok" : rapor.sonuc === "uyari" ? "uyarı var" : "hata var, otomatik yükleme durdu"}</span>
+      </summary>
+      <ul className="mt-2 space-y-1 text-[12px]">
+        {rapor.kontroller.map((k) => (
+          <li key={k.ad} className="flex gap-2">
+            <span className={`w-3 shrink-0 text-center ${renk[k.durum]}`}>{isaret[k.durum]}</span>
+            <span className="w-36 shrink-0 text-white/50">{k.ad}</span>
+            <span className="min-w-0 text-white/70">{k.detay}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -603,6 +1002,8 @@ function BolumDetay({
           </button>
         </section>
       )}
+      {bolum.istatistik && <IstatistikPaneli ist={bolum.istatistik} zaman={bolum.istatistik_zaman ?? null} />}
+      {bolum.kalite && <KalitePaneli rapor={bolum.kalite} />}
       {bolum.senaryo_md && bolum.durum !== "senaryo_onay" && <SenaryoOkuma md={bolum.senaryo_md} kelime={bolum.kelime} />}
 
       {bolum.gunluk.length > 0 && (
@@ -662,6 +1063,17 @@ function SenaryoOnay({ bolum, onYama }: { bolum: Bolum; onYama: (id: string, yam
         <SenaryoMetni md={md} />
       )}
 
+      {bolum.arastirma_md && (
+        <details className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface)]">
+          <summary className="cursor-pointer list-none px-4 py-2.5 text-[12px] text-white/50 transition-colors hover:text-white/80">
+            Araştırma notları — senaryodaki somut bilgiler buradan alındı
+          </summary>
+          <div className="border-t border-[var(--border)]">
+            <ArastirmaNotlari md={bolum.arastirma_md} />
+          </div>
+        </details>
+      )}
+
       {sorunlar.length > 0 && (
         <ul className="mt-3 space-y-1 text-[12px] text-amber-100/80">
           {sorunlar.map((s) => (
@@ -682,6 +1094,46 @@ function SenaryoOnay({ bolum, onYama }: { bolum: Bolum; onYama: (id: string, yam
         </button>
       </div>
     </section>
+  );
+}
+
+/** Bilgi dosyası: ## başlıklar, "- " maddeler, [güven] etiketleri ve kaynak adresleri. */
+function ArastirmaNotlari({ md }: { md: string }) {
+  const guvenRengi: Record<string, string> = {
+    yüksek: "text-[var(--accent-light)]/70",
+    orta: "text-white/40",
+    tartışmalı: "text-amber-200/70",
+  };
+  return (
+    <div className="max-h-[50vh] space-y-1.5 overflow-y-auto px-4 py-3 text-[12.5px] leading-relaxed text-white/65">
+      {md.split("\n").map((satir, i) => {
+        const t = satir.trim();
+        if (!t) return null;
+        if (t.startsWith("## ")) {
+          return (
+            <h4 key={i} className="pt-2 text-[11px] font-medium uppercase tracking-wider text-[var(--accent-light)]/60">
+              {t.slice(3)}
+            </h4>
+          );
+        }
+        const madde = t.startsWith("- ") ? t.slice(2) : t;
+        const url = madde.match(/https?:\/\/\S+/)?.[0];
+        const guven = madde.match(/\[(yüksek|orta|tartışmalı)\]/)?.[1];
+        const metin = madde.replace(/\[(yüksek|orta|tartışmalı)\]/, "").replace(url ?? "\u0000", "").replace(/\s+—\s*$/, "").trim();
+        return (
+          <p key={i} className={t.startsWith("- ") ? "pl-3" : ""}>
+            {t.startsWith("- ") && <span className="-ml-3 mr-1.5 text-white/25">•</span>}
+            {metin}
+            {guven && <span className={`ml-1.5 text-[11px] ${guvenRengi[guven]}`}>[{guven}]</span>}
+            {url && (
+              <a href={url} target="_blank" rel="noreferrer" className="ml-1.5 text-[11px] text-white/35 underline-offset-2 hover:text-white/70 hover:underline">
+                {new URL(url).hostname.replace(/^www\./, "")}
+              </a>
+            )}
+          </p>
+        );
+      })}
+    </div>
   );
 }
 
@@ -746,10 +1198,23 @@ function YayinPaneli({ bolum, onYama }: { bolum: Bolum; onYama: (id: string, yam
     setKapakYukleniyor(false);
   };
 
-  const degisti = yayinda && (baslik.trim() !== (bolum.yt_baslik ?? bolum.baslik ?? "") || aciklama !== (bolum.yt_aciklama ?? ""));
+  // Yüklenmiş ama henüz yayına girmemiş (planlı) videonun tarihi değiştirilebilir
+  const planDuzenlenir = planliMi(bolum);
+  const eskiZaman = bolum.yayin_zamani ? yerelTarihGirdisi(new Date(bolum.yayin_zamani)) : "";
+  const tarihDegisti = planDuzenlenir && yayinZamani !== eskiZaman;
+  const degisti =
+    yayinda && (baslik.trim() !== (bolum.yt_baslik ?? bolum.baslik ?? "") || aciklama !== (bolum.yt_aciklama ?? "") || tarihDegisti);
   const youtubeGuncelle = async () => {
     setGonderiliyor(true);
-    await onYama(bolum.id, { yt_baslik: baslik.trim(), yt_aciklama: aciklama, yt_guncelle: true }, "Stüdyo YouTube'daki başlık ve açıklamayı güncelliyor.");
+    const yama: Partial<Bolum> = { yt_baslik: baslik.trim(), yt_aciklama: aciklama, yt_guncelle: true };
+    if (tarihDegisti) yama.yayin_zamani = new Date(yayinZamani).toISOString();
+    await onYama(
+      bolum.id,
+      yama,
+      tarihDegisti
+        ? `Stüdyo YouTube'u güncelliyor; yeni yayın zamanı ${tarihBicimle(yama.yayin_zamani!)}.`
+        : "Stüdyo YouTube'daki başlık ve açıklamayı güncelliyor.",
+    );
     setGonderiliyor(false);
   };
 
@@ -810,13 +1275,34 @@ function YayinPaneli({ bolum, onYama }: { bolum: Bolum; onYama: (id: string, yam
         </div>
         <details className="group">
           <summary className="cursor-pointer list-none text-[12px] text-white/40 transition-colors hover:text-white/70">
-            <span className="inline-flex items-center gap-1.5"><Pencil size={12} /> Başlık ve açıklamayı düzenle</span>
+            <span className="inline-flex items-center gap-1.5">
+              <Pencil size={12} /> {planDuzenlenir ? "Başlık, açıklama ve yayın zamanını düzenle" : "Başlık ve açıklamayı düzenle"}
+            </span>
           </summary>
           <div className="mt-3 space-y-3">
+            {planDuzenlenir && (
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-wider text-white/35">Yayın zamanı</label>
+                <input
+                  type="datetime-local"
+                  value={yayinZamani}
+                  onChange={(e) => {
+                    setYayinZamani(e.target.value);
+                    setZamanGecersiz(new Date(e.target.value).getTime() < Date.now());
+                  }}
+                  disabled={bolum.yt_guncelle}
+                  className={girdiSinifi + " sm:w-60"}
+                />
+              </div>
+            )}
             <input value={baslik} onChange={(e) => setBaslik(e.target.value)} maxLength={100} disabled={bolum.yt_guncelle} className={girdiSinifi} />
             <textarea value={aciklama} onChange={(e) => setAciklama(e.target.value)} rows={6} disabled={bolum.yt_guncelle} className={girdiSinifi + " resize-y text-[12.5px] leading-relaxed"} />
             <div className="flex justify-end">
-              <button onClick={youtubeGuncelle} disabled={gonderiliyor || bolum.yt_guncelle || !degisti || baslik.trim().length < 3} className={birincilDugme}>
+              <button
+                onClick={youtubeGuncelle}
+                disabled={gonderiliyor || bolum.yt_guncelle || !degisti || baslik.trim().length < 3 || (tarihDegisti && zamanGecersiz)}
+                className={birincilDugme}
+              >
                 {gonderiliyor || bolum.yt_guncelle ? <Loader2 size={14} className="animate-spin" /> : <Youtube size={14} />}
                 {bolum.yt_guncelle ? "Güncelleniyor" : "YouTube'da güncelle"}
               </button>
@@ -945,19 +1431,23 @@ function SerilerEkrani({
   return (
     <div className="animate-fade-in space-y-6">
       <section className="glass rounded-xl border border-[var(--border)] p-4">
+        {/* Başlık satırı diğer bölümlerin başlığıyla aynı yükseklikte kalsın: buton küçük metin düğmesi */}
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-[13px] font-medium text-white/80">
             <Layers size={14} className="text-[var(--accent)]/80" />
             Seriler
           </h2>
           {!yeniAcik && (
-            <button onClick={() => setYeniAcik(true)} className={`${ikincilDugme} px-3 py-1.5 text-[12px]`}>
+            <button
+              onClick={() => setYeniAcik(true)}
+              className="-my-1 flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] text-[var(--accent-light)]/75 transition-colors hover:bg-white/[0.05] hover:text-[var(--accent-light)]"
+            >
               <Plus size={13} />
               Yeni seri
             </button>
           )}
         </div>
-        <p className="mt-2 text-[12px] leading-relaxed text-white/40">
+        <p className="mt-3 text-[12px] leading-relaxed text-white/40">
           Seri, bölümlerin konu evrenini ve anlatım kalıbını belirler; arkada dönen sahneyi de seriden alır.
         </p>
         {yeniAcik && (
@@ -980,7 +1470,9 @@ function SerilerEkrani({
       ) : (
         <div className="space-y-2">
           {seriler.map((s) => {
-            const sahne = sahneler.find((sh) => sh.id === s.sahne_id) ?? null;
+            const havuz = seriHavuzu(s).map((id) => sahneler.find((sh) => sh.id === id)).filter((x): x is Sahne => !!x);
+            const sahne = havuz[0] ?? null;
+            const aktif = havuz.filter((sh) => sahneKullanimi(sh.id, bolumler) < SAHNE_KULLANIM_SINIRI).length;
             const adet = bolumler.filter((b) => b.seri_id === s.id).length;
             const acik = duzenlenen === s.id;
             return (
@@ -1000,9 +1492,14 @@ function SerilerEkrani({
                     <p className="truncate text-[14px] font-medium text-white/90">{s.ad}</p>
                     <p className="truncate text-[12px] text-white/40">{s.aciklama || KALIP_ETIKETI[s.kalip]}</p>
                     <p className="mt-0.5 text-[11px] text-white/30">
-                      {adet} bölüm · {s.sure_dk} dk · sahne: {sahne?.ad ?? "seçilmedi"}
+                      {adet} bölüm · {s.sure_dk} dk · {havuz.length > 1 ? `${havuz.length} sahne dönüşümde` : `sahne: ${sahne?.ad ?? "seçilmedi"}`}
                       {sahne && sahne.loop_durum !== "hazir" ? " (hazırlanıyor)" : ""}
                     </p>
+                    {havuz.length > 0 && aktif < 2 && (
+                      <p className="mt-0.5 text-[11px] text-amber-100/70">
+                        {aktif === 0 ? "Bütün sahneler emekli — yeni sahne ekleyin." : "Dönüşüm için en az bir sahne daha ekleyin."}
+                      </p>
+                    )}
                   </div>
                   <button onClick={() => setDuzenlenen(acik ? null : s.id)} className="shrink-0 p-1.5 text-white/25 transition-colors hover:text-white/70" title="Düzenle">
                     <Pencil size={13} />
@@ -1050,7 +1547,8 @@ function SeriFormu({
   const [ad, setAd] = useState(seri?.ad ?? "");
   const [aciklama, setAciklama] = useState(seri?.aciklama ?? "");
   const [kalip, setKalip] = useState<Kalip>(seri?.kalip ?? "aciklayici");
-  const [sahneId, setSahneId] = useState<string>(seri?.sahne_id ?? sahneler[0]?.id ?? "");
+  const [secili, setSecili] = useState<string[]>(() => (seri ? seriHavuzu(seri) : sahneler[0] ? [sahneler[0].id] : []));
+  const secimDegistir = (id: string) => setSecili((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]));
   const [sure, setSure] = useState<number>(seri?.sure_dk ?? 60);
   const [kapakStil, setKapakStil] = useState(seri?.kapak_stil ?? "");
   const [kaydediliyor, setKaydediliyor] = useState(false);
@@ -1058,11 +1556,13 @@ function SeriFormu({
   const gonder = async () => {
     if (ad.trim().length < 2) return;
     setKaydediliyor(true);
+    if (secili.length === 0) return;
     await onKaydet({
       ad: ad.trim(),
       aciklama: aciklama.trim() || null,
       kalip,
-      sahne_id: sahneId || null,
+      sahne_id: secili[0] ?? null,
+      sahne_idler: secili,
       sure_dk: sure,
       kapak_stil: kapakStil.trim() || null,
     });
@@ -1090,7 +1590,7 @@ function SeriFormu({
         </div>
       </div>
       <div>
-        <label className="mb-1 block text-[11px] uppercase tracking-wider text-white/35">Sahne</label>
+        <label className="mb-1 block text-[11px] uppercase tracking-wider text-white/35">Sahneler (dönüşüm havuzu)</label>
         {sahneler.length === 0 ? (
           <p className="text-[12.5px] text-white/40">
             Önce bir sahne lazım.{" "}
@@ -1099,11 +1599,33 @@ function SeriFormu({
             </button>
           </p>
         ) : (
-          <Secici
-            deger={sahneId}
-            onChange={setSahneId}
-            secenekler={sahneler.map((sh) => ({ deger: sh.id, etiket: sh.ad, aciklama: sh.loop_durum === "hazir" ? undefined : "görseli hazırlanıyor" }))}
-          />
+          <>
+            <div className="flex flex-wrap gap-2">
+              {sahneler.map((sh) => {
+                const on = secili.includes(sh.id);
+                return (
+                  <button
+                    key={sh.id}
+                    type="button"
+                    onClick={() => secimDegistir(sh.id)}
+                    className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-[12px] transition-colors ${
+                      on ? "border-[var(--accent)]/50 bg-[var(--accent)]/15 text-[var(--accent-light)]" : "border-[var(--border)] text-white/50 hover:text-white/80"
+                    }`}
+                  >
+                    {sh.kapak_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={sh.kapak_url} alt="" className="h-6 w-10 rounded object-cover" />
+                    )}
+                    {sh.ad}
+                    {sh.loop_durum !== "hazir" && <span className="text-white/30">(hazırlanıyor)</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-[11px] text-white/30">
+              Birden fazla seçersen stüdyo her bölümde sırayla seçer: art arda aynı sahne gelmez, bir sahne en fazla {SAHNE_KULLANIM_SINIRI} bölümde kullanılır.
+            </p>
+          </>
         )}
       </div>
       <div>
@@ -1134,11 +1656,13 @@ function SeriFormu({
 function SahnelerEkrani({
   sahneler,
   seriler,
+  bolumler,
   onYeni,
   onSil,
 }: {
   sahneler: Sahne[];
   seriler: Seri[];
+  bolumler: Bolum[];
   onYeni: (ad: string, sahne: string, aciklama: string) => Promise<void>;
   onSil: (s: Sahne) => void;
 }) {
@@ -1192,7 +1716,9 @@ function SahnelerEkrani({
       ) : (
         <div className="space-y-2">
           {sahneler.map((s) => {
-            const adet = seriler.filter((x) => x.sahne_id === s.id).length;
+            const adet = seriler.filter((x) => seriHavuzu(x).includes(s.id)).length;
+            const kullanim = sahneKullanimi(s.id, bolumler);
+            const emekli = kullanim >= SAHNE_KULLANIM_SINIRI;
             const acik = acikSahne === s.id && !!s.onizleme_url;
             return (
               <div key={s.id} className="glass rounded-xl border border-[var(--border)] p-3">
@@ -1223,7 +1749,7 @@ function SahnelerEkrani({
                   <p className="truncate text-[14px] font-medium text-white/90">{s.ad}</p>
                   <p className="truncate text-[12px] text-white/40">{s.aciklama || s.sahne}</p>
                   <p className="mt-0.5 text-[11px] text-white/30">
-                    {adet} seri ·{" "}
+                    {adet} seri · {kullanim}/{SAHNE_KULLANIM_SINIRI} bölüm{emekli && <span className="text-amber-100/70"> · emekli</span>} ·{" "}
                     {s.loop_durum === "hazir" ? "hazır" : s.loop_durum === "uretiliyor" ? "görsel üretiliyor" : s.loop_durum === "hata" ? `hata: ${s.hata ?? ""}` : "sırada"}
                   </p>
                 </div>
