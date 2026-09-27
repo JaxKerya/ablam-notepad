@@ -1251,6 +1251,8 @@ function YayinPaneli({ bolum, onYama }: { bolum: Bolum; onYama: (id: string, yam
         </div>
       )}
 
+      {bolum.kapak_b_url && <KapakTesti bolum={bolum} />}
+
       {yayinda ? (
         <div className="space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1415,6 +1417,33 @@ function YayinPaneli({ bolum, onYama }: { bolum: Bolum; onYama: (id: string, yam
         </div>
       )}
     </section>
+  );
+}
+
+function KapakTesti({ bolum }: { bolum: Bolum }) {
+  const kapaklar = [
+    ["A", bolum.thumbnail_url],
+    ["B", bolum.kapak_b_url],
+  ].filter((k): k is [string, string] => !!k[1]);
+  return (
+    <div className="mb-4">
+      <p className="mb-2 text-[11px] uppercase tracking-wider text-white/35">Kapak testi</p>
+      <div className="grid grid-cols-2 gap-2">
+        {kapaklar.map(([ad, url]) => (
+          <a key={ad} href={url} target="_blank" rel="noreferrer" className="group relative block overflow-hidden rounded-lg border border-[var(--border)]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt={`Kapak ${ad}`} className="aspect-video w-full object-cover" />
+            <span className="absolute left-1.5 top-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] font-medium text-white/90">{ad}</span>
+            <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[10.5px] text-white/80 opacity-0 transition-opacity group-hover:opacity-100">
+              Aç / indir
+            </span>
+          </a>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11.5px] leading-relaxed text-white/35">
+        YouTube Studio&apos;da videoyu aç → Küçük resim → Test ve karşılaştır: iki kapağı yükle, YouTube hangisi daha çok izlendiyse onu seçer.
+      </p>
+    </div>
   );
 }
 

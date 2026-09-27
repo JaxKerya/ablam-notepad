@@ -108,6 +108,8 @@ export interface Bolum {
   youtube_url: string | null;
   drive_url: string | null;
   thumbnail_url: string | null;
+  /** A/B testi için ikinci kapak (YouTube'a gönderilmez; Studio "Test ve karşılaştır"a elle yüklenir) */
+  kapak_b_url?: string | null;
   /** true: stüdyo kapağı (yeniden) üretiyor; bitince false + thumbnail_url */
   kapak_istek: boolean;
   /** true: stüdyo başlık/açıklamayı YouTube'a yazıyor; bitince false */
