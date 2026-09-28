@@ -69,6 +69,42 @@ SADECE geçerli JSON döndür:
   "guclu": ["..."], "aramaTerimleri": ["..."]},
  "oneriler": [{"is": "...", "neden": "..."}]}`;
 
+// --- Ön eleme kapısı ------------------------------------------------------------
+
+/**
+ * Sol'dan ÖNCE çalışan ucuz kapı. Yalnızca başlık + şirket + şehir görüyor
+ * (~150 token) ve tek soruya cevap veriyor: bu ilan kişinin iş ailelerinden
+ * birine yakın mı? Amaç puanlamak değil, KESİN ALAKASIZLARI ayıklamak —
+ * ölçümde modele giden ilanların %90'ı 0-24 alıyor ve paranın üçte ikisi
+ * oraya gidiyor (27.09.2026).
+ *
+ * Eşik bilerek gevşek: "emin değilsen ilgili de". Yanlış eleme yanlış
+ * bildirimden kötü, elenen ilan bir daha görülmüyor.
+ */
+export const onElemePrompt = (profil: KariyerProfili) =>
+  `Bir iş arayan için ilanları ÖN ELEMEDEN geçiriyorsun. Elinde yalnızca ilanın başlığı,
+şirketi ve şehri var — puanlama yok, tek karar: bu ilan aşağıdaki iş ailelerinden birine
+YAKIN mı?
+
+KİŞİNİN YAPABİLDİĞİ / KABUL EDECEĞİ İŞLER:
+${[...profil.yapabildigi, ...profil.kabulEder].map((x) => `- ${x}`).join("\n") || "- (belirtilmemiş)"}
+${profil.istemez.length ? `\nAÇIKÇA İSTEMEDİKLERİ:\n${profil.istemez.map((x) => `- ${x}`).join("\n")}\n` : ""}
+KURALLAR:
+- Aynı iş ailesinden farklı unvanlar İLGİLİDİR ("ofis asistanı", "sekreter", "veri giriş
+  elemanı", "evrak sorumlusu" hepsi büro ailesindendir).
+- Başlık belirsizse ("eleman aranıyor", "personel alımı") İLGİLİ de — açıklamayı asıl
+  değerlendirme okuyacak.
+- EMİN DEĞİLSEN İLGİLİ DE. Yalnızca açıkça başka bir meslek olduğunda ilgisiz de
+  (aşçı, kurye, güvenlik, forklift operatörü, inşaat işçisi, garson, kasiyer, temizlik…).
+- "İstemedikleri" listesindeki bir işse ilgisiz de.
+
+SADECE geçerli JSON döndür:
+{"ilgili": true}`;
+
+/** Kapıya giden metin — açıklama YOK, maliyetin tamamı burada kesiliyor */
+export const onElemeMetni = (ilan: { baslik: string; sirket?: string | null; sehir?: string | null }) =>
+  [`Başlık: ${ilan.baslik}`, ilan.sirket ? `Şirket: ${ilan.sirket}` : "", ilan.sehir ? `Şehir: ${ilan.sehir}` : ""].filter(Boolean).join("\n");
+
 // --- İlan değerlendirme ---------------------------------------------------------
 
 /**

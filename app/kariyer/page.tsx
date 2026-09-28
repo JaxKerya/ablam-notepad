@@ -263,7 +263,9 @@ function KariyerUygulamasi() {
         .neq("karar", "ele")
         .order("degerlendirildi", { ascending: false })
         .limit(200),
-      supabase.from("kariyer_taramalar").select("*").not("kaynak", "in", "(nabiz,ozet)").order("baslangic", { ascending: false }).limit(60),
+      // ~3 gün: 8 kaynak × saatlik koşu. 60 satır 7 saat ediyordu; 8 saatte bir taranan
+      // LinkedIn'in başarılı satırı pencereden düşüp panel "taranmadı" diyordu, günlük sayaç da eksikti
+      supabase.from("kariyer_taramalar").select("*").not("kaynak", "in", "(nabiz,ozet)").order("baslangic", { ascending: false }).limit(600),
       supabase.from("kariyer_eslesmeler").select("ilan_id", { count: "exact", head: true }),
       supabase.from("kariyer_eslesmeler").select("ilan_id", { count: "exact", head: true }).not("basvuru_durumu", "is", null),
     ]);

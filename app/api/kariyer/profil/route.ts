@@ -115,7 +115,7 @@ export async function PATCH(request: Request) {
       const { data } = await supabase
         .from("kariyer_eslesmeler")
         .delete()
-        .like("gerekce", "Filtre:%")
+        .or("gerekce.like.Filtre:%,gerekce.like.Ön eleme:%")
         .gte("degerlendirildi", sinir)
         .select("ilan_id");
       sifirlanan = data?.length ?? 0;

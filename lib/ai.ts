@@ -52,6 +52,13 @@ const GELISTIRME_MODELI = process.env.AI_REFINE_MODEL?.trim() ?? "";
 const PROFIL_MODELI = process.env.AI_PROFIL_MODEL?.trim() ?? "";
 
 /**
+ * Ön eleme kapısı (Ablam Kariyer): yalnızca başlık+şirket+şehir okuyup "bu ilan
+ * ilgili mi" diyen ucuz model. Değerlendirme modelinden 10 kat ucuz olmalı;
+ * boşsa denetim modeli (Luna) kullanılır.
+ */
+const ONELEME_MODELI = process.env.AI_ONELEME_MODEL?.trim() ?? "";
+
+/**
  * Düşünme derinliği (low | medium | high | xhigh). Yalnızca ÜRETİM ve ÖZ-DENETİM
  * rollerine gidiyor; denetim (Luna) ve diğerleri sağlayıcı varsayılanında.
  * Boşsa parametre hiç gönderilmez. OpenRouter bunu `reasoning.effort` olarak
@@ -124,6 +131,8 @@ const olcumTopla = (a: AiOlcum, b: AiOlcum): AiOlcum => ({
 function rolModeli(rol: ChatSecenekleri["rol"]): string {
   return rol === "degerlendirme"
     ? DEGERLENDIRME_MODELI
+    : rol === "oneleme"
+      ? ONELEME_MODELI || DENETIM_MODELI
     : rol === "denetim"
       ? DENETIM_MODELI
       : rol === "gelistirme"
@@ -175,7 +184,7 @@ interface ChatSecenekleri {
   maxTokens?: number;
   timeoutMs?: number;
   /** Hangi işin modeli kullanılsın — her rolün kendi env değişkeni var */
-  rol?: "uretim" | "degerlendirme" | "denetim" | "gelistirme" | "profil";
+  rol?: "uretim" | "degerlendirme" | "denetim" | "gelistirme" | "profil" | "oneleme";
 }
 
 async function chatOnce({

@@ -140,6 +140,7 @@ function ozetBirlestir(a: DegerlendirmeOzeti, b: DegerlendirmeOzeti): Degerlendi
   return {
     yeni: a.yeni + b.yeni,
     filtreElenen: a.filtreElenen + b.filtreElenen,
+    kapiElenen: a.kapiElenen + b.kapiElenen,
     tavanBekleyen: a.tavanBekleyen + b.tavanBekleyen,
     degerlendirilen: a.degerlendirilen + b.degerlendirilen,
     bildir: a.bildir + b.bildir,
@@ -254,6 +255,7 @@ export async function tekKosu(): Promise<void> {
 
   log(
     `bitti: ${toplam.yeni} yeni, ${toplam.filtreElenen} filtrede elendi, ` +
+      (toplam.kapiElenen ? `${toplam.kapiElenen} ön elemede elendi, ` : "") +
       `${toplam.degerlendirilen} puanlandı (${toplam.bildir} güçlü, ${toplam.ozet} özet)` +
       (toplam.tavanBekleyen ? `, ${toplam.tavanBekleyen} tavanda bekliyor` : "") +
       `, ` +

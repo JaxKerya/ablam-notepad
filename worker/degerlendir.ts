@@ -33,11 +33,13 @@ import {
   type KariyerProfili,
   type Kaynak,
 } from "../lib/kariyer";
-import { degerlendirmePrompt, ilanMetni } from "../lib/kariyer-prompts";
+import { degerlendirmePrompt, ilanMetni, onElemeMetni, onElemePrompt } from "../lib/kariyer-prompts";
 
 export interface DegerlendirmeOzeti {
   yeni: number;
   filtreElenen: number;
+  /** Ucuz ön eleme kapısında elenen (modele hiç gitmedi) */
+  kapiElenen: number;
   /** Günlük tavan yüzünden puanlanmadan bekleyen */
   tavanBekleyen: number;
   degerlendirilen: number;
@@ -48,7 +50,7 @@ export interface DegerlendirmeOzeti {
 }
 
 export const bosOzet = (): DegerlendirmeOzeti => ({
-  yeni: 0, filtreElenen: 0, tavanBekleyen: 0, degerlendirilen: 0, bildir: 0, ozet: 0, maliyetUsd: 0, hatalar: [],
+  yeni: 0, filtreElenen: 0, kapiElenen: 0, tavanBekleyen: 0, degerlendirilen: 0, bildir: 0, ozet: 0, maliyetUsd: 0, hatalar: [],
 });
 
 const GUNLUK_TAVAN_USD = Number(process.env.GUNLUK_MALIYET_USD) || 1;
@@ -151,12 +153,44 @@ export async function degerlendiriciKur(db: SupabaseClient, profil: KariyerProfi
   return degerlendirmePrompt(profil, await olumsuzOrnekler(db), filtre);
 }
 
+/**
+ * Ön eleme kapısı: asıl değerlendirmeden önce, yalnızca başlık+şirket+şehirle
+ * "bu ilan ilgili mi" sorusu. Ucuz modele gider (rol "oneleme", varsayılan Luna).
+ *
+ * Neden: ölçümde modele giden ilanların %90'ı 0-24 alıyordu ve günlük ~$1'ın
+ * üçte ikisi oraya gidiyordu. 191 ilanlık kıyasta kapı 0-24'lerin %83'ünü eledi,
+ * 50+ ilanların HİÇBİRİNİ elemedi (27.09.2026); ilan başına $0,0001, Sol'un
+ * kırkta biri.
+ *
+ * Kapı DÜŞERSE ilan geçer: eleme kararı ancak açık bir "hayır" ile verilir.
+ * Dönen ücret günlük tavana da sayılsın diye çağıran tarafa veriliyor.
+ */
+async function kapidanGecerMi(
+  sistem: string,
+  ham: HamIlan
+): Promise<{ gecti: boolean; maliyetUsd: number; model: string }> {
+  try {
+    const { veri, olcum } = await chatJsonOlculu<{ ilgili?: unknown }>({
+      mesajlar: [
+        { role: "system", content: sistem },
+        { role: "user", content: onElemeMetni(ham) },
+      ],
+      maxTokens: 200,
+      rol: "oneleme",
+    });
+    return { gecti: veri.ilgili !== false, maliyetUsd: olcum.maliyetUsd ?? 0, model: olcum.model ?? "" };
+  } catch {
+    return { gecti: true, maliyetUsd: 0, model: "" };
+  }
+}
+
 /** 2. ve 3. adım: filtre + model + eşleşme kaydı. Kayıtlı bir ilan için çalışır. */
 async function puanlaVeKaydet(
   db: SupabaseClient,
   ilanId: string,
   ham: HamIlan,
   sistem: string,
+  kapiSistem: string,
   filtre: FiltreProfili,
   ozet: DegerlendirmeOzeti,
   log: (m: string) => void,
@@ -177,6 +211,28 @@ async function puanlaVeKaydet(
   if (baglam.kalanUsd <= 0) {
     // Eşleşme yazılmıyor: ilan "yarım kalan" olarak durur, tavan sıfırlanınca puanlanır
     ozet.tavanBekleyen++;
+    return;
+  }
+
+  const kapi = await kapidanGecerMi(kapiSistem, ham);
+  ozet.maliyetUsd += kapi.maliyetUsd;
+  baglam.kalanUsd -= kapi.maliyetUsd;
+  if (!kapi.gecti) {
+    ozet.kapiElenen++;
+    // "ele" olarak kaydediliyor ki aynı ilan bir daha kapıya bile gitmesin.
+    // Gerekçe "Ön eleme:" ile başlıyor: profil değişince bu satırlar sıfırlanıyor
+    // (app/api/kariyer/profil PATCH) — kapı eski profile göre karar vermişti.
+    await db.from("kariyer_eslesmeler").upsert(
+      {
+        ilan_id: ilanId,
+        puan: 0,
+        karar: "ele",
+        gerekce: "Ön eleme: başlık bu alana yakın görünmüyor, ilan okunmadı",
+        degerlendirildi: new Date().toISOString(),
+        olcum: { maliyetUsd: kapi.maliyetUsd, model: kapi.model, kapi: true, ...(oncekiMaliyetUsd ? { oncekiMaliyetUsd } : {}) },
+      },
+      { onConflict: "ilan_id" }
+    );
     return;
   }
 
@@ -254,6 +310,7 @@ export async function ilanlariDegerlendir(
     return ozet;
   }
   const sistem = await degerlendiriciKur(db, profil, filtre);
+  const kapiSistem = onElemePrompt(profil);
   const butce = await butceyiKur(db, log);
 
   for (const ham of ilanlar) {
@@ -281,7 +338,7 @@ export async function ilanlariDegerlendir(
       continue;
     }
     ozet.yeni++;
-    await puanlaVeKaydet(db, kayit.id, ham, sistem, filtre, ozet, log, butce);
+    await puanlaVeKaydet(db, kayit.id, ham, sistem, kapiSistem, filtre, ozet, log, butce);
   }
   if (ozet.tavanBekleyen) log(`günlük tavan ($${GUNLUK_TAVAN_USD}) doldu: ${ozet.tavanBekleyen} ilan yarın puanlanacak`);
   return ozet;
@@ -324,6 +381,7 @@ export async function yarimKalanlariTamamla(
   if (butce.kalanUsd <= 0) return ozet;
   log(`yarım kalan ${eslesmesizler.length} + yeniden puanlanacak ${yenidenler.length} ilan değerlendiriliyor`);
   const sistem = await degerlendiriciKur(db, profil, filtre);
+  const kapiSistem = onElemePrompt(profil);
   for (const { ilan: r, oncekiMaliyetUsd } of liste) {
     const ham: HamIlan = {
       kaynak: r.kaynak as Kaynak,
@@ -335,7 +393,7 @@ export async function yarimKalanlariTamamla(
       url: r.url ?? undefined,
       sonBasvuru: r.son_basvuru ?? undefined,
     };
-    await puanlaVeKaydet(db, r.id, ham, sistem, filtre, ozet, log, butce, oncekiMaliyetUsd);
+    await puanlaVeKaydet(db, r.id, ham, sistem, kapiSistem, filtre, ozet, log, butce, oncekiMaliyetUsd);
   }
   return ozet;
 }
