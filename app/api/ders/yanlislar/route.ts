@@ -2,7 +2,15 @@ import { NextResponse } from "next/server";
 import { onculluSiklarMi, siklariKaristir } from "@/lib/ders";
 import { hataCevabi, hepsiniCek, kapiKontrol } from "@/lib/ders-server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { turkiyeGunu, vadesiGelenler, yanlisDurumlari, yanlisKuraliMetni, type KokCevap, type YanlisDurumu } from "@/lib/yanlislar";
+import {
+  oturumSirasi,
+  turkiyeGunu,
+  vadesiGelenler,
+  yanlisDurumlari,
+  yanlisKuraliMetni,
+  type KokCevap,
+  type YanlisDurumu,
+} from "@/lib/yanlislar";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -178,18 +186,27 @@ export async function POST(request: Request) {
 
     const { aktif, ogrenilen, kategorisi } = await durumuHesapla(supabase);
 
-    // Bu oturumda zaten sorulmuş kökler tekrar gelmesin. Cevaplanıp doğru
-    // yapılanın vadesi zaten ileri kaydı; cevaplanmamış (ekranda duran) kopya
-    // için ikinci kopya açılmasın diye bu süzgeç şart.
-    let oturumdakiler = new Set<string>();
+    // Doğru yapılan soru aynı gün yine vadeli (lib/yanlislar.ts); bu oturumda en
+    // son hangi sırada sorulduğuna bakılıp araya YANLIS_ARA_SORU başka soru
+    // girdiyse yeniden veriliyor. Yanlış yapılanın vadesi yarına kaydığı için
+    // listeye hiç girmiyor.
+    const sonSira = new Map<string, number>();
+    let enSonSira = -1;
     if (oturumId) {
-      const { data } = await supabase.from("ders_questions").select("kaynak_soru_id").eq("session_id", oturumId).limit(2000);
-      oturumdakiler = new Set((data ?? []).map((q) => q.kaynak_soru_id).filter(Boolean) as string[]);
+      const { data } = await supabase
+        .from("ders_questions")
+        .select("kaynak_soru_id, position")
+        .eq("session_id", oturumId)
+        .limit(5000);
+      for (const q of data ?? []) {
+        const sira = (q.position as number | null) ?? 0;
+        enSonSira = Math.max(enSonSira, sira);
+        const kok = q.kaynak_soru_id as string | null;
+        if (kok) sonSira.set(kok, Math.max(sonSira.get(kok) ?? -1, sira));
+      }
     }
-    const siradakiler = vadesiGelenler(aktif, simdi).filter(
-      (d) => kategorisi(d.kok) === kategori && !oturumdakiler.has(d.kok)
-    );
-    const secilen = siradakiler.slice(0, adet);
+    const vadeli = vadesiGelenler(aktif, simdi).filter((d) => kategorisi(d.kok) === kategori);
+    const secilen = oturumSirasi(vadeli, sonSira, enSonSira).slice(0, adet);
 
     const ozet = kategoriOzetleri(aktif, ogrenilen, kategorisi, simdi)[kategori] ?? { aktif: 0, ogrenilen: 0 };
     if (!secilen.length) {
@@ -289,8 +306,9 @@ export async function POST(request: Request) {
       bitti: false,
       aktif: ozet.aktif,
       ogrenilen: ozet.ogrenilen,
-      // Az önce verilenler hâlâ "vadesi gelmiş" sayılıyor; kalan sayı onları düşerek
-      bekleyen: Math.max(0, siradakiler.length - secilen.length),
+      // Bugün öğrenilmeyi bekleyenler (doğru yapılanlar da aynı gün yine geldiği
+      // için sayıda kalıyor); ekrandaki soru düşülerek
+      bekleyen: Math.max(0, vadeli.length - secilen.length),
     });
   } catch (err) {
     return hataCevabi(err);

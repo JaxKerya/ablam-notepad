@@ -22,7 +22,6 @@ import {
   Dices,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
-import { dogruSonrasiMetni } from "@/lib/yanlislar";
 import { useToast } from "@/components/Toast";
 import SoruMetni from "@/components/ders/SoruMetni";
 import HocaNeDemisti from "@/components/ders/HocaNeDemisti";
@@ -651,7 +650,7 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
           <p className="mt-1.5 text-[13px] text-white/45">
             {yanlisModu
               ? yanlisBitti
-                ? `Vadesi gelen bütün yanlışlarını çözdün. Doğru yaptıkların ${dogruSonrasiMetni()} yeniden gelecek.`
+                ? "Bugünkü yanlışlarını bitirdin. Bugün yanlış yaptıkların yarın yeniden gelecek."
                 : "Kaldığın yerden istediğin zaman devam edebilirsin."
               : (oturum.title ?? "Ders")}
           </p>

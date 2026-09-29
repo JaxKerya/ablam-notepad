@@ -7,11 +7,12 @@
 //
 // Kural (sade, ekranda anlatılabilir):
 //   yanlış / pas      -> ertesi gün tekrar
-//   doğru             -> ertesi gün yine sorulur
-//   üçüncü doğru      -> ÖĞRENİLDİ, sistemden çıkar
+//   doğru             -> AYNI GÜN, araya birkaç soru girdikten sonra yine sorulur
+//   beşinci doğru     -> ÖĞRENİLDİ, sistemden çıkar
 //   herhangi bir yanlış -> sayaç başa döner
-// Yani bir soru üst üste üç kez, her biri ayrı günde doğru yapılınca öğrenilmiş
-// sayılıyor. Aralıklar YANLIS_ARALIK_GUN'de; ekrandaki cümleler oradan üretiliyor.
+// Yani bir soru üst üste beş kez doğru yapılınca öğrenilmiş sayılıyor; beşi aynı
+// günde olabilir (kullanıcı isteği, 29.09.2026). Aralıklar YANLIS_ARALIK_GUN'de,
+// aynı gün içindeki boşluk YANLIS_ARA_SORU'da.
 //
 // DURUM SAKLANMIYOR, CEVAP GEÇMİŞİNDEN HESAPLANIYOR. Ayrı bir "kutu" kolonu,
 // cevaplarla senkron tutulması gereken ikinci bir doğru kaynağı olurdu. Cevap
@@ -21,25 +22,24 @@
 // "Kök" soru: kopyalar kaynak_soru_id ile asıl soruya bağlı; aynı sorunun ders,
 // pratik ve deneme cevapları tek geçmişte birleşiyor.
 
-/** 1., 2. ve 3. kutunun bekleme süresi (gün) */
-// 1-3-7 idi, sonra 1-2-3; kullanıcı isteğiyle her gün (28.09.2026): üst üste üç
-// günde üç doğru yeter. Sayı değişirse ekran metinleri aşağıdaki fonksiyonlardan
-// kendiliğinden uyar.
-export const YANLIS_ARALIK_GUN = [1, 1, 1] as const;
+/**
+ * Her kutunun bekleme süresi (gün); kutu sayısı = öğrenmek için gereken doğru sayısı.
+ * 1. kutu (yanlıştan sonra) 1 gün, doğrudan sonrakiler 0 gün: aynı gün yine vadeli.
+ */
+// 1-3-7 idi, sonra 1-2-3, sonra her gün üç doğru (28.09.2026). 29.09.2026: beş
+// doğru ve beşi aynı gün olabilir.
+export const YANLIS_ARALIK_GUN = [1, 0, 0, 0, 0] as const;
 
-const hepsiBirGun = YANLIS_ARALIK_GUN.every((g) => g === 1);
+/**
+ * Aynı gün içinde bir sorunun yeniden sorulması için araya girmesi gereken
+ * başka soru sayısı. Hemen arkasından gelirse az önce gördüğü cevabı hatırlar,
+ * bildiği için değil. Başka vadeli soru kalmadıysa beklemeden yine gelir.
+ */
+export const YANLIS_ARA_SORU = 4;
 
 /** Kuralın tek cümlelik anlatımı (kategori başlığındaki açıklama, oturum özeti) */
 export function yanlisKuraliMetni(): string {
-  const n = YANLIS_ARALIK_GUN.length;
-  return hepsiBirGun
-    ? `Yanlış yaptığın soru ertesi gün gelir ve her gün yeniden sorulur; üst üste ${n} kez, her biri ayrı günde doğru yapınca öğrenilmiş sayılır.`
-    : `Yanlış yaptığın soru ertesi gün, sonra ${YANLIS_ARALIK_GUN.slice(1).join(" ve ")} gün arayla geri gelir; üst üste ${n} kez doğru yapınca öğrenilmiş sayılır.`;
-}
-
-/** Doğru cevaptan sonra sorunun ne zaman döneceği ("yarın" / "2 ya da 3 gün sonra") */
-export function dogruSonrasiMetni(): string {
-  return hepsiBirGun ? "yarın" : `${YANLIS_ARALIK_GUN.slice(1).join(" ya da ")} gün sonra`;
+  return `Yanlış yaptığın soru ertesi gün gelir. Doğru yaparsan aynı gün birkaç soru sonra yine sorulur; üst üste ${YANLIS_ARALIK_GUN.length} kez doğru yapınca öğrenilmiş sayılır. Arada yanlış yaparsan sayaç sıfırlanır.`;
 }
 
 export type Verdict = "dogru" | "yanlis" | "pas" | "eksik";
@@ -54,7 +54,7 @@ export interface KokCevap {
 
 export interface YanlisDurumu {
   kok: string;
-  /** 1, 2 ya da 3 */
+  /** 1..YANLIS_ARALIK_GUN.length */
   kutu: number;
   /** Son cevabın zamanı (ms) */
   son: number;
@@ -65,7 +65,7 @@ export interface YanlisDurumu {
 }
 
 export interface YanlisOzeti {
-  /** Hâlâ sistemde (1-3. kutu) olanlar */
+  /** Hâlâ sistemde (henüz öğrenilmemiş) olanlar */
   aktif: Map<string, YanlisDurumu>;
   /** En az bir kez yanlış yapılıp sonra öğrenilenler */
   ogrenilen: Set<string>;
@@ -123,6 +123,29 @@ export function yanlisDurumlari(cevaplar: KokCevap[]): YanlisOzeti {
     }
   }
   return { aktif, ogrenilen };
+}
+
+/**
+ * Günün oturumunda sıradaki soru(lar). `vadeli` vadesiGelenler'den (o dersin),
+ * `sonSira` kök -> bu oturumda en son sorulduğu sıra, `enSonSira` oturumun son sırası.
+ *
+ *   1. Bu oturumda sorulmuş ve araya YANLIS_ARA_SORU başka soru girmiş olanlar,
+ *      en önce sorulan önde: yeni soru açmadan eldekiler beşe tamamlansın.
+ *   2. Bugün hiç sorulmamışlar (vadesiGelenler sırasıyla).
+ *   3. İkisi de yoksa boşluk dolmasa da sorulmuşların en eskisi; gün bitmesin.
+ */
+export function oturumSirasi(
+  vadeli: YanlisDurumu[],
+  sonSira: Map<string, number>,
+  enSonSira: number
+): YanlisDurumu[] {
+  const eskidenYeniye = (a: YanlisDurumu, b: YanlisDurumu) => (sonSira.get(a.kok) ?? 0) - (sonSira.get(b.kok) ?? 0);
+  const donenler = vadeli
+    .filter((d) => sonSira.has(d.kok) && enSonSira - sonSira.get(d.kok)! >= YANLIS_ARA_SORU)
+    .sort(eskidenYeniye);
+  const yeniler = vadeli.filter((d) => !sonSira.has(d.kok));
+  const sira = [...donenler, ...yeniler];
+  return sira.length ? sira : vadeli.filter((d) => sonSira.has(d.kok)).sort(eskidenYeniye);
 }
 
 /** Bugün (ya da daha önce) tekrar zamanı gelmişler, öncelik sırasıyla */
