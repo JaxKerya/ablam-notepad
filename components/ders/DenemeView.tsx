@@ -20,6 +20,7 @@ import {
   netHesapla,
   sayacMetni,
   videoLinki,
+  metinDersiMi,
   type DersAnswer,
   type DersQuestion,
   type DersSession,
@@ -448,16 +449,20 @@ export default function DenemeView({ oturum, sorular, ilkCevaplar }: Props) {
                 {s.explanation && (
                   <p className="mt-2 text-[11.5px] leading-relaxed text-white/45">{s.explanation}</p>
                 )}
-                <a
-                  href={videoLinki(soruVideosu(s), s.start_seconds)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] text-[var(--accent)]/70 transition-colors hover:text-[var(--accent)]"
-                >
-                  <PlayCircle size={12} />
-                  Videoda {formatSure(s.start_seconds)}
-                </a>
-                <HocaNeDemisti questionId={s.id} videoId={soruVideosu(s)} className="mt-1.5" />
+                {!metinDersiMi(soruVideosu(s)) && (
+                  <>
+                    <a
+                      href={videoLinki(soruVideosu(s), s.start_seconds)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] text-[var(--accent)]/70 transition-colors hover:text-[var(--accent)]"
+                    >
+                      <PlayCircle size={12} />
+                      Videoda {formatSure(s.start_seconds)}
+                    </a>
+                    <HocaNeDemisti questionId={s.id} videoId={soruVideosu(s)} className="mt-1.5" />
+                  </>
+                )}
               </div>
             );
           })}

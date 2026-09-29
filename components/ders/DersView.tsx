@@ -34,6 +34,7 @@ import {
   slugla,
   soruParcalari,
   videoLinki,
+  metinDersiMi,
   VERDICT_LABEL,
   VERDICT_STYLE,
   type DersAnswer,
@@ -744,20 +745,25 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
                         {c.feedback}
                       </p>
                     )}
-                    <a
-                      href={videoLinki(soruVideosu(s), s.start_seconds)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] text-[var(--accent)]/70 transition-colors hover:text-[var(--accent)]"
-                    >
-                      <PlayCircle size={12} />
-                      Videoda {formatSure(s.start_seconds)}
-                    </a>
-                    <HocaNeDemisti
-                      questionId={s.id}
-                      videoId={soruVideosu(s)}
-                      className="mt-1.5"
-                    />
+                    {/* Metinden gelen soruda video yok: zaman bağlantısı ve "hoca ne demişti" gizli */}
+                    {!metinDersiMi(soruVideosu(s)) && (
+                      <>
+                        <a
+                          href={videoLinki(soruVideosu(s), s.start_seconds)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] text-[var(--accent)]/70 transition-colors hover:text-[var(--accent)]"
+                        >
+                          <PlayCircle size={12} />
+                          Videoda {formatSure(s.start_seconds)}
+                        </a>
+                        <HocaNeDemisti
+                          questionId={s.id}
+                          videoId={soruVideosu(s)}
+                          className="mt-1.5"
+                        />
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1074,11 +1080,13 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
 
           {/* Cevabın dersteki dayanağı. Cevap kutusunun içinde, çünkü ablamın
               "gerçekten öyle mi?" diye sorduğu an tam burası. */}
-          <HocaNeDemisti
-            questionId={soru.id}
-            videoId={soruVideosu(soru)}
-            className="mt-3"
-          />
+          {!metinDersiMi(soruVideosu(soru)) && (
+            <HocaNeDemisti
+              questionId={soru.id}
+              videoId={soruVideosu(soru)}
+              className="mt-3"
+            />
+          )}
 
           {soru.kind === "acik" && verdict !== "dogru" && soru.answer_key && (
             <div className="mt-3 rounded-xl border border-white/10 bg-[var(--surface)] p-3.5">
@@ -1089,15 +1097,17 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
             </div>
           )}
 
-          <a
-            href={videoLinki(soruVideosu(soru), soru.start_seconds)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[var(--surface)] px-3 py-2 text-[12px] transition-colors hover:border-white/30"
-          >
-            <PlayCircle size={13} />
-            Bu konu videonun {formatSure(soru.start_seconds)} anında anlatılıyor
-          </a>
+          {!metinDersiMi(soruVideosu(soru)) && (
+            <a
+              href={videoLinki(soruVideosu(soru), soru.start_seconds)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[var(--surface)] px-3 py-2 text-[12px] transition-colors hover:border-white/30"
+            >
+              <PlayCircle size={13} />
+              Bu konu videonun {formatSure(soru.start_seconds)} anında anlatılıyor
+            </a>
+          )}
 
           {pratik ? (
             // Döngü buradan dönüyor: her basışta kategoriden yeni bir rastgele soru

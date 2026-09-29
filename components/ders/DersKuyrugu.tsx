@@ -40,6 +40,8 @@ interface KuyrukDegeri {
   isler: UretimIsi[];
   /** Yapıştırılan metindeki her linki sıraya alır; kaç iş eklendiğini döner */
   ekle: (metin: string) => number;
+  /** Bir ders metnini (not, özet) soru üretimi için sıraya alır */
+  ekleMetin: (metin: string) => void;
   /** Yarım kalmış bir oturumun 2. adımını sıraya alır */
   tamamlaEkle: (sessionId: string, videoId: string, baslik: string | null) => void;
   kaldir: (id: string) => void;
@@ -161,14 +163,19 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
       try {
         // sessionId varsa transkript ve çözümleme zaten yapılmış ("tekrar dene"
         // ile gelen iş): ikinci bir oturum açma, doğrudan sorulara geç (inceleme bulgusu)
-        if (is.tur === "yeni" && !sessionId) {
+        if ((is.tur === "yeni" || is.tur === "metin") && !sessionId) {
           yaz({ durum: "transkript", hata: null });
           let tr: Record<string, unknown>;
           try {
-            tr = await istek("/api/ders/transcript", {
-              url: is.url,
-              elleTranskript: is.elleTranskript,
-            });
+            // Metin işi: transkript yerine metnin kendisi kaydediliyor (bkz.
+            // /api/ders/metin). Cevap aynı biçimde, akışın geri kalanı ortak.
+            tr =
+              is.tur === "metin"
+                ? await istek("/api/ders/metin", { metin: is.metin ?? "" })
+                : await istek("/api/ders/transcript", {
+                    url: is.url,
+                    elleTranskript: is.elleTranskript,
+                  });
           } catch (err) {
             // Otomatik yollar düştü: ablam transkripti kendi tarayıcısından
             // yapıştırabilir. İş silinmiyor, "elle" durumunda bekliyor.
@@ -290,6 +297,28 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
     [addToast, guncelle]
   );
 
+  const ekleMetin = useCallback(
+    (metin: string) => {
+      guncelle((liste) => [
+        ...liste,
+        {
+          id: yeniId(),
+          tur: "metin",
+          url: "",
+          videoId: null,
+          sessionId: null,
+          // Başlığı çözümleme verecek; o gelene kadar kartta metnin başı görünsün
+          baslik: metin.trim().split(/\n/)[0].slice(0, 80) || "Metin",
+          sure: 0,
+          durum: "bekliyor",
+          hata: null,
+          metin,
+        },
+      ]);
+    },
+    [guncelle]
+  );
+
   const tamamlaEkle = useCallback(
     (sessionId: string, videoId: string, baslik: string | null) => {
       if (islerRef.current.some((i) => i.sessionId === sessionId && i.durum !== "hata")) return;
@@ -359,7 +388,7 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
 
   return (
     <Baglam.Provider
-      value={{ isler, ekle, tamamlaEkle, kaldir, tekrarDene, elleGonder, yinedeUret, tamamlananSayac }}
+      value={{ isler, ekle, ekleMetin, tamamlaEkle, kaldir, tekrarDene, elleGonder, yinedeUret, tamamlananSayac }}
     >
       {children}
     </Baglam.Provider>

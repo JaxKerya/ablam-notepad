@@ -24,11 +24,25 @@ const TRANSKRIPT_UYARISI = `Transkript YouTube'un otomatik altyazısından geliy
 - İmla hataları, bozuk özel isimler ve yanlış yazılmış terimler içerebilir.
 - Eğitmenin tahtaya yazdıkları metinde görünmez ("burayı şöyle yazalım" gibi ifadeler boş kalır).`;
 
+/**
+ * Metin derslerinin uyarısı (TRANSKRIPT_UYARISI'nın yerine). Metin doğru kabul
+ * ediliyor — ablamın kararı: kaynak ne diyorsa soru onu soruyor, olgu denetimi
+ * de metin derslerinde çalışmıyor. Yalnızca sohbetten kopyalanmış metinlerin
+ * artıkları ayıklanıyor.
+ */
+const METIN_UYARISI = `Kaynak bir ders metni: ders notu, konu özeti ya da bir sohbetten kopyalanmış açıklama.
+- Metindeki bilgiler DOĞRU kabul edilir; kendi bilginle düzeltme, çelişen bilgi ekleme.
+- Metnin başındaki ya da sonundaki sohbet cümlelerini ("görmek ister misiniz?", "başka bir konu
+  ister misin?", sınav sitesi reklamı vb.) yok say; onlardan soru üretme.`;
+
 /** Denetim tarafının uyarısı: altyazının en sık bozduğu yerler. */
 const ALTYAZI_UYARISI = `Bu materyal ders videolarının otomatik altyazısından üretiliyor. Öğretmen doğru söylemiş olsa
 bile altyazı tarihleri, sayıları ve özel isimleri bozabiliyor. En sık bozulan yerler bunlardır.`;
 
 // --- Soru üretimi -----------------------------------------------------------
+
+/** Dersin kaynağı: video transkripti ya da yapıştırılmış metin (bkz. lib/ders.ts METIN_ONEKI) */
+export type DersKaynagi = "video" | "metin";
 
 const ORTAK_KURALLAR = `Sana bir ders videosunun transkripti veriliyor.
 ${TRANSKRIPT_UYARISI}
@@ -42,6 +56,22 @@ işaretinden hesapla).
 
 SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti kullanma.`;
 
+const ORTAK_KURALLAR_METIN = `Sana bir ders metni veriliyor.
+${METIN_UYARISI}
+
+Yalnızca metinde açıkça yazan bilgilerden soru üret; metinde olmayan bilgi ekleme.
+Metin liste ya da eşleştirme ağırlıklıysa (kişi–eser, kişi–unvan, eser–alan, olay–tarih)
+eşleştirme ve "hangisi yanlıştır" türü sorular da üret; KPSS bu konuları böyle sorar.
+Eşleştirme sorusunda aynı kişi, eser ya da unvan iki şıkta birden geçmesin: biri doğruysa
+öbürü kendiliğinden elenir, soru bilgiyi değil elemeyi ölçer.
+Öncüllü soruda her öncül tek yargı taşısın ve hepsi kökün sorduğu aynı ölçütle
+değerlendirilsin; kök "hangileri astronomiyle ilgilidir" diyorsa öncüllerden biri
+başka birinin eserini o kişiye atfetmesin (iki yargı birden sorulmuş olur).
+
+"saniye" alanına 0 yaz (metnin videosu yok).
+
+SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti kullanma.`;
+
 /**
  * Ders çözümleme: başlık, kategori, özet, konular. SORU YOK.
  *
@@ -51,11 +81,10 @@ SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti ku
  * özet ders açılır açılmaz görünüyor. Çıktı kısa, denetim geçişi yok — iki
  * denetim çağrısı ve ~1.500 çıktı token'ı ders başına maliyetten düştü.
  */
-export const cozumlemePrompt = (kategoriler: readonly string[], digerKategori: string) =>
-  `Sen KPSS ve YKS'ye hazırlanan bir öğrenci için ders videolarını çözümleyen bir eğitmensin.
+export const cozumlemePrompt = (kategoriler: readonly string[], digerKategori: string, kaynak: DersKaynagi = "video") =>
+  `Sen KPSS ve YKS'ye hazırlanan bir öğrenci için ${kaynak === "metin" ? "ders metinlerini" : "ders videolarını"} çözümleyen bir eğitmensin.
 
-Sana bir ders videosunun transkripti veriliyor.
-${TRANSKRIPT_UYARISI}
+${kaynak === "metin" ? `Sana bir ders metni veriliyor.\n${METIN_UYARISI}` : `Sana bir ders videosunun transkripti veriliyor.\n${TRANSKRIPT_UYARISI}`}
 
 Şema:
 {
@@ -70,8 +99,12 @@ ${kategoriler.join(", ")}
 Hiçbirine uymuyorsa "${digerKategori}" yaz. Liste kapalı çünkü kategori, aynı dersin
 bütün videolarını bir arada tutmak için kullanılıyor; serbest yazılan ad havuzu böler.
 
-ÖZET — yalnızca derste gerçekten anlatılanı yaz. Sayılar ve özel isimler altyazıda bozulmuş
-olabilir; şüpheliyse özete koyma.
+${
+  kaynak === "metin"
+    ? "ÖZET — yalnızca metinde yazanı özetle."
+    : `ÖZET — yalnızca derste gerçekten anlatılanı yaz. Sayılar ve özel isimler altyazıda bozulmuş
+olabilir; şüpheliyse özete koyma.`
+}
 
 KONULAR — dersin ana başlıkları, 2-6 madde. Bu liste çoktan seçmeli soruların hangi konulara
 yayılacağını belirliyor; ne tek kelimelik genel bir ad ne de tek bir ayrıntı olsun.
@@ -100,7 +133,12 @@ SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti ku
  *    İYİYDİ — "hangi ilkenin zayıfladığını gösterir" standart bir KPSS kalıbı.
  *    Yani bozuk olan çıktı değil kuralın kendisiydi; kaldırıldı.
  */
-export const coktanPrompt = (ustSinir: number, konular: string[], dersOzeti: string | null = null) =>
+export const coktanPrompt = (
+  ustSinir: number,
+  konular: string[],
+  dersOzeti: string | null = null,
+  kaynak: DersKaynagi = "video"
+) =>
   `Sen KPSS'ye hazırlanan bir öğrenciye ders videosundan ÇOKTAN SEÇMELİ sorular hazırlayan bir
 eğitmensin.
 
@@ -160,7 +198,7 @@ Biçimi tam olarak şöyle:
 - Üç öncül yaz, dört değil.
 - Tek doğru cevap net olsun; iki şık birden savunulabilir olmasın.
 
-${ORTAK_KURALLAR}
+${kaynak === "metin" ? ORTAK_KURALLAR_METIN : ORTAK_KURALLAR}
 
 Şema:
 {

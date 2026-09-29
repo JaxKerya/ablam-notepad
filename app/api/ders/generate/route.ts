@@ -705,7 +705,7 @@ async function videoGetir(videoId: string) {
   const supabase = createServerSupabaseClient();
   const { data, error } = await supabase
     .from("ders_videos")
-    .select("video_id, title, duration_seconds, segments")
+    .select("video_id, title, duration_seconds, segments, source")
     .eq("video_id", videoId)
     .maybeSingle();
 
@@ -750,6 +750,15 @@ export async function POST(request: Request) {
 
     const segments = video.segments as Segment[];
     const sure = video.duration_seconds ?? 0;
+    /**
+     * METİN DERSİ (bkz. lib/ders.ts METIN_ONEKI). Akış aynı; üç yerde ayrılıyor:
+     * modele düz metin gidiyor (zaman işaretsiz), prompt'lar metin sürümünü
+     * kullanıyor, olgu denetimi atlanıyor — metin doğru kabul ediliyor, ablamın
+     * kararı. Transkript denetimi kalıyor: o metni değil MODELİ denetliyor,
+     * metinde olmayan bir şey uydurmasını yakalıyor.
+     */
+    const metinDersi = video.source === "metin";
+    const kaynak = metinDersi ? "metin" : "video";
     const dizin = kelimeDizini(segments);
     const toplamParca = parcaSayisi(sure);
     const parcaNo = Number.isInteger(govde.parca) ? Number(govde.parca) : 0;
@@ -765,8 +774,11 @@ export async function POST(request: Request) {
         : segments;
     // Video başlığı modele dönemi ve özel isimleri veriyor. Otomatik altyazıda
     // özel isimler bozuluyor ("ahlak" -> "Aylak" gibi); başlık bunu azaltıyor.
-    const transkript =
-      (video.title ? `Video başlığı: ${video.title}\n` : "") +
+    const transkript = metinDersi
+      ? (adim === "coktan" && toplamParca > 1
+          ? `Bu istek metnin ${parcaNo + 1}/${toplamParca}. bölümü. Sorular yalnızca bu bölümden üretilecek; konular listesi metnin tamamına ait.\n\nDers metni (bu bölüm):\n\n`
+          : "Ders metni:\n\n") + parcaSegments.map((p) => p.t).join("\n")
+      : (video.title ? `Video başlığı: ${video.title}\n` : "") +
       `Ders süresi: ${Math.round(sure / 60)} dakika\n` +
       (adim === "coktan" && toplamParca > 1
         ? `Bu istek dersin ${parcaNo + 1}/${toplamParca}. bölümü: dakika ${Math.round(parcaBas / 60)}–${Math.round(parcaSon / 60)}. ` +
@@ -784,7 +796,9 @@ export async function POST(request: Request) {
      */
     const mesajlar = (
       yonerge: string,
-      kullanici = "Yukarıdaki transkripti yönergeye göre işle; yalnızca JSON döndür."
+      kullanici = metinDersi
+        ? "Yukarıdaki ders metnini yönergeye göre işle; yalnızca JSON döndür."
+        : "Yukarıdaki transkripti yönergeye göre işle; yalnızca JSON döndür."
     ): ChatMesaj[] => [
       {
         role: "system",
@@ -833,7 +847,7 @@ export async function POST(request: Request) {
         // Kategori listesi lib/ders.ts'te tek kaynak; prompt'a parametre
         // olarak giriyor ki prompts.ts hiçbir şey import etmesin
         // (ölçüm betikleri onu doğrudan Node ile açıyor).
-        mesajlar: mesajlar(cozumlemePrompt(KATEGORILER, KATEGORI_DIGER)),
+        mesajlar: mesajlar(cozumlemePrompt(KATEGORILER, KATEGORI_DIGER, kaynak)),
         // Akıl yürüten modellerde düşünme tokenları da bu bütçeden düşüyor.
         // Dar bırakılınca model bütçeyi düşünmeye harcayıp boş cevap dönüyordu
         // (glm-5.3 ve kimi-k3 ölçümü). max_tokens yalnızca tavan — kullanılmayan
@@ -944,7 +958,9 @@ export async function POST(request: Request) {
       } = await chatJsonOlculu<{
         coktan_secmeli?: UretilenCoktan[];
       }>({
-        mesajlar: mesajlar(coktanPrompt(soruSiniri, (oturum.topics as string[]) ?? [], toplamParca > 1 ? (oturum.summary as string | null) : null)),
+        mesajlar: mesajlar(
+          coktanPrompt(soruSiniri, (oturum.topics as string[]) ?? [], toplamParca > 1 ? (oturum.summary as string | null) : null, kaynak)
+        ),
         maxTokens: 32000,
       });
 
@@ -984,8 +1000,9 @@ export async function POST(request: Request) {
       );
       coktan = coktanUygula(coktan, "transkript", gecis1.bulgular, ozet, anahtariDuzeltilen);
 
-      const gecis2 = await denetimCalistir("olgu", SORU_OLGU_DENETIMI, coktan.map(girdi));
-      coktan = coktanUygula(coktan, "olgu", gecis2.bulgular, ozet, anahtariDuzeltilen);
+      // Metin dersinde olgu denetimi yok: metin doğru kabul ediliyor (yukarıda metinDersi)
+      const gecis2 = metinDersi ? null : await denetimCalistir("olgu", SORU_OLGU_DENETIMI, coktan.map(girdi));
+      if (gecis2) coktan = coktanUygula(coktan, "olgu", gecis2.bulgular, ozet, anahtariDuzeltilen);
 
       // Üst sınır kodda da: prompt'a güvenilmez, model taşarsa en baştakiler kalır
       coktan = coktan.slice(0, soruSiniri);
@@ -1003,7 +1020,7 @@ export async function POST(request: Request) {
         ozet.elenen > 0 ||
         Object.keys(dogrulama.bicimElenen).length > 0 ||
         gecis1.gecis.valf ||
-        gecis2.gecis.valf;
+        !!gecis2?.gecis.valf;
       const coktanAdimi: DenetimAdimi = {
         adim: "coktan",
         parca: parcaNo,
@@ -1022,7 +1039,7 @@ export async function POST(request: Request) {
         gecisler: [
           ...(gelistirme.gecis ? [gelistirme.gecis] : []),
           gecis1.gecis,
-          gecis2.gecis,
+          ...(gecis2 ? [gecis2.gecis] : []),
         ],
         kayitlar: ozet.kayitlar,
       };

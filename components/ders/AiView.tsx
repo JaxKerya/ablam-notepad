@@ -14,6 +14,7 @@ import {
   formatSure,
   tarihMetni,
   videoLinki,
+  metinDersiMi,
   SUPADATA_AYLIK_KOTA,
   VERDICT_LABEL,
   VERDICT_STYLE,
@@ -351,7 +352,10 @@ export default function AiView({
     });
 
   const damgaBaglantisi = (videoId: string, saniye: number, etiket: string) =>
-    videoId ? (
+    // Metin dersinde video yok; damga bağlantısız ve sahte zaman gösterilmeden
+    metinDersiMi(videoId) ? (
+      <span className="text-[11px] text-white/30">metinden</span>
+    ) : videoId ? (
       <a
         href={videoLinki(videoId, saniye)}
         target="_blank"

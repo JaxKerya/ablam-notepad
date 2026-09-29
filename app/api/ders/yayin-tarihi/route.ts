@@ -27,6 +27,8 @@ export async function POST() {
       .from("ders_videos")
       .select("video_id")
       .is("published_at", null)
+      // Metin dersleri sahte "video" satırı; YouTube'da karşılığı yok (lib/ders.ts METIN_ONEKI)
+      .not("video_id", "like", "metin-%")
       .limit(500);
 
     if (error) {

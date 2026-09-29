@@ -46,6 +46,9 @@ import {
   sayacMetni,
   KATEGORI_DIGER,
   linkleriAyikla,
+  METIN_EN_AZ,
+  METIN_EN_FAZLA,
+  metinDersiMi,
   NOT_KATEGORISIZ,
   notBasligi,
   oynatmaListesiKimligi,
@@ -67,6 +70,8 @@ interface OturumOzeti {
   sure: number;
   /** Videonun YouTube'daki kendi adı — ders adı modelin verdiği addır */
   videoBaslik: string | null;
+  /** Metinden üretilmiş ders (video yok): küçük resim, süre, yayın tarihi gösterilmez */
+  metin: boolean;
   /** Videonun YouTube'a yüklenme anı; liste bu alana göre sıralanıyor */
   yayin: string | null;
   /** Yalnızca denemelerde: sınavın toplam süresi (saniye) */
@@ -169,6 +174,13 @@ const DENEME_LISTE_TAVANI = 5;
 
 export default function DersAnaSayfa() {
   const [link, setLink] = useState("");
+  /**
+   * Ders ekleme kutusu iki biçimde: YouTube linki ya da ders METNİ (not, özet).
+   * Metin de aynı kuyruktan geçip kategorisinde normal ders olarak duruyor
+   * (bkz. lib/ders.ts METIN_ONEKI).
+   */
+  const [girisModu, setGirisModu] = useState<"link" | "metin">("link");
+  const [dersMetni, setDersMetni] = useState("");
   const [oturumlar, setOturumlar] = useState<OturumOzeti[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   /**
@@ -208,7 +220,7 @@ export default function DersAnaSayfa() {
   const router = useRouter();
   const { addToast } = useToast();
   // Üretim kuyruğu layout'ta yaşıyor; sayfa yalnızca gösteriyor ve besliyor.
-  const { isler, ekle, tamamlaEkle, kaldir, tekrarDene, elleGonder, yinedeUret, tamamlananSayac } =
+  const { isler, ekle, ekleMetin, tamamlaEkle, kaldir, tekrarDene, elleGonder, yinedeUret, tamamlananSayac } =
     useKuyruk();
 
   // Esc ile kapanma, odak tuzağı ve odağın geri verilmesi — bkz. useModal
@@ -362,7 +374,10 @@ export default function DersAnaSayfa() {
           tekrarMi: o.tur !== "ders",
           sure: video?.duration_seconds ?? 0,
           videoBaslik: video?.title ?? null,
-          yayin: yayinlar.get(o.video_id) ?? null,
+          // Metin dersinin yayın tarihi yok; sıralamada eklendiği an yerine geçiyor ki
+          // yeni yapıştırılan metin listenin sonuna düşmesin
+          yayin: metinDersiMi(o.video_id) ? o.created_at : (yayinlar.get(o.video_id) ?? null),
+          metin: metinDersiMi(o.video_id),
           denemeSure: denemeSureleri.get(o.id) ?? null,
           denemeBitti: denemeBitisleri.get(o.id) ?? null,
           soruSayisi,
@@ -934,7 +949,7 @@ export default function DersAnaSayfa() {
   }, [surenDeneme]);
 
   /** Yayın tarihi bilinmeyen ders sayısı — doldurma düğmesi buna bakıyor */
-  const tarihsizSayisi = oturumlar.filter((o) => !o.tekrarMi && !o.yayin).length;
+  const tarihsizSayisi = oturumlar.filter((o) => !o.tekrarMi && !o.metin && !o.yayin).length;
   const [tarihDolduruluyor, setTarihDolduruluyor] = useState(false);
 
   const yayinTarihleriniDoldur = async () => {
@@ -1027,11 +1042,66 @@ export default function DersAnaSayfa() {
           </Link>
         )}
 
-        {/* Link girişi */}
+        {/* Link / metin girişi */}
         <div
           className="animate-slide-up glass rounded-2xl border border-[var(--border)] p-5"
           style={{ animationDelay: "80ms" }}
         >
+          <div className="mb-3 flex gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1">
+            {(
+              [
+                ["link", "YouTube linki", Youtube],
+                ["metin", "Metin", FileText],
+              ] as const
+            ).map(([mod, etiket, Ikon]) => (
+              <button
+                key={mod}
+                onClick={() => setGirisModu(mod)}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] transition-colors ${
+                  girisModu === mod ? "bg-[var(--accent)]/15 text-[var(--accent-light)]" : "text-white/45 hover:text-white/75"
+                }`}
+              >
+                <Ikon size={13} />
+                {etiket}
+              </button>
+            ))}
+          </div>
+
+          {girisModu === "metin" ? (
+            <div>
+              <textarea
+                value={dersMetni}
+                onChange={(e) => setDersMetni(e.target.value)}
+                rows={7}
+                placeholder="Ders notunu ya da konu özetini buraya yapıştır. Sorular yalnızca bu metinden üretilir; metindeki bilgiler doğru kabul edilir."
+                className="focus-ring w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-[13.5px] leading-relaxed text-white/90 placeholder-white/25"
+              />
+              <div className="mt-1.5 flex justify-between gap-3 px-1 text-[11px] tabular-nums text-white/30">
+                <span>
+                  {dersMetni.trim().length > 0 && dersMetni.trim().length < METIN_EN_AZ
+                    ? `En az ${METIN_EN_AZ} karakter`
+                    : dersMetni.trim().length > METIN_EN_FAZLA
+                      ? "Çok uzun — ikiye bölüp ayrı ekle"
+                      : ""}
+                </span>
+                <span className={dersMetni.trim().length > METIN_EN_FAZLA ? "text-red-300/80" : ""}>
+                  {dersMetni.trim().length.toLocaleString("tr-TR")} / {METIN_EN_FAZLA.toLocaleString("tr-TR")}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  ekleMetin(dersMetni);
+                  setDersMetni("");
+                }}
+                disabled={dersMetni.trim().length < METIN_EN_AZ || dersMetni.trim().length > METIN_EN_FAZLA}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3.5 text-sm font-medium text-[var(--background)] shadow-lg shadow-[var(--accent)]/10 transition-all hover:bg-[var(--accent-light)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none"
+              >
+                {calisanIs + bekleyenIs > 0 ? "Sıraya ekle" : "Metinden soru üret"}
+                <ArrowRight size={15} />
+              </button>
+            </div>
+          ) : (
+          <>
           <div className="relative">
             <Youtube
               size={16}
@@ -1080,6 +1150,8 @@ export default function DersAnaSayfa() {
               )}
             </button>
           )}
+          </>
+          )}
 
           {/* Kuyruk. Ablam birkaç dersi arka arkaya işleme koyabilsin diye
               üretim burada listeleniyor; her ders kendi satırında ilerliyor ve
@@ -1091,7 +1163,7 @@ export default function DersAnaSayfa() {
                   key={is.id}
                   className="animate-fade-in flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2.5"
                 >
-                  {is.videoId ? (
+                  {is.videoId && is.tur !== "metin" && !metinDersiMi(is.videoId) ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       src={`https://img.youtube.com/vi/${is.videoId}/mqdefault.jpg`}
@@ -1100,13 +1172,17 @@ export default function DersAnaSayfa() {
                     />
                   ) : (
                     <div className="flex h-11 w-[74px] flex-shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20">
-                      <Youtube size={16} className="text-white/20" />
+                      {is.tur === "metin" || metinDersiMi(is.videoId) ? (
+                        <FileText size={16} className="text-[var(--accent)]/50" />
+                      ) : (
+                        <Youtube size={16} className="text-white/20" />
+                      )}
                     </div>
                   )}
 
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[12.5px] font-medium text-white/85">
-                      {is.baslik ?? is.url ?? "Ders"}
+                      {is.baslik || is.url || "Ders"}
                     </p>
                     <p
                       className={`mt-0.5 flex items-center gap-1.5 text-[11px] ${
@@ -1308,14 +1384,16 @@ export default function DersAnaSayfa() {
                           {d.vurgular.map((v, i) => (
                             <a
                               key={i}
-                              href={videoLinki(d.videoId, v.saniye)}
+                              href={metinDersiMi(d.videoId) ? undefined : videoLinki(d.videoId, v.saniye)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/[0.04]"
                             >
-                              <span className="mt-px flex-shrink-0 font-mono text-[11px] text-[var(--accent)]/70">
-                                {formatSure(v.saniye)}
-                              </span>
+                              {!metinDersiMi(d.videoId) && (
+                                <span className="mt-px flex-shrink-0 font-mono text-[11px] text-[var(--accent)]/70">
+                                  {formatSure(v.saniye)}
+                                </span>
+                              )}
                               <span className="text-[11.5px] leading-relaxed text-white/45">
                                 …{v.metin.slice(Math.max(0, v.bas - 60), v.bas)}
                                 <mark className="rounded bg-[var(--accent)]/25 px-0.5 text-[var(--accent-light)]">
@@ -1597,13 +1675,19 @@ export default function DersAnaSayfa() {
                         {/* Bu liste yalnızca dersleri taşıyor — pratik oturumu
                             kategori başlığında gösteriliyor, o yüzden küçük resim
                             koşulsuz basılıyor. */}
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={`https://img.youtube.com/vi/${o.video_id}/mqdefault.jpg`}
-                          alt=""
-                          className="h-12 w-20 flex-shrink-0 rounded-lg border border-white/[0.06] object-cover"
-                          loading="lazy"
-                        />
+                        {o.metin ? (
+                          <div className="flex h-12 w-20 flex-shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20">
+                            <FileText size={18} className="text-[var(--accent)]/55" />
+                          </div>
+                        ) : (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={`https://img.youtube.com/vi/${o.video_id}/mqdefault.jpg`}
+                            alt=""
+                            className="h-12 w-20 flex-shrink-0 rounded-lg border border-white/[0.06] object-cover"
+                            loading="lazy"
+                          />
+                        )}
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[13.5px] font-medium text-white/90">
                             {o.title ?? "Ders"}
@@ -1614,11 +1698,20 @@ export default function DersAnaSayfa() {
                                 sure alanı ilk kaynak videodan geliyor (oturumun
                                 video_id'si NOT NULL olduğu için orada duruyor), yani
                                 pratikte rastgele bir dersin süresini gösterirdi. */}
-                            {!o.tekrarMi && o.sure > 0 && (
+                            {o.metin ? (
+                              // Metnin "süresi" parça hesabı için sahte bir sayı; gösterilmiyor
                               <span className="flex items-center gap-1">
-                                <Clock size={10} />
-                                {formatSure(o.sure)}
+                                <FileText size={10} />
+                                Metin
                               </span>
+                            ) : (
+                              !o.tekrarMi &&
+                              o.sure > 0 && (
+                                <span className="flex items-center gap-1">
+                                  <Clock size={10} />
+                                  {formatSure(o.sure)}
+                                </span>
+                              )
                             )}
                             {o.yarim ? (
                               <span className="flex items-center gap-1 text-amber-300/80">

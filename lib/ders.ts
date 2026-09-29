@@ -584,8 +584,8 @@ export const IS_CALISIYOR: IsDurumu[] = ["transkript", "cozumleme", "coktan"];
 
 export interface UretimIsi {
   id: string;
-  /** "yeni": linkten baştan üretim · "tamamla": yarım kalmış oturumun 2. adımı */
-  tur: "yeni" | "tamamla";
+  /** "yeni": linkten baştan üretim · "tamamla": yarım kalmış oturumun 2. adımı · "metin": yapıştırılan metinden */
+  tur: "yeni" | "tamamla" | "metin";
   url: string;
   videoId: string | null;
   sessionId: string | null;
@@ -595,6 +595,8 @@ export interface UretimIsi {
   hata: string | null;
   /** Otomatik transkript düşerse ablamın yapıştırdığı metin */
   elleTranskript?: string;
+  /** tur "metin": sorunun üretileceği ders metninin kendisi */
+  metin?: string;
   /** durum "mevcut" iken: var olan dersin kimliği (kart oraya bağlanıyor) */
   mevcutDersId?: string | null;
   /** Ablam "yine de üret" dedi; mevcut ders kontrolü atlanıyor */
@@ -683,6 +685,71 @@ export function formatSure(saniye: number): string {
   const sn = s % 60;
   const iki = (n: number) => String(n).padStart(2, "0");
   return sa > 0 ? `${sa}:${iki(dk)}:${iki(sn)}` : `${dk}:${iki(sn)}`;
+}
+
+// --- Metinden ders -----------------------------------------------------------
+//
+// Ablam bir ders metni (not, özet, sohbetten kopya) yapıştırıp ondan soru
+// üretebiliyor. Metin, video dersiyle AYNI akıştan geçiyor (kuyruk -> çözümleme
+// -> parça parça soru -> denetim) ve kategorisinde normal bir ders gibi duruyor;
+// pratik, yanlışlar ve deneme havuzuna kendiliğinden giriyor.
+//
+// Bunun için metin sahte bir "video" satırı olarak saklanıyor: ders_sessions.
+// video_id NOT NULL ve ders_videos'a bağlı. Kimlik "metin-" önekli; videoya
+// özgü her şey (zaman bağlantısı, küçük resim, "Hoca ne demişti", yayın tarihi)
+// bu önekle ayırt edilip gizleniyor.
+
+/** Metin derslerinin sahte video kimliği öneki (bkz. /api/ders/metin) */
+export const METIN_ONEKI = "metin-";
+export const metinDersiMi = (videoId: string | null | undefined): boolean =>
+  !!videoId && videoId.startsWith(METIN_ONEKI);
+
+/**
+ * Metin, parça ve soru sınırı hesaplarına (PARCA_SURESI_SN, SORU_BASINA_SN)
+ * "3 karakter = 1 saniye" ölçeğiyle giriyor; o hesaplar video için kurulu ve
+ * değiştirilmiyor. Ölçek ölçümden: 4.000 karakterlik yoğun bir özet (27 kişi,
+ * 40 eser) ~1.333 sn sayılıyor -> tek parça, en fazla 11 soru; denemede aynı
+ * metinden 12 iyi soru çıkmıştı. Konuşma dağınık, not yoğun; bu yüzden
+ * konuşmanın gerçek hızından (~15 karakter/sn) çok daha sıkı bir ölçek.
+ */
+export const METIN_KARAKTER_SANIYE = 3;
+export const METIN_EN_AZ = 200;
+export const METIN_EN_FAZLA = 40_000;
+
+/**
+ * Metni paragraflara bölüp sahte zamanlı parçalara çevirir. Parçalı üretim
+ * zaman aralığına göre süzdüğü için her paragrafın "başlangıcı" kendinden
+ * önceki karakter sayısından geliyor. Çok uzun paragraf (tek satırlık dev
+ * yapıştırma) cümle sınırından ~600 karakterlik dilimlere bölünüyor ki bir
+ * parça sınırı paragrafın ortasına denk gelince bütün paragraf bir tarafa kaymasın.
+ */
+export function metniSegmentlere(metin: string): Segment[] {
+  const msKarakter = 1000 / METIN_KARAKTER_SANIYE;
+  const paragraflar = metin
+    .replace(/\r\n?/g, "\n")
+    .split(/\n+/)
+    .map((p) => p.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean)
+    .flatMap((p) => {
+      if (p.length <= 800) return [p];
+      const dilimler: string[] = [];
+      let kalan = p;
+      while (kalan.length > 800) {
+        const kes = kalan.slice(0, 700).search(/[.!?…](?!.*[.!?…])/);
+        const yer = kes > 200 ? kes + 1 : 600;
+        dilimler.push(kalan.slice(0, yer).trim());
+        kalan = kalan.slice(yer).trim();
+      }
+      if (kalan) dilimler.push(kalan);
+      return dilimler;
+    });
+  const segments: Segment[] = [];
+  let karakter = 0;
+  for (const t of paragraflar) {
+    segments.push({ o: Math.round(karakter * msKarakter), d: Math.round(t.length * msKarakter), t });
+    karakter += t.length + 1;
+  }
+  return segments;
 }
 
 /** Videonun ilgili anına açılan YouTube linki */
@@ -1074,16 +1141,21 @@ export function notlariNotBelgesine(
       attrs: { level: 2 },
       content: [
         { type: "text", text: `${bolum.baslik}  ` },
-        {
-          type: "text",
-          text: formatSure(bolum.saniye),
-          marks: [
-            {
-              type: "link",
-              attrs: { href: videoLinki(videoId, bolum.saniye), target: "_blank" },
-            },
-          ],
-        },
+        // Metin dersinde video yok; bölüme zaman bağlantısı konmuyor
+        ...(metinDersiMi(videoId)
+          ? []
+          : [
+              {
+                type: "text",
+                text: formatSure(bolum.saniye),
+                marks: [
+                  {
+                    type: "link",
+                    attrs: { href: videoLinki(videoId, bolum.saniye), target: "_blank" },
+                  },
+                ],
+              },
+            ]),
       ],
     });
     icerik.push(maddeListesi(bolum.maddeler.map(vurgulu)));
