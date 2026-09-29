@@ -667,11 +667,35 @@ Uzun formatlı uyku anlatımı bölümleri: konu yazılır, senaryo/ses/video ev
 bilgisayarda hazırlanır, sitede onaylanıp YouTube'a yüklenir. Mimari Kariyer ile
 aynı — site yalnızca Supabase'e yazar, üretimi "stüdyo" yapar.
 
-1. `db/youtube.sql` dosyasını Supabase SQL Editor'da çalıştır (tablolar, realtime, `youtube` bucket'ı).
+1. Supabase SQL Editor'da `db/` altındaki dosyaları **bu sırayla** çalıştır. Sıra önemli:
+   `youtube-seriler.sql` tabloları yeniden adlandırıyor (eski `youtube_seriler` = sahne → `youtube_sahneler`,
+   `youtube_seriler` = içerik serisi), ondan öncekiler ve sonrakiler aynı ada farklı şey diyor.
+   Alfabetik çalıştırmak kolonu yanlış tabloya koyar. Hepsi tekrar çalıştırmaya güvenli.
+
+   ```
+   youtube.sql                  temel tablolar, realtime, youtube bucket'ı
+   youtube-3.sql                küçük resim (thumbnail_url)
+   youtube-drive.sql            Drive yedeği bağlantısı
+   youtube-guncelle.sql         yayındaki videonun başlık/açıklamasını güncelleme
+   youtube-kapak.sql            kapak otomatik üretimi
+   youtube-planlama.sql         yayın planlama (yayin_zamani, otomatik_yukle)
+   youtube-sahne-onizleme.sql   SAHNE önizlemesi — yeniden adlandırmadan ÖNCE çalışmalı
+   youtube-seriler.sql          ← yeniden adlandırma: sahne / seri ayrımı
+   youtube-seri-kapak.sql       SERİye özel kapak stili — yeniden adlandırmadan SONRA
+   youtube-storage-sil.sql      bölüm/sahne silinince Storage temizliği
+   youtube-arastirma.sql        senaryo öncesi web araştırması
+   youtube-buyume.sql           büyüme ve kalite paketi (derleme, kalite, istatistik)
+   youtube-sahne-donusum.sql    sahne havuzu (sahne_idler, sahne_elle)
+   youtube-bolum-sahnesi.sql    bölüme özel sahne
+   youtube-maliyet.sql          harcama kaydı (gizli /maliyet sayfası okur)
+   youtube-kapak-b.sql          A/B kapak testi
+   ```
 2. Vercel'de `NEXT_PUBLIC_YOUTUBE_ACIK=true` (kapalıyken `/youtube?onizleme=1` ile görülür).
-3. Stüdyo: `AblamYT/gece/config.toml` içine `[supabase] url/key` (bu projenin `NEXT_PUBLIC_SUPABASE_*` değerleri) ve
-   `AblamYT/gece/client_secret.json` (Google Cloud → YouTube Data API v3 → OAuth masaüstü istemcisi).
-   Bir kez `gece.bat yt-auth`, sonra sürekli `gece.bat studyo`.
+3. Stüdyo ayrı bir depo, bu projenin yanındaki `gece/` klasörü
+   (https://github.com/JaxKerya/ablam-youtube). `gece/config.toml` içine `[supabase] url/key`
+   (bu projenin `NEXT_PUBLIC_SUPABASE_*` değerleri) ve `gece/client_secret.json`
+   (Google Cloud → YouTube Data API v3 → OAuth masaüstü istemcisi).
+   Bir kez `gece.bat yt-auth`, sonra sürekli `gece.bat studyo`. Kurulum: `gece/README.md`.
 
 Akış: **Seriler** sekmesinde seri + sahne tarifi → stüdyo sahneyi üretir (fal.ai) →
 **Bölümler**'de konu + süre → senaryo yazılır → sitede okunur/düzenlenir, onaylanır →

@@ -94,8 +94,8 @@ function karistir<T>(dizi: T[]): T[] {
  * diğerine hiç sıra gelmemesin diye. Her dersin kendi içindeki sıra rastgele.
  *
  * Seçim BİLEREK tamamen rastgele — geçmiş performansa (yanlış/eksik/pas) göre
- * ağırlıklandırılmıyor. Zayıf konu havuzu ve aralıklı tekrar açıkça istenmedi;
- * bu özellik onların yerine geçmiyor, sadece karışık tekrar sağlıyor.
+ * ağırlıklandırılmıyor. Pratik karışık tekrardır; yanlışların aralıklı tekrarı
+ * ayrı bir özellik: "Yanlışlarım" (lib/yanlislar.ts, /api/ders/yanlislar).
  */
 function derslereYayarakSec(gruplar: KaynakSoru[][], adet: number): KaynakSoru[] {
   // GRUP SIRASI DA KARIŞTIRILIYOR. Fonksiyon 20 soruluk bir test için yazılmıştı;

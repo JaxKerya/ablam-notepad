@@ -150,6 +150,12 @@ function YoutubeUygulamasi() {
   const [simdi, setSimdi] = useState(0);
   /** Takvimde boş bir güne "bölüm ekle" denince yeni bölüm formu bu tarihle açılır */
   const [planZamani, setPlanZamani] = useState<Date | null>(null);
+  /**
+   * Sorgu düştüyse ekran boş kalmasın: "hiç bölüm yok" ile "okunamadı" ayrı şeyler.
+   * Bölüm hatası ayrıca bildirim çıkarıyor; şerit dördünü de kapsıyor (Kariyer'deki
+   * listeHatasi ile aynı desen).
+   */
+  const [veriHatasi, setVeriHatasi] = useState<string | null>(null);
 
   const getir = useCallback(async () => {
     const [b, s, sh, n] = await Promise.all([
@@ -159,10 +165,18 @@ function YoutubeUygulamasi() {
       supabase.from("youtube_nabiz").select("*").eq("id", 1).maybeSingle(),
     ]);
     if (b.error) addToast("Bölümler okunamadı: " + b.error.message, "error");
-    setBolumler((b.data ?? []) as Bolum[]);
-    setSeriler((s.data ?? []) as Seri[]);
-    setSahneler((sh.data ?? []) as Sahne[]);
-    setNabiz((n.data as Nabiz | null) ?? null);
+    const hatalar = [
+      b.error && `bölümler (${b.error.message})`,
+      s.error && `seriler (${s.error.message})`,
+      sh.error && `sahneler (${sh.error.message})`,
+      n.error && `stüdyo nabzı (${n.error.message})`,
+    ].filter(Boolean) as string[];
+    setVeriHatasi(hatalar.length ? hatalar.join(", ") : null);
+    // Hatalı sorgunun sonucu yazılmaz: elde varsa eski liste kalsın, boşalmasın
+    if (!b.error) setBolumler((b.data ?? []) as Bolum[]);
+    if (!s.error) setSeriler((s.data ?? []) as Seri[]);
+    if (!sh.error) setSahneler((sh.data ?? []) as Sahne[]);
+    if (!n.error) setNabiz((n.data as Nabiz | null) ?? null);
     setSimdi(Date.now());
     setYukleniyor(false);
   }, [addToast]);
@@ -321,6 +335,12 @@ function YoutubeUygulamasi() {
                 </button>
               ))}
             </div>
+
+            {veriHatasi && (
+              <div className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-center text-[12.5px] text-red-200/80">
+                Veri okunamadı: {veriHatasi}. Sayfayı yenile; sürerse veritabanına bakılmalı.
+              </div>
+            )}
 
             {yukleniyor ? (
               <div className="flex justify-center py-16 text-white/30">

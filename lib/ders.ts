@@ -1,7 +1,8 @@
 // Ablam Ders — paylaşılan tipler, sabitler ve yardımcılar
 
 export type SessionStatus = "hazirlaniyor" | "hazir" | "hata";
-export type OturumTuru = "ders" | "tekrar" | "deneme";
+/** "yanlis": aralıklı tekrar oturumu (bkz. lib/yanlislar.ts, /api/ders/yanlislar) */
+export type OturumTuru = "ders" | "tekrar" | "deneme" | "yanlis";
 export type QuestionKind = "acik" | "coktan";
 export type Verdict = "dogru" | "eksik" | "yanlis" | "pas";
 

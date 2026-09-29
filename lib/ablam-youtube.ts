@@ -158,7 +158,7 @@ export const sayiBicimle = (n: number) => new Intl.NumberFormat("tr-TR", { notat
 /** Derlemeye eklenebilir: yüklenmiş, sesi stüdyoda duran, kendisi derleme olmayan bölüm */
 export const derlemeyeUygun = (b: Bolum) => b.durum === "yayinda" && !!b.youtube_id && !(b.derleme_idler?.length) && !!b.sure_sn;
 
-/** Harcama kaydı (tablo: youtube_maliyet) — gizli /youtube/maliyet sayfası */
+/** Harcama kaydı (tablo: youtube_maliyet) — üç sistemi birden gösteren gizli /maliyet sayfası okur */
 export type MaliyetKalemi = "arastirma" | "senaryo" | "ses" | "sahne" | "kapak" | "metin";
 export const KALEM_ETIKETI: Record<MaliyetKalemi, string> = {
   arastirma: "Araştırma",

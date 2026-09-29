@@ -24,11 +24,13 @@ import {
   ListChecks,
   ChevronDown,
   ChevronRight,
+  RotateCcw,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
 import { useModal } from "@/components/useModal";
 import { useKuyruk } from "@/components/ders/DersKuyrugu";
+import { yanlisKuraliMetni } from "@/lib/yanlislar";
 import {
   DERS_NOTLARI_KLASORU,
   ES_ZAMANLI_URETIM,
@@ -181,6 +183,15 @@ export default function DersAnaSayfa() {
   /** Silme onayı: yalnızca kimlik değil, ne silindiği de lazım (metin değişiyor) */
   const [silinecek, setSilinecek] = useState<{ id: string; deneme: boolean } | null>(null);
   const [tekrarKuruluyor, setTekrarKuruluyor] = useState<string | null>(null);
+  /**
+   * Yanlışlarım, DERS BAZLI (bkz. lib/yanlislar.ts): kategori -> bugün vadesi
+   * gelen, sistemdeki, öğrenilen ve bugün başlanmış oturum. Ayrı istekte ve
+   * hatası yutularak: bu sayılar gelmese de ders listesi eksiksiz çalışsın.
+   */
+  const [yanlislar, setYanlislar] = useState<
+    Record<string, { bekleyen: number; aktif: number; ogrenilen: number; bugunOturum: { id: string; cozulen: number } | null }>
+  >({});
+  const [yanlisKuruluyor, setYanlisKuruluyor] = useState<string | null>(null);
 
   /**
    * DERS İÇİ ARAMA. Transkriptler zaten veritabanında duruyor ve üretimden sonra
@@ -222,6 +233,10 @@ export default function DersAnaSayfa() {
       // Açık uçlu üretimi kapatıldı; eski derslerin açık uçluları hiçbir
       // ekranda görünmüyor, kartta da sayılmıyor.
       .eq("ders_questions.kind", "coktan")
+      // Yanlışlarım oturumları kategorisiz ve her gün bir tane açılıyor; listeye
+      // girseydi "Diğer" grubu şişer, LISTE_TAVANI da gerçek dersleri keserdi.
+      // Onların yeri tepedeki kart (components/ders/YanlislarKarti).
+      .neq("tur", "yanlis")
       .order("created_at", { ascending: false })
       .limit(LISTE_TAVANI);
 
@@ -363,6 +378,17 @@ export default function DersAnaSayfa() {
   useEffect(() => {
     oturumlariGetir();
   }, [oturumlariGetir]);
+
+  useEffect(() => {
+    queueMicrotask(async () => {
+      try {
+        const res = await fetch("/api/ders/yanlislar");
+        if (res.ok) setYanlislar(((await res.json()) as { kategoriler: typeof yanlislar }).kategoriler ?? {});
+      } catch {
+        // Sayılar gelmezse düğme görünmez; ders listesi etkilenmez
+      }
+    });
+  }, []);
 
   /**
    * Ders notlarını çeker ve her birini KATEGORİSİNE bağlar.
@@ -774,6 +800,39 @@ export default function DersAnaSayfa() {
     } catch (err) {
       addToast((err as Error).message, "error");
       setDenemeKuruluyor(null);
+    }
+  };
+
+  /** Dersin yanlış tekrarı: bugün başlanmışsa ona devam, yoksa yeni oturum */
+  const yanlisBaslat = async (kategori: string) => {
+    const y = yanlislar[kategori];
+    if (y?.bugunOturum) {
+      router.push(`/ders/${y.bugunOturum.id}`);
+      return;
+    }
+    if (!y || y.bekleyen === 0) {
+      addToast(`${kategori}: bugün tekrar edecek yanlışın yok.`, "info");
+      return;
+    }
+    if (yanlisKuruluyor) return;
+    setYanlisKuruluyor(kategori);
+    try {
+      const res = await fetch("/api/ders/yanlislar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kategori, adet: 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.hata ?? "Tekrar başlatılamadı.");
+      if (data.bitti || !data.sessionId) {
+        addToast(`${kategori}: bugün tekrar edecek yanlışın kalmadı.`, "info");
+        setYanlisKuruluyor(null);
+        return;
+      }
+      router.push(`/ders/${data.sessionId}`);
+    } catch (err) {
+      addToast((err as Error).message, "error");
+      setYanlisKuruluyor(null);
     }
   };
 
@@ -1338,128 +1397,125 @@ export default function DersAnaSayfa() {
                   key={g.kategori}
                   className="glass overflow-hidden rounded-2xl border border-[var(--border)]"
                 >
-                  {/* Kategori başlığı: sol yarısı katlama, sağı pratik düğmesi.
-                      Düğme başlığın içinde olduğu için kategori kapalıyken de
-                      erişilebilir — asıl çözülen sorun buydu. */}
-                  <div className="flex items-center gap-3 p-3.5">
-                    <button
-                      onClick={() => kategoriCevir(g.kategori)}
-                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                    >
-                      {acik ? (
-                        <ChevronDown size={15} className="flex-shrink-0 text-white/35" />
-                      ) : (
-                        <ChevronRight size={15} className="flex-shrink-0 text-white/35" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span className="text-[12px] font-medium uppercase tracking-wider text-white/70">
-                            {g.kategori}
+                  {/* KATEGORİ BAŞLIĞI, İKİ SATIR. Üstte kimlik (ad, sayılar, nadir
+                      kullanılan not ve liste ikonları), altta üç çalışma eylemi.
+                      Eskiden beş düğme aynı ağırlıkta tek sıradaydı ve "son deneme ·
+                      son pratik" cümlesi düğmelerden kopuk ayrı bir satırdaydı;
+                      her sayı artık ait olduğu eylemin üstünde. Eylemler başlığın
+                      içinde: kategori kapalıyken de erişilebilirler. */}
+                  <div className="p-3.5">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => kategoriCevir(g.kategori)}
+                        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                      >
+                        {acik ? (
+                          <ChevronDown size={15} className="flex-shrink-0 text-white/35" />
+                        ) : (
+                          <ChevronRight size={15} className="flex-shrink-0 text-white/35" />
+                        )}
+                        <span className="text-[12px] font-medium uppercase tracking-wider text-white/70">
+                          {g.kategori}
+                        </span>
+                        <span className="truncate text-[11.5px] text-white/30">
+                          {g.dersSayisi} ders<span className="hidden sm:inline"> · {g.soruSayisi} soru</span>
+                        </span>
+                        {g.yarimSayisi > 0 && (
+                          <span className="flex flex-shrink-0 items-center gap-1 text-[11px] text-amber-300/80">
+                            <CircleAlert size={10} />
+                            {g.yarimSayisi} yarım
                           </span>
-                          <span className="text-[11.5px] text-white/30">
-                            {g.dersSayisi} ders · {g.soruSayisi} soru
-                          </span>
-                          {g.yarimSayisi > 0 && (
-                            <span className="flex items-center gap-1 text-[11px] text-amber-300/80">
-                              <CircleAlert size={10} />
-                              {g.yarimSayisi} yarım
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-1 text-[11.5px] text-white/35">
-                          {[
-                            g.deneme && g.deneme.cevapSayisi > 0
-                              ? `son deneme: ${netHesapla(
-                                  g.deneme.dogruSayisi,
-                                  g.deneme.cevapSayisi - g.deneme.dogruSayisi
-                                )
-                                  .toFixed(2)
-                                  .replace(".", ",")} net`
-                              : null,
-                            g.pratik && g.pratik.cevapSayisi > 0
-                              ? `son pratik: ${g.pratik.cevapSayisi} soru · ${g.pratik.dogruSayisi} doğru`
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "henüz pratik yok"}
-                        </p>
-                      </div>
-                    </button>
+                        )}
+                      </button>
 
-                    <div className="flex flex-shrink-0 items-center gap-1.5">
-                      {/* Kategorinin ders notları. Not yoksa düğme de yok:
-                          boş bir paneli açan düğme, olmayan bir şeyi varmış
-                          gibi gösteriyor. Kategori kapalıyken de erişilebilir
-                          olması için başlıkta duruyor — "Soru Gönder" gibi. */}
+                      {/* Nadir kullanılanlar: yalnızca ikon. Not yoksa not ikonu da yok. */}
                       {g.notSayisi > 0 && (
                         <button
                           onClick={() => setNotKategorisi(g.kategori)}
                           title={`${g.kategori} ders notları`}
-                          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11.5px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"
+                          aria-label={`${g.kategori} ders notları (${g.notSayisi})`}
+                          className="flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[11.5px] text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white/85"
                         >
-                          <NotebookPen size={12} className="text-[var(--accent)]/70" />
-                          {g.notSayisi} not
+                          <NotebookPen size={13} />
+                          {g.notSayisi}
                         </button>
                       )}
-
-                      {/* Oynatma listesiyle karşılaştırma — bkz. listePaneliAc */}
                       <button
                         onClick={() => listePaneliAc(g.kategori)}
                         title={`${g.kategori} derslerini bir YouTube listesiyle karşılaştır`}
-                        className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11.5px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/90"
+                        aria-label={`${g.kategori} derslerini bir YouTube listesiyle karşılaştır`}
+                        className="flex flex-shrink-0 items-center rounded-lg px-2 py-1.5 text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white/85"
                       >
-                        <ListChecks size={12} className="text-[var(--accent)]/70" />
-                        Liste
+                        <ListChecks size={13} />
                       </button>
-
-                      {/* Deneme sınavı: KPSS'nin o dersteki gerçek soru sayısı
-                          ve süresiyle. Havuz yetmiyorsa uç anlamlı bir hata
-                          döndürüyor, düğmeyi burada gizlemeye gerek yok —
-                          soru sayısını istemci tarafında bilmiyoruz. */}
-                      {g.dersSayisi > 0 && (
-                        <button
-                          onClick={() => denemeKurulumAc(g.kategori)}
-                          disabled={
-                            !!denemeKuruluyor || (havuzlar.get(g.kategori) ?? 0) < DENEME_EN_AZ_HAVUZ
-                          }
-                          title={
-                            (havuzlar.get(g.kategori) ?? 0) < DENEME_EN_AZ_HAVUZ
-                              ? `Deneme için en az ${DENEME_EN_AZ_HAVUZ} çoktan seçmeli gerekiyor; bu kategoride ${
-                                  havuzlar.get(g.kategori) ?? 0
-                                } var.`
-                              : `${g.kategori}: süreli deneme kur`
-                          }
-                          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11.5px] text-white/55 transition-colors hover:border-[var(--border-hover)] hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          {denemeKuruluyor === g.kategori ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : (
-                            <Timer size={12} className="text-[var(--accent)]/70" />
-                          )}
-                          Deneme
-                        </button>
-                      )}
-
-                      {/* Pratik için ayrı bir düğme yok: "Soru Gönder" zaten
-                          eskisini silip yenisini başlatıyor. Ayrı bir silme
-                          düğmesi yalnızca başlıktaki sayaç satırını temizlerdi,
-                          yani gerçek bir işi yoktu. */}
-                      {g.dersSayisi > 0 && (
-                        <button
-                          onClick={() => tekrarBaslat(g.kategori)}
-                          disabled={!!tekrarKuruluyor}
-                          title={`${g.kategori} derslerinden rastgele bir soru`}
-                          className="flex items-center gap-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/[0.07] px-2.5 py-1.5 text-[11.5px] text-[var(--accent-light)] transition-colors hover:border-[var(--accent)]/55 hover:bg-[var(--accent)]/[0.12] disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          {tekrarKuruluyor === g.kategori ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : (
-                            <Dices size={12} />
-                          )}
-                          Soru Gönder
-                        </button>
-                      )}
                     </div>
+
+                    {g.dersSayisi > 0 &&
+                      (() => {
+                        const havuz = havuzlar.get(g.kategori) ?? 0;
+                        const denemeYok = havuz < DENEME_EN_AZ_HAVUZ;
+                        const y = yanlislar[g.kategori];
+                        // Günlük hedef yok: kutu doğrudan vadesi gelen sayıyı gösteriyor.
+                        // Bugün başlanıp hepsi bitirildiyse "tamam", hiç yoksa sönük.
+                        const bekleyen = y?.bekleyen ?? 0;
+                        const yanlisTamam = bekleyen === 0 && !!y?.bugunOturum;
+                        return (
+                          <div className="mt-3 grid grid-cols-3 gap-2">
+                            <KategoriEylemi
+                              onClick={() => tekrarBaslat(g.kategori)}
+                              disabled={!!tekrarKuruluyor}
+                              yukleniyor={tekrarKuruluyor === g.kategori}
+                              Ikon={Dices}
+                              etiket="Soru Gönder"
+                              alt={
+                                g.pratik && g.pratik.cevapSayisi > 0
+                                  ? `son: ${g.pratik.dogruSayisi}/${g.pratik.cevapSayisi} doğru`
+                                  : "rastgele soru"
+                              }
+                              ton="vurgu"
+                              title={`${g.kategori} derslerinden rastgele bir soru`}
+                            />
+                            <KategoriEylemi
+                              onClick={() => yanlisBaslat(g.kategori)}
+                              disabled={!!yanlisKuruluyor}
+                              yukleniyor={yanlisKuruluyor === g.kategori}
+                              Ikon={yanlisTamam ? CircleCheck : RotateCcw}
+                              etiket="Yanlışlar"
+                              alt={bekleyen > 0 ? `${bekleyen} soru` : yanlisTamam ? "bugün tamam" : "bugün yok"}
+                              ton={bekleyen > 0 ? "uyari" : yanlisTamam ? "tamam" : "sonuk"}
+                              title={
+                                y
+                                  ? `${g.kategori} yanlışları: ${y.bekleyen} soru tekrar zamanında, ${y.aktif} soru sistemde` +
+                                    (y.ogrenilen ? `, ${y.ogrenilen} soruyu öğrendin` : "") +
+                                    `. ${yanlisKuraliMetni()}`
+                                  : `${g.kategori}: tekrar edecek yanlışın yok.`
+                              }
+                            />
+                            <KategoriEylemi
+                              onClick={() => denemeKurulumAc(g.kategori)}
+                              disabled={!!denemeKuruluyor || denemeYok}
+                              yukleniyor={denemeKuruluyor === g.kategori}
+                              Ikon={Timer}
+                              etiket="Deneme"
+                              alt={
+                                g.deneme && g.deneme.cevapSayisi > 0
+                                  ? `son: ${netHesapla(g.deneme.dogruSayisi, g.deneme.cevapSayisi - g.deneme.dogruSayisi)
+                                      .toFixed(2)
+                                      .replace(".", ",")} net`
+                                  : denemeYok
+                                    ? `${havuz}/${DENEME_EN_AZ_HAVUZ} soru`
+                                    : "süreli sınav"
+                              }
+                              ton="notr"
+                              title={
+                                denemeYok
+                                  ? `Deneme için en az ${DENEME_EN_AZ_HAVUZ} çoktan seçmeli gerekiyor; bu kategoride ${havuz} var.`
+                                  : `${g.kategori}: süreli deneme kur`
+                              }
+                            />
+                          </div>
+                        );
+                      })()}
                   </div>
 
                   {acik && (
@@ -2070,5 +2126,53 @@ export default function DersAnaSayfa() {
         </div>
       )}
     </main>
+  );
+}
+
+/**
+ * Kategori başlığındaki çalışma eylemi: üstte ad, altta o eylemin sayısı.
+ * Ton hiyerarşiyi taşıyor — vurgu (asıl iş), uyarı (bekleyen yanlış),
+ * tamam (günün hedefi bitti), nötr (ara sıra), sönük (bugün yapacak yok).
+ */
+function KategoriEylemi({
+  onClick,
+  disabled,
+  yukleniyor,
+  Ikon,
+  etiket,
+  alt,
+  ton,
+  title,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  yukleniyor?: boolean;
+  Ikon: typeof Dices;
+  etiket: string;
+  alt: string;
+  ton: "vurgu" | "uyari" | "tamam" | "notr" | "sonuk";
+  title: string;
+}) {
+  const renk = {
+    vurgu: "border-[var(--accent)]/30 bg-[var(--accent)]/[0.08] text-[var(--accent-light)] hover:border-[var(--accent)]/55 hover:bg-[var(--accent)]/[0.13]",
+    uyari: "border-amber-400/30 bg-amber-400/[0.07] text-amber-100/90 hover:border-amber-400/55 hover:bg-amber-400/[0.11]",
+    tamam: "border-[var(--accent)]/25 text-[var(--accent-light)]/80 hover:border-[var(--accent)]/50",
+    notr: "border-[var(--border)] text-white/75 hover:border-[var(--border-hover)] hover:text-white/95",
+    sonuk: "border-[var(--border)] text-white/40 hover:border-[var(--border-hover)] hover:text-white/65",
+  }[ton];
+  const ikonRengi = ton === "uyari" ? "text-amber-300/85" : ton === "notr" || ton === "sonuk" ? "text-[var(--accent)]/70" : "";
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`min-w-0 rounded-xl border px-2.5 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 ${renk}`}
+    >
+      <span className="flex items-center gap-1.5 text-[12px] font-medium sm:text-[12.5px]">
+        {yukleniyor ? <Loader2 size={13} className="flex-shrink-0 animate-spin" /> : <Ikon size={13} className={`flex-shrink-0 ${ikonRengi}`} />}
+        <span className="truncate">{etiket}</span>
+      </span>
+      <span className="mt-0.5 block truncate text-[11px] tabular-nums opacity-70">{alt}</span>
+    </button>
   );
 }

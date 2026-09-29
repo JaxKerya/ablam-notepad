@@ -1,2 +1,15 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Satır sonları depoda hep LF. Windows'ta çalışma kopyası CRLF'e dönebiliyor
+# (referance klasöründe bir git checkout'u sonrası oldu); bu dosya olmadan
+# tek satırlık bir değişiklik "bütün dosya değişti" diye görünüyor.
+* text=auto eol=lf
+
+# İkili dosyalar dokunulmadan geçsin
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.mp4 binary
+*.woff binary
+*.woff2 binary
+*.pem binary

@@ -22,6 +22,7 @@ import {
   Dices,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
+import { dogruSonrasiMetni } from "@/lib/yanlislar";
 import { useToast } from "@/components/Toast";
 import SoruMetni from "@/components/ders/SoruMetni";
 import HocaNeDemisti from "@/components/ders/HocaNeDemisti";
@@ -64,7 +65,18 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
    * gelir, cevaplanır, "başka soru" denir, bir tane daha gelir. Bu yüzden burada
    * ilerleme çubuğu ve "sonuçları gör" ile biten akış yok.
    */
-  const pratik = oturum.tur === "tekrar";
+  const pratik = oturum.tur === "tekrar" || oturum.tur === "yanlis";
+  /**
+   * YANLIŞLARIM. Pratikle aynı döngü (tek soru, "başka soru", bitiş yok), ama
+   * sorular kategoriden rastgele değil, tekrar zamanı gelmiş yanlışlardan geliyor
+   * (bkz. lib/yanlislar.ts). Sıradaki soruyu /api/ders/yanlislar veriyor; vadesi
+   * gelen kalmayınca "bugünlük bitti" deniyor, hata değil.
+   */
+  const yanlisModu = oturum.tur === "yanlis";
+  /** Bugün vadesi gelmiş, henüz sorulmamış yanlış sayısı — başlıkta görünür */
+  const [yanlisKalan, setYanlisKalan] = useState<number | null>(null);
+  /** Vadesi gelen kalmadı */
+  const [yanlisBitti, setYanlisBitti] = useState(false);
 
   /**
    * Döngüde eklenen sorular. Sunucudan gelen liste bir prop olduğu için
@@ -95,7 +107,7 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
   );
   const [mod, setMod] = useState<Mod>(() => {
     // Pratikte özet ekranı yok — düğmeye basan zaten soru istiyor.
-    if (oturum.tur === "tekrar") return "soru";
+    if (oturum.tur === "tekrar" || oturum.tur === "yanlis") return "soru";
     if (ilkCevaplar.length === 0) return "ozet";
     return ilkCevaplar.length >= ilkSorular.length ? "sonuc" : "soru";
   });
@@ -103,7 +115,7 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
     const cevaplananlar = new Set(ilkCevaplar.map((c) => c.question_id));
     const i = ilkSorular.findIndex((s) => !cevaplananlar.has(s.id));
     // Pratikte hepsi cevaplanmışsa sonuncuda kal; "başka soru" yenisini getirir.
-    if (i === -1) return oturum.tur === "tekrar" ? Math.max(0, ilkSorular.length - 1) : 0;
+    if (i === -1) return oturum.tur === "tekrar" || oturum.tur === "yanlis" ? Math.max(0, ilkSorular.length - 1) : 0;
     return i;
   });
 
@@ -246,7 +258,7 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
     if (soruGeliyor) return;
     setSoruGeliyor(true);
     try {
-      const res = await fetch("/api/ders/tekrar", {
+      const res = await fetch(yanlisModu ? "/api/ders/yanlislar" : "/api/ders/tekrar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: oturum.id, adet: 1 }),
@@ -254,6 +266,15 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
       const data = await res.json();
       if (!res.ok) throw new Error(data?.hata ?? "Soru getirilemedi.");
       const yeni = (data.sorular ?? []) as DersQuestion[];
+      if (yanlisModu) {
+        setYanlisKalan(typeof data.bekleyen === "number" ? data.bekleyen : null);
+        if (data.bitti || !yeni.length) {
+          // Hata değil, hedefe ulaşıldı: sonuç ekranına geç, orada kutlanıyor
+          setYanlisBitti(true);
+          setMod("sonuc");
+          return;
+        }
+      }
       if (!yeni.length) throw new Error("Bu kategoride başka soru kalmadı.");
       setMetin("");
       setSecim(null);
@@ -623,8 +644,16 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
               / 100
             </span>
           </div>
-          <h1 className="text-xl font-semibold text-white/95">Ders tamamlandı</h1>
-          <p className="mt-1.5 text-[13px] text-white/45">{oturum.title ?? "Ders"}</p>
+          <h1 className="text-xl font-semibold text-white/95">
+            {yanlisModu ? (yanlisBitti ? "Bugünlük tekrar bitti" : "Tekrar molası") : "Ders tamamlandı"}
+          </h1>
+          <p className="mt-1.5 text-[13px] text-white/45">
+            {yanlisModu
+              ? yanlisBitti
+                ? `Vadesi gelen bütün yanlışlarını çözdün. Doğru yaptıkların ${dogruSonrasiMetni()} yeniden gelecek.`
+                : "Kaldığın yerden istediğin zaman devam edebilirsin."
+              : (oturum.title ?? "Ders")}
+          </p>
         </div>
 
         <div className="grid grid-cols-4 gap-2">
@@ -806,7 +835,9 @@ export default function DersView({ oturum, sorular: ilkSorular, ilkCevaplar }: P
             <>
               <span className="flex items-center gap-1.5">
                 <Dices size={12} className="text-[var(--accent)]/60" />
-                {oturum.kategori ?? "Karışık"} pratiği
+                {yanlisModu
+                  ? `${oturum.kategori ?? ""} yanlışları${yanlisKalan !== null ? ` · ${yanlisKalan} soru daha bekliyor` : ""}`
+                  : `${oturum.kategori ?? "Karışık"} pratiği`}
               </span>
               <span>
                 {cevaplananSayisi} soru çözüldü

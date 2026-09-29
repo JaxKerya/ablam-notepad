@@ -295,7 +295,7 @@ export default function AiView({
     const esik = new Date(ayBasi).getTime();
     let ders = 0, uretim = 0, denetim = 0;
     for (const o of oturumlar) {
-      if (o.tur === "tekrar") continue; // pratik model çağırmıyor
+      if (o.tur === "tekrar" || o.tur === "yanlis") continue; // pratik ve yanlış tekrarı model çağırmıyor
       if (new Date(o.created_at).getTime() < esik) continue;
       ders++;
       for (const a of o.denetim?.adimlar ?? []) {
@@ -318,7 +318,7 @@ export default function AiView({
               (a) => a.kayitlar.length > 0 || a.gecisler.some((g) => g.valf)
             )
           )
-      ).filter((o) => o.tur !== "tekrar"),
+      ).filter((o) => o.tur !== "tekrar" && o.tur !== "yanlis"),
     [oturumlar, hepsi]
   );
 
