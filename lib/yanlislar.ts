@@ -8,9 +8,9 @@
 // Kural (sade, ekranda anlatılabilir):
 //   yanlış / pas      -> ertesi gün tekrar
 //   doğru             -> AYNI GÜN, araya birkaç soru girdikten sonra yine sorulur
-//   beşinci doğru     -> ÖĞRENİLDİ, sistemden çıkar
+//   üçüncü doğru      -> ÖĞRENİLDİ, sistemden çıkar
 //   herhangi bir yanlış -> sayaç başa döner
-// Yani bir soru üst üste beş kez doğru yapılınca öğrenilmiş sayılıyor; beşi aynı
+// Yani bir soru üst üste üç kez doğru yapılınca öğrenilmiş sayılıyor; üçü aynı
 // günde olabilir (kullanıcı isteği, 29.09.2026). Aralıklar YANLIS_ARALIK_GUN'de,
 // aynı gün içindeki boşluk YANLIS_ARA_SORU'da.
 //
@@ -27,8 +27,8 @@
  * 1. kutu (yanlıştan sonra) 1 gün, doğrudan sonrakiler 0 gün: aynı gün yine vadeli.
  */
 // 1-3-7 idi, sonra 1-2-3, sonra her gün üç doğru (28.09.2026). 29.09.2026: beş
-// doğru ve beşi aynı gün olabilir.
-export const YANLIS_ARALIK_GUN = [1, 0, 0, 0, 0] as const;
+// doğru ve beşi aynı gün olabilir. 01.10.2026: aynı gün kalarak üç doğruya indi.
+export const YANLIS_ARALIK_GUN = [1, 0, 0] as const;
 
 /**
  * Aynı gün içinde bir sorunun yeniden sorulması için araya girmesi gereken
@@ -130,7 +130,7 @@ export function yanlisDurumlari(cevaplar: KokCevap[]): YanlisOzeti {
  * `sonSira` kök -> bu oturumda en son sorulduğu sıra, `enSonSira` oturumun son sırası.
  *
  *   1. Bu oturumda sorulmuş ve araya YANLIS_ARA_SORU başka soru girmiş olanlar,
- *      en önce sorulan önde: yeni soru açmadan eldekiler beşe tamamlansın.
+ *      en önce sorulan önde: yeni soru açmadan eldekiler tamamlansın.
  *   2. Bugün hiç sorulmamışlar (vadesiGelenler sırasıyla).
  *   3. İkisi de yoksa boşluk dolmasa da sorulmuşların en eskisi; gün bitmesin.
  */
