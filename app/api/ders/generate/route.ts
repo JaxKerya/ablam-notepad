@@ -15,6 +15,9 @@ import {
   parcaSoruSiniri,
   onculMetniVarMi,
   onculluSiklarMi,
+  PARAGRAF_EK_ADET,
+  PARAGRAF_VIDEO,
+  paragrafKonusuVarMi,
   sikSetiniDogrula,
   soruKirp,
   type DenetimAdimi,
@@ -25,6 +28,7 @@ import {
   type Segment,
 } from "@/lib/ders";
 import { gunlukLimitAsildiMi, hataCevabi, kapiKontrol } from "@/lib/ders-server";
+import { paragrafSorulariUret, paragrafVideosunuHazirla } from "@/lib/paragraf";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { damgaBelirle, kelimeDizini, transkriptMetni } from "@/lib/youtube";
 import {
@@ -47,6 +51,10 @@ export const maxDuration = 300;
 //
 //   adim "cozumleme" -> oturumu açar: başlık + kategori + özet + konular
 //   adim "coktan"    -> çoktan seçmelileri ekler, oturumu "hazir" yapar
+//   adim "paragraf"  -> (yalnız Türkçe, konularda paragraf varsa) model yazımı
+//                       paragraf soruları ekler — bkz. lib/paragraf.ts. Son
+//                       parçanın cevabındaki `paragraf: true` istemciye bunu
+//                       çağırmasını söylüyor; ders o sırada zaten "hazir".
 //
 // Açık uçlu soru yok. 2026-09-16'ya kadar 1. adım açık uçluları da üretip iki
 // denetim geçişinden geçiriyordu; ablam yalnızca çoktan seçmeli çözdüğü için
@@ -716,7 +724,8 @@ async function videoGetir(videoId: string) {
 
 /**
  * Gövde: { videoId, adim: "cozumleme" } -> { sessionId, parcaSayisi }
- *        { videoId, adim: "coktan", sessionId, parca } -> { soruSayisi, parca, parcaSayisi, son }
+ *        { videoId, adim: "coktan", sessionId, parca } -> { soruSayisi, parca, parcaSayisi, son, paragraf? }
+ *        { videoId, adim: "paragraf", sessionId } -> { paragrafSayisi }
  * "coktan" parça parça çağrılır (bkz. lib/ders.ts PARCA_SURESI_SN); istemci
  * parca=0..parcaSayisi-1 sırayla ister, son parça oturumu "hazir" yapar.
  */
@@ -910,13 +919,15 @@ export async function POST(request: Request) {
 
       const { data: oturum } = await supabase
         .from("ders_sessions")
-        .select("id, topics, summary, status, denetim")
+        .select("id, topics, summary, status, denetim, kategori")
         .eq("id", sessionId)
         .maybeSingle();
 
       if (!oturum) {
         return NextResponse.json({ hata: "Oturum bulunamadı." }, { status: 404 });
       }
+      // Son parçanın cevabında: istemci ardından "paragraf" adımını çağırsın mı
+      const paragraf = oturum.kategori === "Türkçe" && paragrafKonusuVarMi(oturum.topics);
 
       const { data: mevcut } = await supabase
         .from("ders_questions")
@@ -930,7 +941,7 @@ export async function POST(request: Request) {
       // Bitmiş oturuma tekrar istek (istemci yeniden denedi, cevap ulaşmamıştı):
       // mevcut sonuç döner, üretim tekrarlanmaz (denetim bulgusu: 8 -> 16 soru)
       if (oturum.status === "hazir") {
-        return NextResponse.json({ sessionId, soruSayisi: sonrakiPozisyon, coktanSayisi: 0, parca: parcaNo, parcaSayisi: toplamParca, son: true, atlandi: true });
+        return NextResponse.json({ sessionId, soruSayisi: sonrakiPozisyon, coktanSayisi: 0, parca: parcaNo, parcaSayisi: toplamParca, son: true, atlandi: true, paragraf });
       }
       const soruSiniri = parcaSoruSiniri(sure);
 
@@ -941,14 +952,14 @@ export async function POST(request: Request) {
         .map((a) => a.parca as number);
       if (bitenParcalar.includes(parcaNo)) {
         if (sonParca) await supabase.from("ders_sessions").update({ status: "hazir" }).eq("id", sessionId);
-        return NextResponse.json({ sessionId, soruSayisi: sonrakiPozisyon, coktanSayisi: 0, parca: parcaNo, parcaSayisi: toplamParca, son: sonParca, atlandi: true });
+        return NextResponse.json({ sessionId, soruSayisi: sonrakiPozisyon, coktanSayisi: 0, parca: parcaNo, parcaSayisi: toplamParca, son: sonParca, atlandi: true, paragraf: sonParca && paragraf });
       }
       if (!parcaSegments.length) {
         // Bu zaman aralığında altyazı yok (sessiz bölüm, kesik transkript) — parça boş geçilir
         await denetimOzetiYaz(supabase, sessionId, { duzeltilen: 0, elenen: 0, kayitlar: [] },
           { adim: "coktan", parca: parcaNo, parcaSayisi: toplamParca, uretilen: 0, hedef: 0, nihai: 0, gecisler: [], kayitlar: [] }, true);
         if (sonParca) await supabase.from("ders_sessions").update({ status: "hazir" }).eq("id", sessionId);
-        return NextResponse.json({ sessionId, soruSayisi: sonrakiPozisyon, coktanSayisi: 0, parca: parcaNo, parcaSayisi: toplamParca, son: sonParca });
+        return NextResponse.json({ sessionId, soruSayisi: sonrakiPozisyon, coktanSayisi: 0, parca: parcaNo, parcaSayisi: toplamParca, son: sonParca, paragraf: sonParca && paragraf });
       }
 
       const {
@@ -1075,7 +1086,48 @@ export async function POST(request: Request) {
       const { error: hazirHatasi } = await supabase.from("ders_sessions").update({ status: "hazir" }).eq("id", sessionId);
       if (hazirHatasi) throw new Error(`Oturum hazır işaretlenemedi: ${hazirHatasi.message}`);
 
-      return NextResponse.json({ sessionId, soruSayisi: toplam, coktanSayisi: coktan.length, parca: parcaNo, parcaSayisi: toplamParca, son: true });
+      return NextResponse.json({ sessionId, soruSayisi: toplam, coktanSayisi: coktan.length, parca: parcaNo, parcaSayisi: toplamParca, son: true, paragraf });
+    }
+
+    // ------------------------------------------------------------ 3. adım (Türkçe)
+    if (adim === "paragraf") {
+      if (!sessionId) {
+        return NextResponse.json({ hata: "sessionId gerekli." }, { status: 400 });
+      }
+      const { data: oturum } = await supabase
+        .from("ders_sessions")
+        .select("id, topics, kategori, denetim")
+        .eq("id", sessionId)
+        .maybeSingle();
+      if (!oturum) {
+        return NextResponse.json({ hata: "Oturum bulunamadı." }, { status: 404 });
+      }
+      // Yalnızca paragraf anlatılan Türkçe dersi; bir kez (istemci yeniden denerse tekrar üretilmez)
+      const yapildi = ((oturum.denetim as Partial<DenetimOzetiKaydi> | null)?.adimlar ?? []).some((a) => a.adim === "paragraf");
+      if (oturum.kategori !== "Türkçe" || !paragrafKonusuVarMi(oturum.topics) || yapildi) {
+        return NextResponse.json({ sessionId, paragrafSayisi: 0, atlandi: true });
+      }
+
+      // Sorular videoya değil ortak paragraf satırına bağlanıyor: paragrafı model yazdı,
+      // "Videoda 0:00" bağlantısı ve "Hoca ne demişti" yanıltıcı olurdu (bkz. PARAGRAF_VIDEO)
+      await paragrafVideosunuHazirla(supabase);
+      const { sorular, adim: paragrafAdimi, elenen } = await paragrafSorulariUret(supabase, {
+        adet: PARAGRAF_EK_ADET,
+        odak: ((oturum.topics as string[] | null) ?? []).filter((k) => typeof k === "string"),
+      });
+
+      const { count } = await supabase
+        .from("ders_questions")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", sessionId);
+      if (sorular.length) {
+        const { error } = await supabase.from("ders_questions").insert(
+          sorular.map((s, i) => ({ ...s, session_id: sessionId, video_id: PARAGRAF_VIDEO, position: (count ?? 0) + i }))
+        );
+        if (error) throw new Error(`Paragraf soruları kaydedilemedi: ${error.message}`);
+      }
+      await denetimOzetiYaz(supabase, sessionId, { duzeltilen: 0, elenen, kayitlar: [] }, paragrafAdimi, true);
+      return NextResponse.json({ sessionId, paragrafSayisi: sorular.length });
     }
 
     return NextResponse.json({ hata: "Geçersiz adım." }, { status: 400 });

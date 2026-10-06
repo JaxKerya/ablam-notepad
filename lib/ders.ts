@@ -123,7 +123,8 @@ export const DENETIM_KAYIT_SINIRI = 80;
  */
 export const HAM_CIKTI_SINIRI = 20000;
 
-export type DenetimKatmani = "transkript" | "olgu" | "bicim" | "gelistirme";
+/** "cozucu": paragraf sorusunu anahtarı görmeden çözen denetim (bkz. lib/paragraf.ts) */
+export type DenetimKatmani = "transkript" | "olgu" | "bicim" | "gelistirme" | "cozucu";
 
 export type DenetimIslemi =
   | "anahtar"              // cevap anahtarı değiştirildi (en kritik olanı)
@@ -156,7 +157,7 @@ export interface DenetimKaydi {
 
 /** Bir denetim geçişinin özeti — valf devreye girdiyse bulgular UYGULANMADI */
 export interface DenetimGecisi {
-  katman: "transkript" | "olgu" | "gelistirme";
+  katman: "transkript" | "olgu" | "gelistirme" | "cozucu";
   bulgu: number;
   valf: boolean;
   /**
@@ -182,8 +183,8 @@ export interface DenetimGecisi {
 }
 
 export interface DenetimAdimi {
-  /** "acik" yalnızca eski oturumlarda: açık uçlu üretimi kapatıldı */
-  adim: "cozumleme" | "acik" | "coktan" | "not";
+  /** "acik" yalnızca eski oturumlarda: açık uçlu üretimi kapatıldı. "paragraf": lib/paragraf.ts */
+  adim: "cozumleme" | "acik" | "coktan" | "not" | "paragraf";
   /** 0 = hedef yok (parçalı üretimde sayı serbest); eski oturumlarda üretim hedefi */
   /** Parçalı üretimde hangi parça (0'dan) — yarım kalan oturumu tamamlarken bitenler atlanır */
   parca?: number;
@@ -317,6 +318,9 @@ export const KATEGORILER = [
   "Coğrafya",
   "Vatandaşlık",
   "Türkçe",
+  // Türkçe'den ayrı (06.10.2026): "Metin Türleri" serisi Türkçe ile Diğer'e
+  // dağılıyordu. Sınırı çözümleme yönergesi çiziyor (lib/prompts.ts).
+  "Edebiyat",
   "Matematik",
   "Eğitim Bilimleri",
   "Güncel Bilgiler",
@@ -573,6 +577,8 @@ export type IsDurumu =
   /** 1. adım: özet + konular (eskiden açık uçlu sorular da burada üretilirdi) */
   | "cozumleme"
   | "coktan"
+  /** Paragraf soruları yazılıyor: düğmeyle istenen paragraf dersi ya da Türkçe dersinin ek adımı */
+  | "paragraf"
   | "hazir"
   | "elle"
   /** Bu videodan ders zaten var; üretim ablamın "yine de üret" demesini bekliyor */
@@ -580,12 +586,12 @@ export type IsDurumu =
   | "hata";
 
 /** Model çağıran, yani hem para hem süre harcayan durumlar */
-export const IS_CALISIYOR: IsDurumu[] = ["transkript", "cozumleme", "coktan"];
+export const IS_CALISIYOR: IsDurumu[] = ["transkript", "cozumleme", "coktan", "paragraf"];
 
 export interface UretimIsi {
   id: string;
-  /** "yeni": linkten baştan üretim · "tamamla": yarım kalmış oturumun 2. adımı · "metin": yapıştırılan metinden */
-  tur: "yeni" | "tamamla" | "metin";
+  /** "yeni": linkten baştan üretim · "tamamla": yarım kalmış oturumun 2. adımı · "metin": yapıştırılan metinden · "paragraf": Türkçe paragraf dersi */
+  tur: "yeni" | "tamamla" | "metin" | "paragraf";
   url: string;
   videoId: string | null;
   sessionId: string | null;
@@ -703,6 +709,38 @@ export function formatSure(saniye: number): string {
 export const METIN_ONEKI = "metin-";
 export const metinDersiMi = (videoId: string | null | undefined): boolean =>
   !!videoId && videoId.startsWith(METIN_ONEKI);
+
+// --- Paragraf soruları ---------------------------------------------------------
+//
+// Paragrafı model yazıyor (bkz. lib/paragraf.ts), yani sorunun videosu yok.
+// Bu yüzden kimlikler metin önekini taşıyor: video bağlantısı ve "Hoca ne
+// demişti" kendiliğinden gizleniyor. Düğmeyle istenen her paragraf dersi kendi
+// sahte video satırını alıyor ("metin-paragraf-<rastgele>"); bir video dersine
+// eklenen paragraf soruları ise ortak "metin-paragraf" satırına bağlanıyor —
+// oturum videonun, soru ise paragrafın.
+
+/** Video dersine eklenen paragraf sorularının ortak sahte video kimliği */
+export const PARAGRAF_VIDEO = `${METIN_ONEKI}paragraf`;
+/** Düğmeyle istenen paragraf dersinde kaç soru üretilir */
+export const PARAGRAF_DERS_ADET = 10;
+/** Paragraf anlatılan Türkçe dersinin sonuna kaç paragraf sorusu eklenir */
+export const PARAGRAF_EK_ADET = 6;
+
+/**
+ * Ders konularında paragraf anlatılmış mı. Çözümleme konuları serbest metin
+ * ("Paragraf soruları (anlam bilgisi, akışı bozan cümle…)") — anahtar kelimeyle
+ * bakılıyor. Yalnız Türkçe kategorisinde soruluyor (çağıran süzüyor).
+ */
+export function paragrafKonusuVarMi(konular: unknown): boolean {
+  return (
+    Array.isArray(konular) &&
+    konular.some(
+      (k) =>
+        typeof k === "string" &&
+        /paragraf|ana düşünce|ana fikir|yardımcı düşünce|akışı bozan|anlatım biçim|düşünceyi geliştirme/i.test(k)
+    )
+  );
+}
 
 /**
  * Metin, parça ve soru sınırı hesaplarına (PARCA_SURESI_SN, SORU_BASINA_SN)
@@ -973,7 +1011,31 @@ export function sikSetiniDogrula(
   }
   // Öncüllü şıklar karıştırılmaz, sınav sırasına dizilir (bkz. ONCUL_SIKLARI)
   if (onculluSiklarMi(sec)) return oncullariSirala(sec, dogru);
+  // Numaralı cümle şıkları da ("I.", "II ile IV") — "IV, I, III" sırası okunamaz
+  if (numaraSiklariMi(sec)) return numaralariSirala(sec, dogru);
   return siklariKaristir(sec, dogru);
+}
+
+const ROMA_DEGERI: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7 };
+const NUMARA_SIKKI = /^(VII|VI|IV|V|I{1,3})\.?(?:\s*(?:ile|ve|-|–)\s*(VII|VI|IV|V|I{1,3})\.?)?$/;
+
+/** Bütün şıklar numaralı cümle göndermesi mi ("I.", "III", "II ile IV")? */
+export function numaraSiklariMi(secenekler: string[]): boolean {
+  return secenekler.length > 0 && secenekler.every((s) => NUMARA_SIKKI.test(s.trim()));
+}
+
+/** Numaralı şıkları sayı sırasına dizer (önce ilk numara, sonra ikinci), doğru indeksi taşır */
+export function numaralariSirala(
+  secenekler: string[],
+  dogruIndeks: number
+): { secenekler: string[]; dogruIndeks: number } {
+  const dogruMetin = secenekler[dogruIndeks];
+  const deger = (s: string) => {
+    const m = s.trim().match(NUMARA_SIKKI);
+    return m ? ROMA_DEGERI[m[1]] * 10 + (m[2] ? ROMA_DEGERI[m[2]] : 0) : 0;
+  };
+  const sirali = [...secenekler].sort((a, b) => deger(a) - deger(b));
+  return { secenekler: sirali, dogruIndeks: sirali.indexOf(dogruMetin) };
 }
 
 /** Öncül kombinasyonlarını sınavdaki sıraya dizer, doğru indeksi taşır */

@@ -83,6 +83,7 @@ const ADIM_ADI: Record<string, string> = {
   acik: "Açık uçlu üretimi (eski dersler)",
   coktan: "Çoktan seçmeli üretimi",
   not: "Ders notu çıkarma",
+  paragraf: "Paragraf soruları (model yazımı)",
 };
 
 /**
@@ -107,6 +108,7 @@ const KATMAN: Record<string, string> = {
   olgu: "olgu denetimi",
   bicim: "biçim doğrulaması",
   gelistirme: "öz-denetim",
+  cozucu: "çözücü denetim (anahtarsız çözüm)",
 };
 
 const sayi = (n: number) => n.toLocaleString("tr");

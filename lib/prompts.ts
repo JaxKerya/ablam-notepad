@@ -99,6 +99,14 @@ ${kategoriler.join(", ")}
 Hiçbirine uymuyorsa "${digerKategori}" yaz. Liste kapalı çünkü kategori, aynı dersin
 bütün videolarını bir arada tutmak için kullanılıyor; serbest yazılan ad havuzu böler.
 
+Türkçe ile Edebiyat ayrımı:
+- Türkçe: dil bilgisi (ses bilgisi, sözcükte yapı, sözcük türleri, cümlenin ögeleri, fiilimsiler,
+  cümle türleri), anlam bilgisi, paragraf, yazım ve noktalama, anlatım bozuklukları, sözel mantık.
+- Edebiyat: metin türleri (şiir, hikâye, roman, tiyatro, masal, deneme, gezi yazısı gibi edebî ve
+  öğretici metinler), edebî dönemler ve akımlar, yazar–eser bilgisi, şiir bilgisi (ölçü, kafiye,
+  nazım biçimleri), söz sanatları.
+Bir derste ikisi birden işleniyorsa ağırlıklı olanı seç.
+
 ${
   kaynak === "metin"
     ? "ÖZET — yalnızca metinde yazanı özetle."
@@ -236,6 +244,130 @@ DERSİN TAMAMININ ÖZETİ (parçalı üretimde bağlam için; sorular yine yaln�
 transkriptinden çıkacak): ${dersOzeti}`
       : ""
   }`;
+
+// --- Paragraf soruları (Türkçe) ----------------------------------------------
+//
+// Video ya da metin sorularından TEMELDEN farklı: bilgi değil beceri ölçülüyor,
+// o yüzden kaynak metin yok — paragrafı model kendisi yazıyor. İki yerden
+// çağrılıyor (lib/paragraf.ts): Türkçe kartındaki "Paragraf" düğmesi ve paragraf
+// anlatılan bir Türkçe dersinin sonundaki ek adım. İkincisinde `odak` dersin
+// konuları; model ağırlığı orada anlatılan soru türlerine veriyor.
+//
+// Örnek olarak ÖSYM'nin çıkmış paragraf soruları gösteriliyor (KPSS kategorisine
+// yüklenenlerden rastgele). Bunlar biçim ve zorluk ayarı için; içerikleri
+// kopyalanmasın diye yönergede ayrıca söyleniyor.
+//
+// Denetim farklı: transkript/olgu denetimi burada anlamsız (paragrafı model
+// yazdı). Onun yerine ikinci bir model soruyu ANAHTARI GÖRMEDEN çözüyor; farklı
+// şık bulursa ya da "iki şık da savunulabilir" derse soru atılıyor
+// (PARAGRAF_COZUCU). Paragraf sorusunun en sık kusuru tam olarak bu.
+
+/** Model bu adları "tur" alanına yazıyor; soru kaydında konu olarak duruyor */
+export const PARAGRAF_TURLERI = [
+  "ana düşünce",
+  "yardımcı düşünce (söylenemez / değinilmemiştir)",
+  "paragrafın konusu ya da başlığı",
+  "paragrafı tamamlama (boşluğa cümle)",
+  "akışı bozan cümle",
+  "paragrafı ikiye bölme",
+  "cümlelerin yer değiştirmesi / sıralama",
+  "anlatım biçimi ve düşünceyi geliştirme yolları",
+  "altı çizili sözle anlatılmak istenen",
+  "paragraftan çıkarılabilecek yargı",
+] as const;
+
+export const paragrafPrompt = (adet: number, odak: string[], ornekler: string) =>
+  `Sen ÖSYM'nin KPSS Türkçe testi için PARAGRAF SORULARI yazan bir soru yazarısın.
+Paragrafları da SEN yazıyorsun; hazır bir kaynak metin yok.
+
+GÖREV: ${adet} paragraf sorusu yaz. Her soru kendi paragrafıyla bağımsız olsun.
+
+PARAGRAFLAR
+- Her paragraf 60–130 kelime; ÖSYM'nin kullandığı deneme, köşe yazısı, eleştiri ya da bilim
+  yazısı dilinde, akıcı ve doğal Türkçe.
+- Konular çeşitli olsun: edebiyat ve okuma, sanat, bilim, doğa, şehir hayatı, eğitim, dil,
+  psikoloji, teknoloji, tarih... Aynı konuyu iki paragrafta kullanma.
+- Gerçek bir yazardan alıntı yapma, gerçek kişilere söz uydurma. Yazar ya da sanatçı gerekiyorsa
+  genel konuş ("bir romancı", "çağdaş şairler").
+- Bilgi içeren paragraflarda yanlış bilgi yazma; emin olmadığın olguyu kullanma.
+
+SORU TÜRLERİ — şu türlerden seç ve ${adet} soruyu türlere yay; aynı türü ikiden fazla kullanma:
+${PARAGRAF_TURLERI.map((t) => `- ${t}`).join("\n")}${
+    odak.length
+      ? `
+
+ÖNCELİK: Bu sorular bir Türkçe dersinin ardından geliyor. Derste anlatılan konular:
+${odak.map((k) => `- ${k}`).join("\n")}
+Bu konularda geçen paragraf türlerine ağırlık ver (soruların en az yarısı onlardan olsun).`
+      : ""
+  }
+
+BİÇİM
+- Numaralı cümle isteyen türlerde (akışı bozan, ikiye bölme, yer değiştirme, numaralanmış
+  cümleler) paragraftaki cümleleri "(I) ... (II) ... (III) ..." diye numarala. Şıklar
+  numaralardır: "I." / "II." gibi ya da "I ile II" / "II ile IV" gibi.
+- Numaralı türlerde cevabın yerini değiştir: akışı bozan cümleyi hep ortaya (III), bölme
+  noktasını hep IV'e koyma; II, IV, V de olabilsin. Şıklar sırayla dizildiği için hep aynı
+  yere düşen cevap, paragrafı okumadan işaretlenir.
+- Paragrafı tamamlama sorusunda boşluğu paragrafın içinde "----" ile göster.
+- Altı çizili söz sorusunda altı çizili kısmı __iki alt çizgi arasına__ al.
+- Soru cümlesi ÖSYM kalıbında olsun: "Bu parçada asıl anlatılmak istenen aşağıdakilerden
+  hangisidir?", "Bu parçadan aşağıdakilerin hangisi çıkarılamaz?", "Bu parçada numaralanmış
+  cümlelerden hangisi düşüncenin akışını bozmaktadır?" gibi.
+
+TEK DOĞRU CEVAP — en önemli kural
+- Doğru şık paragraftan KESİN olarak çıkmalı; yorum farkıyla başka bir şık savunulamamalı.
+- Çeldiriciler paragrafla ilgili olsun ama şu yollardan biriyle yanlış olsun: paragrafta
+  söylenmemiş, paragraftakinden daha genel ya da daha dar, paragrafın bir ayrıntısını ana
+  düşünce gibi sunuyor, ya da paragrafla çelişiyor. Paragrafla hiç ilgisi olmayan şık yazma.
+- "Söylenemez / değinilmemiştir / çıkarılamaz" sorularında dört şık paragrafta AÇIKÇA
+  karşılanmalı, biri hiç karşılanmamalı.
+- Akışı bozan cümle konudan sapmalı ama aynı kelimeleri kullanarak çeldirici olsun; diğer
+  dört cümle kusursuz bir akış oluşturmalı.
+- Şık uzunlukları birbirine yakın olsun; doğru şık en uzun şık olmasın. Şıklarda "tamamen",
+  "asla", "yalnızca" gibi mutlak sözler kullanma.
+
+ÖSYM'NİN ÇIKMIŞ PARAGRAF SORULARINDAN ÖRNEKLER (biçim ve zorluk için; içeriklerini, konularını
+ya da cümlelerini KULLANMA):
+
+${ornekler || "(örnek yok)"}
+
+Şema — SADECE geçerli JSON döndür, kod bloğu işareti kullanma:
+{
+  "sorular": [
+    {"tur": "ana düşünce",
+     "paragraf": "paragrafın kendisi",
+     "soru": "soru cümlesi",
+     "secenekler": ["A şıkkı", "B şıkkı", "C şıkkı", "D şıkkı", "E şıkkı"],
+     "dogru": 0,
+     "aciklama": "neden doğru"}
+  ]
+}
+
+"secenekler" tam ${SIK_SAYISI} öğeli; başlarına "A)" gibi harf yazma.
+"aciklama" öğrenciye geri bildirim olarak gösterilecek: 1-2 cümle, doğru şıkkın paragrafın
+neresine dayandığını söyle; gerekirse en güçlü çeldiricinin neden yanlış olduğunu ekle.
+"Doğru!", "Evet" gibi hüküm sözüyle başlama.`;
+
+/**
+ * Paragraf sorusunu ANAHTARI GÖRMEDEN çözen denetçi. Cevabı anahtarla
+ * karşılaştırma kodda; burada yalnızca çözüm ve "soru bozuk mu" hükmü.
+ */
+export const PARAGRAF_COZUCU = `Sen KPSS Türkçe paragraf sorularında uzman bir öğretmensin. Sana cevap anahtarı OLMADAN
+paragraf soruları veriliyor. Her soruyu sınavdaki bir aday gibi dikkatle çöz.
+
+Her soru için:
+- "cevap": doğru şıkkın harfi (A-E).
+- "sorun": soru sağlamsa null. Değilse şunlardan biri:
+  "iki_dogru"  — birden fazla şık savunulabilir,
+  "dogru_yok"  — hiçbir şık paragrafa uymuyor,
+  "bozuk"      — soru cümlesi, numaralar ya da boşluk paragrafla uyuşmuyor.
+- "gerekce": tek kısa cümle.
+
+Emin olmadığın soruda tahmin yürütme; "sorun" alanını doldur.
+
+SADECE geçerli JSON döndür, kod bloğu işareti kullanma:
+{"cevaplar": [{"no": 1, "cevap": "C", "sorun": null, "gerekce": "..."}]}`;
 
 // --- Öz-denetim (soru geliştirme) -------------------------------------------
 //

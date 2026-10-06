@@ -18,6 +18,7 @@ import {
   Clock,
   NotebookPen,
   FileText,
+  Pilcrow,
   Dices,
   Search,
   Timer,
@@ -49,6 +50,7 @@ import {
   METIN_EN_AZ,
   METIN_EN_FAZLA,
   metinDersiMi,
+  PARAGRAF_VIDEO,
   NOT_KATEGORISIZ,
   notBasligi,
   oynatmaListesiKimligi,
@@ -72,6 +74,8 @@ interface OturumOzeti {
   videoBaslik: string | null;
   /** Metinden üretilmiş ders (video yok): küçük resim, süre, yayın tarihi gösterilmez */
   metin: boolean;
+  /** Türkçe kartındaki düğmeyle istenen paragraf dersi (paragrafları model yazdı) */
+  paragraf: boolean;
   /** Videonun YouTube'a yüklenme anı; liste bu alana göre sıralanıyor */
   yayin: string | null;
   /** Yalnızca denemelerde: sınavın toplam süresi (saniye) */
@@ -150,6 +154,7 @@ const DURUM_METNI: Record<IsDurumu, string> = {
   transkript: "Altyazı alınıyor…",
   cozumleme: "Ders çözümleniyor: özet ve konular…",
   coktan: "Çoktan seçmeli sorular hazırlanıyor…",
+  paragraf: "Paragraf soruları yazılıyor…",
   hazir: "Hazır",
   elle: "Altyazı alınamadı — transkripti yapıştır",
   mevcut: "Bu ders zaten var",
@@ -220,8 +225,11 @@ export default function DersAnaSayfa() {
   const router = useRouter();
   const { addToast } = useToast();
   // Üretim kuyruğu layout'ta yaşıyor; sayfa yalnızca gösteriyor ve besliyor.
-  const { isler, ekle, ekleMetin, tamamlaEkle, kaldir, tekrarDene, elleGonder, yinedeUret, tamamlananSayac } =
+  const { isler, ekle, ekleMetin, ekleParagraf, tamamlaEkle, kaldir, tekrarDene, elleGonder, yinedeUret, tamamlananSayac } =
     useKuyruk();
+
+  /** Sırada ya da çalışan bir paragraf işi varken düğme ikinci kez basılmasın */
+  const paragrafCalisiyor = isler.some((i) => i.tur === "paragraf" && i.durum !== "hazir" && i.durum !== "hata");
 
   // Esc ile kapanma, odak tuzağı ve odağın geri verilmesi — bkz. useModal
   const silmeRef = useModal<HTMLDivElement>(!!silinecek, () => setSilinecek(null));
@@ -248,7 +256,8 @@ export default function DersAnaSayfa() {
       // Yanlışlarım oturumları kategorisiz ve her gün bir tane açılıyor; listeye
       // girseydi "Diğer" grubu şişer, LISTE_TAVANI da gerçek dersleri keserdi.
       // Onların yeri tepedeki kart (components/ders/YanlislarKarti).
-      .neq("tur", "yanlis")
+      // "test": yerel test modunda açılan dersler (bkz. /api/ders/paragraf TEST_MODU)
+      .not("tur", "in", "(yanlis,test)")
       .order("created_at", { ascending: false })
       .limit(LISTE_TAVANI);
 
@@ -378,6 +387,7 @@ export default function DersAnaSayfa() {
           // yeni yapıştırılan metin listenin sonuna düşmesin
           yayin: metinDersiMi(o.video_id) ? o.created_at : (yayinlar.get(o.video_id) ?? null),
           metin: metinDersiMi(o.video_id),
+          paragraf: (o.video_id as string).startsWith(PARAGRAF_VIDEO),
           denemeSure: denemeSureleri.get(o.id) ?? null,
           denemeBitti: denemeBitisleri.get(o.id) ?? null,
           soruSayisi,
@@ -1172,7 +1182,9 @@ export default function DersAnaSayfa() {
                     />
                   ) : (
                     <div className="flex h-11 w-[74px] flex-shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20">
-                      {is.tur === "metin" || metinDersiMi(is.videoId) ? (
+                      {is.tur === "paragraf" ? (
+                        <Pilcrow size={16} className="text-[var(--accent)]/50" />
+                      ) : is.tur === "metin" || metinDersiMi(is.videoId) ? (
                         <FileText size={16} className="text-[var(--accent)]/50" />
                       ) : (
                         <Youtube size={16} className="text-white/20" />
@@ -1537,8 +1549,11 @@ export default function DersAnaSayfa() {
                         // Bugün başlanıp hepsi bitirildiyse "tamam", hiç yoksa sönük.
                         const bekleyen = y?.bekleyen ?? 0;
                         const yanlisTamam = bekleyen === 0 && !!y?.bugunOturum;
+                        // Türkçe'de dördüncü eylem (Paragraf): geniş ekranda tek satır,
+                        // telefonda 2×2 — dört dar sütun etiketleri kırpıyordu
+                        const paragrafVar = g.kategori === "Türkçe";
                         return (
-                          <div className="mt-3 grid grid-cols-3 gap-2">
+                          <div className={`mt-3 grid gap-2 ${paragrafVar ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
                             <KategoriEylemi
                               onClick={() => tekrarBaslat(g.kategori)}
                               disabled={!!tekrarKuruluyor}
@@ -1591,6 +1606,23 @@ export default function DersAnaSayfa() {
                                   : `${g.kategori}: süreli deneme kur`
                               }
                             />
+                            {/* Yalnız Türkçe: paragrafları model yazıyor, her basış yeni bir
+                                10 soruluk ders (bkz. lib/paragraf.ts) */}
+                            {paragrafVar && (
+                              <KategoriEylemi
+                                onClick={() => {
+                                  ekleParagraf();
+                                  addToast("Paragraf soruları yazılıyor; hazır olunca açılacak.", "info");
+                                }}
+                                disabled={paragrafCalisiyor}
+                                yukleniyor={paragrafCalisiyor}
+                                Ikon={Pilcrow}
+                                etiket="Paragraf"
+                                alt={paragrafCalisiyor ? "yazılıyor…" : "10 yeni soru"}
+                                ton="notr"
+                                title="ÖSYM tarzında 10 yeni paragraf sorusu yazılır; her soru ikinci bir modelce kontrol edilir"
+                              />
+                            )}
                           </div>
                         );
                       })()}
@@ -1677,7 +1709,11 @@ export default function DersAnaSayfa() {
                             koşulsuz basılıyor. */}
                         {o.metin ? (
                           <div className="flex h-12 w-20 flex-shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20">
-                            <FileText size={18} className="text-[var(--accent)]/55" />
+                            {o.paragraf ? (
+                              <Pilcrow size={18} className="text-[var(--accent)]/55" />
+                            ) : (
+                              <FileText size={18} className="text-[var(--accent)]/55" />
+                            )}
                           </div>
                         ) : (
                           /* eslint-disable-next-line @next/next/no-img-element */
@@ -1701,8 +1737,8 @@ export default function DersAnaSayfa() {
                             {o.metin ? (
                               // Metnin "süresi" parça hesabı için sahte bir sayı; gösterilmiyor
                               <span className="flex items-center gap-1">
-                                <FileText size={10} />
-                                Metin
+                                {o.paragraf ? <Pilcrow size={10} /> : <FileText size={10} />}
+                                {o.paragraf ? "Paragraf" : "Metin"}
                               </span>
                             ) : (
                               !o.tekrarMi &&

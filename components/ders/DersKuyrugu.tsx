@@ -42,6 +42,8 @@ interface KuyrukDegeri {
   ekle: (metin: string) => number;
   /** Bir ders metnini (not, özet) soru üretimi için sıraya alır */
   ekleMetin: (metin: string) => void;
+  /** Türkçe paragraf dersi (paragrafları model yazıyor) sıraya alır */
+  ekleParagraf: () => void;
   /** Yarım kalmış bir oturumun 2. adımını sıraya alır */
   tamamlaEkle: (sessionId: string, videoId: string, baslik: string | null) => void;
   kaldir: (id: string) => void;
@@ -161,75 +163,97 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
       let baslik = is.baslik;
 
       try {
-        // sessionId varsa transkript ve çözümleme zaten yapılmış ("tekrar dene"
-        // ile gelen iş): ikinci bir oturum açma, doğrudan sorulara geç (inceleme bulgusu)
-        if ((is.tur === "yeni" || is.tur === "metin") && !sessionId) {
-          yaz({ durum: "transkript", hata: null });
-          let tr: Record<string, unknown>;
-          try {
-            // Metin işi: transkript yerine metnin kendisi kaydediliyor (bkz.
-            // /api/ders/metin). Cevap aynı biçimde, akışın geri kalanı ortak.
-            tr =
-              is.tur === "metin"
-                ? await istek("/api/ders/metin", { metin: is.metin ?? "" })
-                : await istek("/api/ders/transcript", {
-                    url: is.url,
-                    elleTranskript: is.elleTranskript,
-                  });
-          } catch (err) {
-            // Otomatik yollar düştü: ablam transkripti kendi tarayıcısından
-            // yapıştırabilir. İş silinmiyor, "elle" durumunda bekliyor.
-            if ((err as { kod?: string }).kod === "elle_gerekli") {
-              yaz({ durum: "elle", hata: (err as Error).message });
+        if (is.tur === "paragraf") {
+          // Kaynak yok, tek istek: sunucu paragrafları yazıp dersi açıyor (bkz. /api/ders/paragraf)
+          yaz({ durum: "paragraf", hata: null });
+          const cevap = await istek("/api/ders/paragraf", {});
+          sessionId = String(cevap.sessionId ?? "");
+          if (!sessionId) throw new Error("Paragraf dersi açılamadı.");
+          yaz({ sessionId });
+        } else {
+          // sessionId varsa transkript ve çözümleme zaten yapılmış ("tekrar dene"
+          // ile gelen iş): ikinci bir oturum açma, doğrudan sorulara geç (inceleme bulgusu)
+          if ((is.tur === "yeni" || is.tur === "metin") && !sessionId) {
+            yaz({ durum: "transkript", hata: null });
+            let tr: Record<string, unknown>;
+            try {
+              // Metin işi: transkript yerine metnin kendisi kaydediliyor (bkz.
+              // /api/ders/metin). Cevap aynı biçimde, akışın geri kalanı ortak.
+              tr =
+                is.tur === "metin"
+                  ? await istek("/api/ders/metin", { metin: is.metin ?? "" })
+                  : await istek("/api/ders/transcript", {
+                      url: is.url,
+                      elleTranskript: is.elleTranskript,
+                    });
+            } catch (err) {
+              // Otomatik yollar düştü: ablam transkripti kendi tarayıcısından
+              // yapıştırabilir. İş silinmiyor, "elle" durumunda bekliyor.
+              if ((err as { kod?: string }).kod === "elle_gerekli") {
+                yaz({ durum: "elle", hata: (err as Error).message });
+                return;
+              }
+              throw err;
+            }
+
+            videoId = String(tr.videoId ?? "");
+            baslik = typeof tr.baslik === "string" ? tr.baslik : null;
+            yaz({ videoId, baslik, sure: typeof tr.sure === "number" ? tr.sure : 0 });
+
+            // MÜKERRER KORUMASI. Bu videodan ders varsa üretime geçilmiyor; kart
+            // "zaten var" diyip dersi açıyor, "yine de üret" ise zorla ile
+            // yeniden sıraya alıyor. Kontrol transkript cevabından geliyor —
+            // ek sorgu yok.
+            const mevcut = tr.mevcutDers as { id: string; baslik: string | null } | null | undefined;
+            if (mevcut && !is.zorla) {
+              yaz({ durum: "mevcut", mevcutDersId: mevcut.id, baslik: mevcut.baslik ?? baslik });
               return;
             }
-            throw err;
+
+            // Aynı videoyu işleyen başka bir iş var mı? (Kuyruğa iki kez yapıştırılan
+            // link, ya da "Tamamla" ile aynı anda başlatılan yarım oturum.) Video
+            // kimliği ancak burada bilindiği için kontrol burada.
+            const cakisan = islerRef.current.find(
+              (i) => i.id !== is.id && i.videoId === videoId && IS_CALISIYOR.includes(i.durum)
+            );
+            if (cakisan) {
+              yaz({ durum: "hata", hata: "Bu ders şu anda zaten hazırlanıyor." });
+              return;
+            }
+
+            yaz({ durum: "cozumleme" });
+            const cozumleme = await istek("/api/ders/generate", { videoId, adim: "cozumleme" });
+            sessionId = String(cozumleme.sessionId ?? "");
+            parcaSayisi = Number(cozumleme.parcaSayisi) || 1;
+            yaz({ sessionId });
           }
 
-          videoId = String(tr.videoId ?? "");
-          baslik = typeof tr.baslik === "string" ? tr.baslik : null;
-          yaz({ videoId, baslik, sure: typeof tr.sure === "number" ? tr.sure : 0 });
+          if (!videoId || !sessionId) throw new Error("Oturum kimliği alınamadı.");
 
-          // MÜKERRER KORUMASI. Bu videodan ders varsa üretime geçilmiyor; kart
-          // "zaten var" diyip dersi açıyor, "yine de üret" ise zorla ile
-          // yeniden sıraya alıyor. Kontrol transkript cevabından geliyor —
-          // ek sorgu yok.
-          const mevcut = tr.mevcutDers as { id: string; baslik: string | null } | null | undefined;
-          if (mevcut && !is.zorla) {
-            yaz({ durum: "mevcut", mevcutDersId: mevcut.id, baslik: mevcut.baslik ?? baslik });
-            return;
+          // Sorular parça parça: uzun derste tek istek sunucunun süre sınırını
+          // aşıyordu. Parça sayısını ilk cevap söyler ("tamamla" işinde çözümleme
+          // yok, o yüzden döngü ilk cevaptan sonra sayıyı günceller).
+          let parca = 0;
+          let sonCevap: Record<string, unknown> = {};
+          do {
+            yaz({ durum: "coktan" });
+            const cevap = await istek("/api/ders/generate", { videoId, adim: "coktan", sessionId, parca });
+            sonCevap = cevap;
+            parcaSayisi = Number(cevap.parcaSayisi) || 1;
+            parca++;
+          } while (parca < parcaSayisi);
+
+          // Paragraf anlatılan Türkçe dersi: sunucu son parçada söylüyor. Ders zaten
+          // hazır; ek adım düşerse ders yine kullanılır, yalnızca haber verilir.
+          if (sonCevap.paragraf === true) {
+            yaz({ durum: "paragraf" });
+            try {
+              await istek("/api/ders/generate", { videoId, adim: "paragraf", sessionId });
+            } catch (err) {
+              addToast(`Paragraf soruları eklenemedi: ${(err as Error).message}`, "error");
+            }
           }
-
-          // Aynı videoyu işleyen başka bir iş var mı? (Kuyruğa iki kez yapıştırılan
-          // link, ya da "Tamamla" ile aynı anda başlatılan yarım oturum.) Video
-          // kimliği ancak burada bilindiği için kontrol burada.
-          const cakisan = islerRef.current.find(
-            (i) => i.id !== is.id && i.videoId === videoId && IS_CALISIYOR.includes(i.durum)
-          );
-          if (cakisan) {
-            yaz({ durum: "hata", hata: "Bu ders şu anda zaten hazırlanıyor." });
-            return;
-          }
-
-          yaz({ durum: "cozumleme" });
-          const cozumleme = await istek("/api/ders/generate", { videoId, adim: "cozumleme" });
-          sessionId = String(cozumleme.sessionId ?? "");
-          parcaSayisi = Number(cozumleme.parcaSayisi) || 1;
-          yaz({ sessionId });
         }
-
-        if (!videoId || !sessionId) throw new Error("Oturum kimliği alınamadı.");
-
-        // Sorular parça parça: uzun derste tek istek sunucunun süre sınırını
-        // aşıyordu. Parça sayısını ilk cevap söyler ("tamamla" işinde çözümleme
-        // yok, o yüzden döngü ilk cevaptan sonra sayıyı günceller).
-        let parca = 0;
-        do {
-          yaz({ durum: "coktan" });
-          const cevap = await istek("/api/ders/generate", { videoId, adim: "coktan", sessionId, parca });
-          parcaSayisi = Number(cevap.parcaSayisi) || 1;
-          parca++;
-        } while (parca < parcaSayisi);
         yaz({ durum: "hazir", hata: null });
 
         setTamamlananSayac((n) => n + 1);
@@ -319,6 +343,23 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
     [guncelle]
   );
 
+  const ekleParagraf = useCallback(() => {
+    guncelle((liste) => [
+      ...liste,
+      {
+        id: yeniId(),
+        tur: "paragraf",
+        url: "",
+        videoId: null,
+        sessionId: null,
+        baslik: "Paragraf soruları",
+        sure: 0,
+        durum: "bekliyor",
+        hata: null,
+      },
+    ]);
+  }, [guncelle]);
+
   const tamamlaEkle = useCallback(
     (sessionId: string, videoId: string, baslik: string | null) => {
       if (islerRef.current.some((i) => i.sessionId === sessionId && i.durum !== "hata")) return;
@@ -388,7 +429,7 @@ export function DersKuyruguSaglayici({ children }: { children: React.ReactNode }
 
   return (
     <Baglam.Provider
-      value={{ isler, ekle, ekleMetin, tamamlaEkle, kaldir, tekrarDene, elleGonder, yinedeUret, tamamlananSayac }}
+      value={{ isler, ekle, ekleMetin, ekleParagraf, tamamlaEkle, kaldir, tekrarDene, elleGonder, yinedeUret, tamamlananSayac }}
     >
       {children}
     </Baglam.Provider>
