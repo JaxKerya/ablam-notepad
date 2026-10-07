@@ -26,6 +26,7 @@ export type Durum =
   | "hata";
 
 export type Gizlilik = "unlisted" | "public" | "private";
+export type ShortsDurum = "bekliyor" | "uretiliyor" | "onay" | "yayinla" | "yayinda" | "hata";
 export type LoopDurum = "bekliyor" | "uretiliyor" | "hazir" | "hata";
 
 /** Sahne — bölümlerin arkasında dönen loop görsel (tablo: youtube_sahneler) */
@@ -123,6 +124,14 @@ export interface Bolum {
   /** YouTube istatistikleri (stüdyo birkaç saatte bir günceller; veriler 2-3 gün gecikmeli) */
   istatistik?: Istatistik | null;
   istatistik_zaman?: string | null;
+  /** Shorts tanıtım fragmanı (db/youtube-shorts.sql): bekliyor → uretiliyor → onay → yayinla → yayinda; ya da hata */
+  shorts_durum?: ShortsDurum | null;
+  /** Sitede izlenen hafif önizleme (Storage youtube/shorts/<id>.mp4) */
+  shorts_url?: string | null;
+  shorts_baslik?: string | null;
+  shorts_youtube_id?: string | null;
+  shorts_yayin_zamani?: string | null;
+  shorts_hata?: string | null;
   hata: string | null;
   gunluk: string[];
   created_at: string;
@@ -222,6 +231,14 @@ export function yayinDurumu(b: Pick<Bolum, "durum" | "gizlilik" | "yayin_zamani"
     return `Planlandı · ${tarihBicimle(b.yayin_zamani)}`;
   }
   return { public: "Herkese açık", unlisted: "Yüklendi · liste dışı", private: "Yüklendi · gizli" }[b.gizlilik];
+}
+
+/** Yüklenmiş Shorts fragmanının durumu: planlı (tarih gelecekte) ya da yayında */
+export function shortsYayinDurumu(b: Pick<Bolum, "shorts_yayin_zamani">): string {
+  if (b.shorts_yayin_zamani && new Date(b.shorts_yayin_zamani).getTime() > Date.now()) {
+    return `Planlandı · ${tarihBicimle(b.shorts_yayin_zamani)}`;
+  }
+  return "Yayında";
 }
 
 /** yayinda + gelecekte yayin_zamani → YouTube'da planlı bekliyor */

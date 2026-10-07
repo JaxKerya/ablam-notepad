@@ -48,6 +48,7 @@ import {
   YAYIN_MODU_ETIKETI,
   planliMi,
   yayinDurumu,
+  shortsYayinDurumu,
   tarihBicimle,
   yerelTarihGirdisi,
   type Nabiz,
@@ -1011,6 +1012,9 @@ function BolumDetay({
 
       {bolum.durum === "senaryo_onay" && <SenaryoOnay bolum={bolum} onYama={onYama} />}
       {(bolum.durum === "hazir" || bolum.durum === "yayinla" || bolum.durum === "yayinda") && <YayinPaneli bolum={bolum} onYama={onYama} />}
+      {bolum.durum === "yayinda" && bolum.youtube_id && !bolum.derleme_idler?.length && bolum.shorts_durum !== undefined && (
+        <ShortsPaneli bolum={bolum} onYama={onYama} />
+      )}
       {bolum.durum === "hata" && (
         <section className="glass rounded-xl border border-red-300/20 p-4">
           <p className="text-[13px] leading-relaxed text-red-100/80">{hataMetni(bolum.hata) || "Bilinmeyen hata"}</p>
@@ -1425,6 +1429,94 @@ function YayinPaneli({ bolum, onYama }: { bolum: Bolum; onYama: (id: string, yam
           {bolum.yt_etiketler.length > 0 && (
             <p className="text-[11.5px] text-white/30">Etiketler: {bolum.yt_etiketler.join(", ")}</p>
           )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Shorts tanıtım fragmanı: stüdyo bölümün kendi anlatımından kısa bir dikey video üretir (gece/fragman.py).
+ * Burada izlenir; onaylanınca uzun videodan bir gün sonra Shorts olarak planlı yüklenir.
+ */
+function ShortsPaneli({ bolum, onYama }: { bolum: Bolum; onYama: (id: string, yama: Partial<Bolum>, mesaj?: string) => Promise<void> }) {
+  const durum = bolum.shorts_durum;
+  const calisiyor = durum === "bekliyor" || durum === "uretiliyor" || durum === "yayinla";
+  return (
+    <section className={`glass rounded-xl border p-4 ${durum === "onay" ? "border-[var(--accent)]/25" : "border-[var(--border)]"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/35">
+          <Film size={12} /> Shorts fragmanı
+        </p>
+        {calisiyor && (
+          <span className="flex items-center gap-1.5 text-[12px] text-white/45">
+            <Loader2 size={12} className="animate-spin" />
+            {durum === "yayinla" ? "YouTube'a yükleniyor" : "Hazırlanıyor"}
+          </span>
+        )}
+      </div>
+
+      {!durum && (
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[12.5px] leading-relaxed text-white/45">
+            Bölümün kendi anlatımından ~25 saniyelik dikey bir tanıtım. Önce burada izlersin, onaylarsan yayınlanır.
+          </p>
+          <button onClick={() => onYama(bolum.id, { shorts_durum: "bekliyor", shorts_hata: null }, "Stüdyo fragmanı hazırlıyor (birkaç dakika).")} className={ikincilDugme}>
+            <Sparkles size={14} />
+            Fragman üret
+          </button>
+        </div>
+      )}
+
+      {durum === "onay" && bolum.shorts_url && (
+        <div className="mt-3 flex flex-col gap-4 sm:flex-row">
+          <video src={bolum.shorts_url} controls playsInline preload="metadata" className="aspect-[9/16] w-full max-w-[220px] self-center rounded-lg border border-[var(--border)] bg-black/40 sm:self-start" />
+          <div className="flex min-w-0 flex-1 flex-col justify-between gap-3">
+            <div>
+              <p className="text-[13.5px] font-medium text-white/85">{bolum.shorts_baslik}</p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-white/40">
+                Onaylarsan uzun videodan bir gün sonra saat {String(YAYIN_SAATI).padStart(2, "0")}:00&apos;de Shorts olarak yayınlanır;
+                açıklamasında uzun videonun bağlantısı olur. Beğenmezsen stüdyo bölümden başka bir kesit seçer.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => onYama(bolum.id, { shorts_durum: "yayinla" }, "Stüdyo Shorts'u yükleyip planlıyor.")} className={birincilDugme}>
+                <Check size={14} />
+                Onayla ve planla
+              </button>
+              <button onClick={() => onYama(bolum.id, { shorts_durum: "bekliyor" }, "Stüdyo başka bir kesit seçiyor.")} className={ikincilDugme}>
+                <RotateCcw size={14} />
+                Başka kesit seç
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {durum === "yayinda" && bolum.shorts_youtube_id && (
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-medium text-white/85">{bolum.shorts_baslik}</p>
+            <p className="text-[12px] text-white/40">{shortsYayinDurumu(bolum)}</p>
+          </div>
+          <a href={`https://youtube.com/shorts/${bolum.shorts_youtube_id}`} target="_blank" rel="noreferrer" className={ikincilDugme}>
+            <ExternalLink size={14} />
+            YouTube&apos;da aç
+          </a>
+        </div>
+      )}
+
+      {durum === "hata" && (
+        <div className="mt-3 space-y-3">
+          <p className="text-[12.5px] leading-relaxed text-red-100/75">{bolum.shorts_hata || "Fragman hazırlanamadı."}</p>
+          <button
+            // Video YouTube'a gittiyse yeniden üretme: kayıtlı kimlikle yüklemeyi tamamla (ikinci kopya açılmaz)
+            onClick={() => onYama(bolum.id, { shorts_durum: bolum.shorts_youtube_id ? "yayinla" : "bekliyor", shorts_hata: null }, "Yeniden sıraya alındı.")}
+            className={ikincilDugme}
+          >
+            <RotateCcw size={14} />
+            Tekrar dene
+          </button>
         </div>
       )}
     </section>
