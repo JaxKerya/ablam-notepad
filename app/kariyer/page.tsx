@@ -6,7 +6,6 @@ import Link from "next/link";
 import {
   Activity,
   ArrowLeft,
-  Briefcase,
   Check,
   ExternalLink,
   ListChecks,
@@ -26,6 +25,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
+import BahceLogo, { MODUL_PALETLERI } from "@/components/BahceLogo";
 import {
   BOS_PROFIL,
   KARAR_ETIKETI,
@@ -180,14 +180,9 @@ function YakindaEkrani({ gizli }: { gizli: boolean }) {
         <span>Ana sayfa</span>
       </Link>
       <div className={`animate-fade-in flex flex-col items-center text-center transition-opacity ${gizli ? "opacity-0" : ""}`}>
-        <div className="glow-md mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent)]/10">
-          <Briefcase size={24} className="text-[var(--accent-light)]" />
-        </div>
-        <h1 className="text-2xl font-semibold text-white/95">Ablam Kariyer</h1>
-        <p className="mt-2 max-w-xs text-[13.5px] leading-relaxed text-white/45">
-          Hazırlanıyor. Açıldığında iş ilanları senin yerine taranacak, uygun olanlar burada ve e-postanda olacak.
-        </p>
-        <span className="mt-4 rounded-full border border-[var(--accent)]/25 bg-[var(--accent)]/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-[var(--accent-light)]/80">
+        <h1 className="sr-only">Ablam Kariyer</h1>
+        <BahceLogo metin="Ablam Kariyer" palet={MODUL_PALETLERI.kariyer} yukseklik={200} className="w-[min(36rem,90vw)]" />
+        <span className="-mt-6 rounded-full border border-[var(--accent)]/25 bg-[var(--accent)]/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-[var(--accent-light)]/80">
           Yakında
         </span>
       </div>
@@ -454,13 +449,10 @@ function KariyerUygulamasi() {
 
       <div className="relative z-10 mx-auto w-full max-w-2xl px-5 pb-24 pt-24 sm:pt-28">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="glow-md mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent)]/10">
-            <Briefcase size={24} className="text-[var(--accent-light)]" />
-          </div>
-          <h1 className="text-2xl font-semibold text-white/95">Ablam Kariyer</h1>
-          <p className="mt-1.5 max-w-md text-[13.5px] leading-relaxed text-white/45">
-            İlanlar senin yerine sürekli taranıyor; uygun olanlar burada ve e-postanda.
-          </p>
+          {/* Bahçe logosu (components/BahceLogo): yazı açılışta kendiliğinden yazılır,
+              harflerden güller açar. Başlığın kendisi ekran okuyucu için duruyor. */}
+          <h1 className="sr-only">Ablam Kariyer</h1>
+          <BahceLogo metin="Ablam Kariyer" palet={MODUL_PALETLERI.kariyer} yukseklik={200} className="-mt-10 w-full max-w-xl sm:-mt-16" />
         </div>
 
         {/* Sekmeler */}

@@ -19,6 +19,7 @@ import PasswordSetup from "./PasswordSetup";
 import IconPicker, { DynamicIcon } from "./IconPicker";
 import type { JSONContent, Editor } from "@tiptap/react";
 import Link from "next/link";
+import { logoFontu } from "@/lib/fontlar";
 import { useRouter } from "next/navigation";
 import { jsonToMarkdown } from "@/lib/json-to-markdown";
 
@@ -495,7 +496,11 @@ export default function NoteEditor({ noteId, initialContent, hasPassword: initia
             href="/"
             className="flex-shrink-0 transition-opacity duration-200 hover:opacity-80"
           >
-            <Image src="/ablam-1.webp" alt="Ablam Notepad" width={140} height={32} className="h-5 w-auto" />
+            {/* Bahçe logosunun küçüğü: NotePad'in sarı gülü + logo yazı tipi (bkz. components/BahceLogo) */}
+            <span className="flex items-center gap-1.5">
+              <Image src="/gul-notepad.svg" alt="" width={18} height={18} unoptimized className="h-[18px] w-[18px]" />
+              <span className={`${logoFontu.className} text-[15px] leading-none text-white/90`}>Ablam NotePad</span>
+            </span>
           </Link>
           <ChevronRight size={12} className="hidden flex-shrink-0 text-white/40 sm:block" />
           <span className="hidden truncate text-xs text-white/70 sm:inline sm:max-w-[200px]" title={noteId}>

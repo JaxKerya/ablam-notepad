@@ -15,6 +15,7 @@ import {
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
 import { useModal } from "@/components/useModal";
+import BahceLogo, { MODUL_PALETLERI } from "@/components/BahceLogo";
 import {
   DEFAULT_STATUSES,
   DEFAULT_PIPELINE_COLUMNS,
@@ -161,13 +162,10 @@ export default function SheetsHome() {
       <div className="relative z-10 mx-auto max-w-3xl px-5 pb-20 pt-24 sm:pt-28">
         {/* Başlık */}
         <div className="animate-fade-in mb-10 flex flex-col items-center text-center">
-          <div className="glow-sm mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent)]/10">
-            <Clapperboard size={26} className="text-[var(--accent)]" />
-          </div>
-          <h1 className="text-2xl font-semibold text-white/95">Ablam Sheets</h1>
-          <p className="mt-2 max-w-md text-[13px] leading-relaxed text-white/45">
-            Animasyon shot&apos;larını takip et, yönet, senkronize et.
-          </p>
+          {/* Bahçe logosu (components/BahceLogo): yazı açılışta kendiliğinden yazılır,
+              harflerden güller açar. Başlığın kendisi ekran okuyucu için duruyor. */}
+          <h1 className="sr-only">Ablam Sheets</h1>
+          <BahceLogo metin="Ablam Sheets" palet={MODUL_PALETLERI.sheets} yukseklik={200} className="-mt-10 w-full max-w-xl sm:-mt-16" />
         </div>
 
         {/* Yeni proje */}

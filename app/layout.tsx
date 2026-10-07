@@ -20,7 +20,13 @@ export const metadata: Metadata = {
     template: "%s · Ablam NotePad",
   },
   description: "Ablam için not defteri, iş takibi ve ders çalışma aracı.",
-  icons: { icon: "/favicon.ico" },
+  // Bahçe logosundaki gül (public/gul.svg; app/favicon.ico ve dokunmatik simge
+  // ondan üretildi). favicon.ico'yu Next dosya adından kendisi ekliyor; SVG'yi
+  // destekleyen tarayıcı keskin olanı, Safari ico'yu alır.
+  icons: {
+    icon: [{ url: "/gul.svg", type: "image/svg+xml" }],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({

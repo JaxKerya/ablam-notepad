@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+import BahceLogo, { MODUL_PALETLERI } from "@/components/BahceLogo";
 import {
   FileText,
   Trash2,
@@ -646,10 +646,10 @@ export default function Home() {
 
         {/* Title area — stagger 80ms */}
         <div className="animate-fade-in mb-10 flex flex-col items-center" style={{ animationDelay: "80ms" }}>
-          <Image src="/ablam-1.webp" alt="Ablam Notepad" width={180} height={40} className="mb-3 h-6.5 w-auto" />
-          <p className="max-w-xs text-center text-[13px] leading-relaxed text-white/35">
-            Ablam yeni bir not oluşturmak veya mevcut bir notu açmak için ismini girebilirsin.
-          </p>
+          {/* Bahçe logosu (components/BahceLogo): yazı açılışta kendiliğinden yazılır,
+              harflerden güller açar. Başlığın kendisi ekran okuyucu için duruyor. */}
+          <h1 className="sr-only">Ablam NotePad</h1>
+          <BahceLogo metin="Ablam NotePad" palet={MODUL_PALETLERI.notepad} yukseklik={200} className="-mb-5 w-[min(36rem,90vw)]" />
         </div>
 
         {/* Form — stagger 80ms */}
