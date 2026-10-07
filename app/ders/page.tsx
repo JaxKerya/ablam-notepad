@@ -26,6 +26,11 @@ import {
   ChevronDown,
   ChevronRight,
   RotateCcw,
+  Archive,
+  ArchiveRestore,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
@@ -46,6 +51,7 @@ import {
   netHesapla,
   sayacMetni,
   KATEGORI_DIGER,
+  KATEGORILER,
   linkleriAyikla,
   METIN_EN_AZ,
   METIN_EN_FAZLA,
@@ -86,6 +92,14 @@ interface OturumOzeti {
   cevapSayisi: number;
   dogruSayisi: number;
   yarim: boolean;
+}
+
+/** Arşivlenmiş ders (tur "arsiv") — listenin altındaki katlanır bölümde */
+interface ArsivDersi {
+  id: string;
+  title: string | null;
+  kategori: string;
+  created_at: string;
 }
 
 /** Ders notu — kategorisi ve başlığı ait olduğu dersten çözülmüş hâliyle */
@@ -148,6 +162,21 @@ const LISTE_DURUM_METNI: Record<ListeSatiri["durum"], string> = {
 /** Kategori başına son karşılaştırılan liste linki — bir daha yapıştırmasın */
 const LISTE_HAFIZASI = "ablam-liste-linkleri";
 
+/**
+ * Kategorinin listedeki yeri: önce ablamın verdiği sıra, sırası verilmemişler
+ * onların altında kapalı listedeki düzenle (Tarih, Coğrafya, … — KPSS gibi liste
+ * dışı adlar en sonda). Sabit: yeni ders eklemek kategorinin yerini değiştirmez.
+ */
+function kategoriYeri(kategori: string, sira: string[]): number {
+  const i = sira.indexOf(kategori);
+  if (i >= 0) return i;
+  const j = (KATEGORILER as readonly string[]).indexOf(kategori);
+  return 1000 + (j >= 0 ? j : 500);
+}
+
+/** Hangi kategoriler açık bırakıldı — sayfa en son bırakıldığı gibi açılsın */
+const ACIK_KATEGORI_HAFIZASI = "ablam-ders-acik-kategoriler";
+
 /** Kuyruktaki bir işin ekranda görünen hâli */
 const DURUM_METNI: Record<IsDurumu, string> = {
   bekliyor: "Sırada bekliyor",
@@ -187,6 +216,23 @@ export default function DersAnaSayfa() {
   const [girisModu, setGirisModu] = useState<"link" | "metin">("link");
   const [dersMetni, setDersMetni] = useState("");
   const [oturumlar, setOturumlar] = useState<OturumOzeti[]>([]);
+  /**
+   * ARŞİV. Ablam bir dersle işi bitince (KPSS'den sonra TYT/AYT'ye geçti) ders
+   * silinmiyor, türü "arsiv" oluyor: Soru Gönder, deneme, Yanlışlarım ve arama
+   * yalnızca "ders" türüne baktığı için hepsinden çıkıyor, cevap geçmişi ise
+   * duruyor. "Geri al" türü "ders"e döndürüyor, her şey kaldığı yerden sürüyor.
+   */
+  const [arsiv, setArsiv] = useState<ArsivDersi[]>([]);
+  const [arsivAcik, setArsivAcik] = useState(false);
+  /**
+   * KATEGORİ SIRASI ablamın elinde. Eskiden kategoriler en son ders eklenene
+   * göre diziliyordu; yeni ders ekledikçe yerleri değişiyordu (07.10.2026'da
+   * ablam istemedi). Sıra ders_kategori_sira tablosunda (db/ders-kategori-sira.sql),
+   * telefonla bilgisayar aynı sırayı görsün diye tarayıcıda değil.
+   */
+  const [kategoriSirasi, setKategoriSirasi] = useState<string[]>([]);
+  /** "Sırala" modu: kategori başlıklarında ↑↓ çıkıyor */
+  const [kategoriSiralama, setKategoriSiralama] = useState(false);
   const [yukleniyor, setYukleniyor] = useState(true);
   /**
    * Liste yüklenemediğinde "hiç ders yok" ile "yükleyemedim" aynı boş ekrana
@@ -257,7 +303,9 @@ export default function DersAnaSayfa() {
       // girseydi "Diğer" grubu şişer, LISTE_TAVANI da gerçek dersleri keserdi.
       // Onların yeri tepedeki kart (components/ders/YanlislarKarti).
       // "test": yerel test modunda açılan dersler (bkz. /api/ders/paragraf TEST_MODU)
-      .not("tur", "in", "(yanlis,test)")
+      // "arsiv": aşağıda ayrı ve hafif bir sorguyla geliyor; burada olsaydı
+      // LISTE_TAVANI'nı yiyip gerçek dersleri listeden atardı
+      .not("tur", "in", "(yanlis,test,arsiv)")
       .order("created_at", { ascending: false })
       .limit(LISTE_TAVANI);
 
@@ -315,6 +363,32 @@ export default function DersAnaSayfa() {
       for (const v of videolar ?? []) {
         if (v.published_at) yayinlar.set(v.video_id, v.published_at as string);
       }
+    }
+
+    // Kategori sırası. Yayın tarihiyle aynı gerekçe: AYRI ve hatası yutulan
+    // sorgu — tablo db/ders-kategori-sira.sql ile ekleniyor, eklenmeden önce
+    // liste düşmesin, sıralama varsayılana dönsün.
+    {
+      const { data: sira } = await supabase.from("ders_kategori_sira").select("kategori, sira").order("sira");
+      setKategoriSirasi((sira ?? []).map((r) => r.kategori as string));
+    }
+
+    // Arşiv: yalnızca başlık ve kategori (kart sayıları gerekmiyor)
+    {
+      const { data: arsivlenen } = await supabase
+        .from("ders_sessions")
+        .select("id, title, kategori, created_at")
+        .eq("tur", "arsiv")
+        .order("created_at", { ascending: false })
+        .limit(1000);
+      setArsiv(
+        (arsivlenen ?? []).map((a) => ({
+          id: a.id as string,
+          title: a.title as string | null,
+          kategori: (a.kategori as string | null)?.trim() || KATEGORI_DIGER,
+          created_at: a.created_at as string,
+        }))
+      );
     }
 
     /**
@@ -707,8 +781,13 @@ export default function DersAnaSayfa() {
         soruSayisi: dersler.reduce((t, o) => t + o.soruSayisi, 0),
         notSayisi: (dersNotlari ?? []).filter((n) => n.kategori === kategori).length,
       };
-    });
-  }, [oturumlar, dersNotlari]);
+    })
+      // Dersi kalmayan kategori (hepsi arşivlendi) gizli; pratik ve deneme geçmişi silinmiyor
+      .filter((g) => g.dersler.length > 0)
+      // Önce ablamın verdiği sıra; sırası verilmemişler (yeni kategori) altta,
+      // sabit bir düzende — yeni ders eklemek kategorilerin yerini değiştirmesin
+      .sort((a, b) => kategoriYeri(a.kategori, kategoriSirasi) - kategoriYeri(b.kategori, kategoriSirasi) || a.kategori.localeCompare(b.kategori, "tr"));
+  }, [oturumlar, dersNotlari, kategoriSirasi]);
 
   /**
    * Dersi silinmiş notlar. Kategorisi çözülemediği için hiçbir kategori
@@ -741,21 +820,74 @@ export default function DersAnaSayfa() {
    * Katlanır kategoriler. Kategori sayısı arttıkça sayfa 150 satırlık düz bir
    * kaydırmaya dönüyordu ve "Soru Gönder" düğmeleri arada kayboluyordu.
    *
-   * Varsayılan: en son ders eklenen kategori açık (gruplar zaten ona göre
-   * sıralı), diğerleri kapalı. `null` = "hiç dokunulmadı, varsayılanı uygula" —
-   * böylece açılışta setState eden bir effect'e gerek kalmıyor.
+   * Hangi kategorinin açık olduğu tarayıcıda saklanıyor: sayfa ablamın en son
+   * bıraktığı gibi açılıyor. Eskiden en son ders eklenen kategori her girişte
+   * kendiliğinden açılıyordu (07.10.2026'da kaldırıldı). Hiç kayıt yoksa hepsi
+   * kapalı. İlk çizimde liste henüz yüklenmediği için sunucu çizimiyle
+   * uyuşmazlık olmuyor.
    */
-  const [acikKategoriler, setAcikKategoriler] = useState<Set<string> | null>(null);
-  const kategoriAcikMi = (k: string) =>
-    acikKategoriler ? acikKategoriler.has(k) : k === gruplar[0]?.kategori;
+  const [acikKategoriler, setAcikKategoriler] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const ham: unknown = JSON.parse(localStorage.getItem(ACIK_KATEGORI_HAFIZASI) ?? "[]");
+      return new Set(Array.isArray(ham) ? ham.filter((k): k is string => typeof k === "string") : []);
+    } catch {
+      return new Set();
+    }
+  });
+  const kategoriAcikMi = (k: string) => acikKategoriler.has(k);
   const kategoriCevir = (k: string) =>
     setAcikKategoriler((mevcut) => {
-      const taban = mevcut ?? new Set(gruplar[0] ? [gruplar[0].kategori] : []);
-      const yeni = new Set(taban);
+      const yeni = new Set(mevcut);
       if (yeni.has(k)) yeni.delete(k);
       else yeni.add(k);
+      try {
+        localStorage.setItem(ACIK_KATEGORI_HAFIZASI, JSON.stringify([...yeni]));
+      } catch {
+        // Depolama kapalıysa yalnızca bu oturum boyunca hatırlanır
+      }
       return yeni;
     });
+
+  /**
+   * Kategoriyi bir yukarı/aşağı taşır. Ekrandaki sıranın tamamı (sırası hiç
+   * verilmemiş kategoriler dahil) 0..n diye kaydediliyor: yalnız ikisini yazmak,
+   * sırasız kategorilerle karışınca belirsiz kalırdı. Ekranda hemen değişiyor.
+   */
+  const kategoriyiTasi = async (indeks: number, yon: -1 | 1) => {
+    const hedef = indeks + yon;
+    if (hedef < 0 || hedef >= gruplar.length) return;
+    const yeni = gruplar.map((g) => g.kategori);
+    [yeni[indeks], yeni[hedef]] = [yeni[hedef], yeni[indeks]];
+    setKategoriSirasi(yeni);
+    const { error } = await supabase
+      .from("ders_kategori_sira")
+      .upsert(yeni.map((kategori, sira) => ({ kategori, sira })), { onConflict: "kategori" });
+    if (error) addToast(`Kategori sırası kaydedilemedi: ${error.message}`, "error");
+  };
+
+  /** Dersi arşive kaldırır (bkz. `arsiv` durumunun açıklaması) */
+  const arsivle = async (o: OturumOzeti) => {
+    const { error } = await supabase.from("ders_sessions").update({ tur: "arsiv" }).eq("id", o.id);
+    if (error) {
+      addToast(`Arşive kaldırılamadı: ${error.message}`, "error");
+      return;
+    }
+    setOturumlar((liste) => liste.filter((x) => x.id !== o.id));
+    setArsiv((a) => [{ id: o.id, title: o.title, kategori: o.kategori, created_at: o.created_at }, ...a]);
+    addToast("Ders arşive kaldırıldı", "info");
+  };
+
+  const arsivdenCikar = async (a: ArsivDersi) => {
+    const { error } = await supabase.from("ders_sessions").update({ tur: "ders" }).eq("id", a.id);
+    if (error) {
+      addToast(`Geri alınamadı: ${error.message}`, "error");
+      return;
+    }
+    setArsiv((liste) => liste.filter((x) => x.id !== a.id));
+    void oturumlariGetir();
+    addToast("Ders arşivden geri alındı", "success");
+  };
 
   /**
    * Kategoriden pratik. TEST HAZIRLAMIYOR: tek bir rastgele soru getirip soru
@@ -1427,9 +1559,27 @@ export default function DersAnaSayfa() {
 
         {/* Geçmiş dersler */}
         <div className="mt-10">
-          <h2 className="mb-3 px-1 text-[12px] font-medium uppercase tracking-wider text-white/30">
-            Geçmiş dersler
-          </h2>
+          {/* Bölüm başlığıyla aynı satırda: düğme tek başına kartların üstünde havada kalıyordu */}
+          <div className="mb-3 flex items-center justify-between gap-3 px-1">
+            <h2 className="text-[12px] font-medium uppercase tracking-wider text-white/30">
+              Geçmiş dersler
+            </h2>
+            {!yukleniyor && gruplar.length > 1 && (
+              <button
+                onClick={() => setKategoriSiralama((s) => !s)}
+                aria-pressed={kategoriSiralama}
+                title="Kategorilerin sırasını değiştir"
+                className={`-my-1 flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11.5px] transition-colors ${
+                  kategoriSiralama
+                    ? "bg-[var(--accent)]/15 text-[var(--accent-light)]"
+                    : "text-white/35 hover:bg-white/[0.06] hover:text-white/75"
+                }`}
+              >
+                <ArrowUpDown size={12} />
+                {kategoriSiralama ? "Bitti" : "Sırala"}
+              </button>
+            )}
+          </div>
 
           {/* Yayın tarihi eksik dersler varsa doldurma düğmesi. KENDİ KENDİNİ
               GİZLİYOR: yeni işlenen videoların tarihi zaten transkript adımında
@@ -1480,7 +1630,7 @@ export default function DersAnaSayfa() {
             </div>
           ) : (
             <div className="space-y-5">
-              {gruplar.map((g) => {
+              {gruplar.map((g, gi) => {
                 const acik = kategoriAcikMi(g.kategori);
                 return (
                 <div
@@ -1529,6 +1679,26 @@ export default function DersAnaSayfa() {
                           <NotebookPen size={13} />
                           {g.notSayisi}
                         </button>
+                      )}
+                      {kategoriSiralama && (
+                        <div className="flex flex-shrink-0 items-center">
+                          <button
+                            onClick={() => kategoriyiTasi(gi, -1)}
+                            disabled={gi === 0}
+                            aria-label={`${g.kategori} kategorisini yukarı taşı`}
+                            className="rounded-lg p-1.5 text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white/95 disabled:opacity-20"
+                          >
+                            <ArrowUp size={14} />
+                          </button>
+                          <button
+                            onClick={() => kategoriyiTasi(gi, 1)}
+                            disabled={gi === gruplar.length - 1}
+                            aria-label={`${g.kategori} kategorisini aşağı taşı`}
+                            className="rounded-lg p-1.5 text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white/95 disabled:opacity-20"
+                          >
+                            <ArrowDown size={14} />
+                          </button>
+                        </div>
                       )}
                       <button
                         onClick={() => listePaneliAc(g.kategori)}
@@ -1767,6 +1937,14 @@ export default function DersAnaSayfa() {
                       </Link>
 
                       <button
+                        onClick={() => arsivle(o)}
+                        aria-label="Dersi arşive kaldır"
+                        title="Arşive kaldır"
+                        className="flex-shrink-0 rounded-lg p-2 text-white/20 opacity-0 transition-all hover:bg-white/[0.08] hover:text-white/80 group-hover:opacity-100"
+                      >
+                        <Archive size={14} />
+                      </button>
+                      <button
                         onClick={() => setSilinecek({ id: o.id, deneme: false })}
                         aria-label="Dersi sil"
                         className="flex-shrink-0 rounded-lg p-2 text-white/20 opacity-0 transition-all hover:bg-red-400/10 hover:text-red-400 group-hover:opacity-100"
@@ -1780,6 +1958,59 @@ export default function DersAnaSayfa() {
                 </div>
                 );
               })}
+
+              {/* ARŞİV — kapalı gelir; açılınca kategori kategori, derse girilebilir ve geri alınabilir */}
+              {arsiv.length > 0 && (
+                <div className="glass overflow-hidden rounded-2xl border border-[var(--border)]">
+                  <button
+                    onClick={() => setArsivAcik((a) => !a)}
+                    aria-expanded={arsivAcik}
+                    className="flex w-full items-center gap-2 p-3.5 text-left"
+                  >
+                    {arsivAcik ? (
+                      <ChevronDown size={15} className="flex-shrink-0 text-white/35" />
+                    ) : (
+                      <ChevronRight size={15} className="flex-shrink-0 text-white/35" />
+                    )}
+                    <Archive size={13} className="flex-shrink-0 text-white/35" />
+                    <span className="text-[12px] font-medium uppercase tracking-wider text-white/55">Arşiv</span>
+                    <span className="text-[11.5px] text-white/30">{arsiv.length} ders</span>
+                  </button>
+                  {arsivAcik && (
+                    <div className="space-y-3 border-t border-[var(--border)] p-2.5">
+                      {[...new Set(arsiv.map((a) => a.kategori))].map((kat) => {
+                        const kattakiler = arsiv.filter((a) => a.kategori === kat);
+                        return (
+                          <div key={kat}>
+                            <p className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-white/30">
+                              {kat} · {kattakiler.length}
+                            </p>
+                            <div className="space-y-0.5">
+                              {kattakiler.map((a) => (
+                                <div key={a.id} className="flex items-center gap-1">
+                                  <Link
+                                    href={`/ders/${a.id}`}
+                                    className="min-w-0 flex-1 truncate rounded-lg px-2 py-1.5 text-[12.5px] text-white/55 transition-colors hover:bg-white/[0.04] hover:text-white/85"
+                                  >
+                                    {a.title ?? "Ders"}
+                                  </Link>
+                                  <button
+                                    onClick={() => arsivdenCikar(a)}
+                                    className="flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/85"
+                                  >
+                                    <ArchiveRestore size={12} />
+                                    Geri al
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Dersi silinmiş notlar — normalde hiç görünmez */}
               {kategorisizNotlar.length > 0 && (
