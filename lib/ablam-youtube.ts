@@ -14,6 +14,7 @@ export const YT_ONIZLEME_ANAHTARI = "youtube-onizleme";
 export const NABIZ_ESIGI_MS = 3 * 60_000;
 
 export type Durum =
+  | "oneri"
   | "bekliyor"
   | "senaryo"
   | "senaryo_onay"
@@ -47,6 +48,34 @@ export interface Shorts {
   created_at: string;
   updated_at: string;
 }
+
+export type DublajDurum = "bekliyor" | "uretiliyor" | "hazir" | "yuklendi" | "hata";
+
+/**
+ * Dublaj (tablo: youtube_dublajlar, db/youtube-dublaj.sql): aynı videoya başka dilde ses parçası. Stüdyo o dilde
+ * metni yazar, seslendirir; başlık/açıklama ve altyazıyı videoya kendisi ekler. Ses dosyası ve o dildeki kapak
+ * Drive'a konur, YouTube Studio'dan elle eklenir ("hazir"); eklenince sitede "yuklendi" işaretlenir.
+ */
+export interface Dublaj {
+  id: string;
+  bolum_id: string;
+  dil: string;
+  durum: DublajDurum;
+  ilerleme: number | null;
+  adim: string | null;
+  baslik: string | null;
+  kelime: number | null;
+  sure_sn: number | null;
+  drive_url: string | null;
+  kapak_url: string | null;
+  onizleme_url: string | null;
+  gunluk: string[] | null;
+  hata: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const DUBLAJ_DIL_ADI: Record<string, string> = { ko: "Korece" };
 
 /** Yeni bölüm yayına girince stüdyonun açtığı Shorts sayısı (gece config [shorts] adet ile aynı) */
 export const SHORTS_ADET = 2;
@@ -225,6 +254,7 @@ export interface Nabiz {
 
 /** Ekranda görünen durum etiketi ve rengi. Renk sınıfları Tailwind; tema değişkenleri accent. */
 export const DURUM_BILGISI: Record<Durum, { etiket: string; ton: "bekle" | "calis" | "onay" | "hazir" | "yayin" | "hata" }> = {
+  oneri: { etiket: "Öneri", ton: "onay" },
   bekliyor: { etiket: "Sırada", ton: "bekle" },
   senaryo: { etiket: "Senaryo yazılıyor", ton: "calis" },
   senaryo_onay: { etiket: "Onayını bekliyor", ton: "onay" },
@@ -236,6 +266,18 @@ export const DURUM_BILGISI: Record<Durum, { etiket: string; ton: "bekle" | "cali
   yayinda: { etiket: "YouTube'a yüklendi", ton: "yayin" },
   hata: { etiket: "Hata", ton: "hata" },
 };
+
+/**
+ * Stüdyonun boş yayın gününe açtığı konu önerisi (durum "oneri"): ONERI_SAAT bekler, dokunulmazsa üretime girer;
+ * yayına yetişmesi için en geç yayından ONERI_URETIM_PAYI_SAAT önce. gece/worker.py ile aynı sayılar.
+ */
+export const ONERI_SAAT = 24;
+export const ONERI_URETIM_PAYI_SAAT = 8;
+export function oneriBaslangici(b: Pick<Bolum, "created_at" | "yayin_zamani">): Date {
+  const bas = new Date(b.created_at).getTime() + ONERI_SAAT * 3_600_000;
+  const sinir = b.yayin_zamani ? new Date(b.yayin_zamani).getTime() - ONERI_URETIM_PAYI_SAAT * 3_600_000 : Infinity;
+  return new Date(Math.min(bas, sinir));
+}
 
 /** Stüdyonun çalıştığı (ilerleme çubuğu anlamlı) durumlar */
 export const CALISAN_DURUMLAR: Durum[] = ["senaryo", "ses", "render", "yayinla"];
@@ -272,7 +314,7 @@ export function planliMi(b: Pick<Bolum, "durum" | "yayin_zamani">): boolean {
 }
 
 /** Haftalık yayın düzeni: günler (0 = Pazar … 6 = Cumartesi) ve saat. Takvim boş günleri buna göre gösterir. */
-export const YAYIN_GUNLERI = [0, 2, 4]; // pazar, salı, perşembe
+export const YAYIN_GUNLERI = [0, 4]; // pazar, perşembe (2026-10-12: haftada 2 bölüm)
 export const YAYIN_SAATI = 20;
 /** Önerilen boş gün en az bu kadar saat sonra olsun (90 dk'lık bölüm ~1,5 saatte üretiliyor; sıra ve pay) */
 export const URETIM_PAYI_SAAT = 6;

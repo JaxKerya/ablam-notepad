@@ -13,6 +13,7 @@ import {
   ExternalLink,
   Film,
   ImagePlus,
+  Languages,
   Layers,
   Loader2,
   Pencil,
@@ -52,6 +53,9 @@ import {
   shortsYayinDurumu,
   SHORTS_ADET,
   type Shorts,
+  oneriBaslangici,
+  DUBLAJ_DIL_ADI,
+  type Dublaj,
   tarihBicimle,
   yerelTarihGirdisi,
   type Nabiz,
@@ -143,6 +147,8 @@ function YoutubeUygulamasi() {
   const [nabiz, setNabiz] = useState<Nabiz | null>(null);
   /** Shorts fragmanları (youtube_shorts); tablo yoksa (SQL çalıştırılmamış) boş kalır */
   const [shorts, setShorts] = useState<Shorts[]>([]);
+  /** Dublajlar (youtube_dublajlar); tablo yoksa boş kalır */
+  const [dublajlar, setDublajlar] = useState<Dublaj[]>([]);
   /** Haftalık raporlar (youtube_raporlar); tablo yoksa boş kalır, hata şeridine yazılmaz */
   const [raporlar, setRaporlar] = useState<Rapor[]>([]);
   /** Açık bölüm — liste yerine ayrıntı ekranı */
@@ -159,13 +165,14 @@ function YoutubeUygulamasi() {
   const [veriHatasi, setVeriHatasi] = useState<string | null>(null);
 
   const getir = useCallback(async () => {
-    const [b, s, sh, n, sr, rp] = await Promise.all([
+    const [b, s, sh, n, sr, rp, db] = await Promise.all([
       supabase.from("youtube_bolumler").select("*").order("created_at", { ascending: false }).limit(100),
       supabase.from("youtube_seriler").select("*").order("created_at", { ascending: true }),
       supabase.from("youtube_sahneler").select("*").order("created_at", { ascending: true }),
       supabase.from("youtube_nabiz").select("*").eq("id", 1).maybeSingle(),
       supabase.from("youtube_shorts").select("*").order("sira", { ascending: true }),
       supabase.from("youtube_raporlar").select("id,hafta,metin,created_at").order("hafta", { ascending: false }).limit(12),
+      supabase.from("youtube_dublajlar").select("*").order("created_at", { ascending: true }),
     ]);
     if (b.error) addToast("Bölümler okunamadı: " + b.error.message, "error");
     const hatalar = [
@@ -182,6 +189,7 @@ function YoutubeUygulamasi() {
     if (!n.error) setNabiz((n.data as Nabiz | null) ?? null);
     if (!sr.error) setShorts((sr.data ?? []) as Shorts[]);
     if (!rp.error) setRaporlar((rp.data ?? []) as Rapor[]);
+    if (!db.error) setDublajlar((db.data ?? []) as Dublaj[]);
     setSimdi(Date.now());
     setYukleniyor(false);
   }, [addToast]);
@@ -200,6 +208,7 @@ function YoutubeUygulamasi() {
       .on("postgres_changes", { event: "*", schema: "public", table: "youtube_sahneler" }, () => getir())
       .on("postgres_changes", { event: "*", schema: "public", table: "youtube_shorts" }, () => getir())
       .on("postgres_changes", { event: "*", schema: "public", table: "youtube_raporlar" }, () => getir())
+      .on("postgres_changes", { event: "*", schema: "public", table: "youtube_dublajlar" }, () => getir())
       .subscribe();
     const zamanlayici = setInterval(getir, 20_000);
     return () => {
@@ -260,6 +269,21 @@ function YoutubeUygulamasi() {
     const { error } = await supabase.from("youtube_shorts").upsert(satirlar, { onConflict: "bolum_id,sira", ignoreDuplicates: true });
     if (error) return addToast("Sıraya alınamadı: " + error.message, "error");
     addToast("Stüdyo fragmanları hazırlıyor; her biri birkaç dakika sürer.");
+    getir();
+  };
+
+  const dublajYama = async (id: string, yama: Partial<Dublaj>, mesaj?: string) => {
+    const { error } = await supabase.from("youtube_dublajlar").update(yama).eq("id", id);
+    if (error) return addToast("Kaydedilemedi: " + error.message, "error");
+    if (mesaj) addToast(mesaj);
+    getir();
+  };
+
+  /** Yayındaki eski bölüm için dublaj satırı açar; yeni bölümlerde stüdyo bunu yayından sonra kendisi yapar */
+  const dublajUret = async (b: Bolum, dil: string) => {
+    const { error } = await supabase.from("youtube_dublajlar").upsert([{ bolum_id: b.id, dil }], { onConflict: "bolum_id,dil", ignoreDuplicates: true });
+    if (error) return addToast("Sıraya alınamadı: " + error.message, "error");
+    addToast("Stüdyo dublajı hazırlıyor; yaklaşık bir saat sürer.");
     getir();
   };
 
@@ -329,6 +353,7 @@ function YoutubeUygulamasi() {
           <BolumDetay
             bolum={secili}
             seriAdi={seriAdi(secili.seri_id)}
+            seriler={seriler}
             cevrimici={cevrimici}
             onGeri={() => setSeciliId(null)}
             onYama={bolumYama}
@@ -336,6 +361,9 @@ function YoutubeUygulamasi() {
             shorts={shorts.filter((s) => s.bolum_id === secili.id)}
             onShortsYama={shortsYama}
             onShortsUret={shortsUret}
+            dublajlar={dublajlar.filter((d) => d.bolum_id === secili.id)}
+            onDublajYama={dublajYama}
+            onDublajUret={dublajUret}
           />
         ) : (
           <>
@@ -479,7 +507,7 @@ function BolumlerEkrani({
   const [sureSecildi, setSureSecildi] = useState(false);
   /** "" = otomatik (dönüşüm); bir sahne kimliği = bu bölüm için elle seçim */
   const [elleSahne, setElleSahne] = useState("");
-  const [yayin, setYayin] = useState<YayinModu>(planZamani ? "planli" : "elle");
+  const [yayin, setYayin] = useState<YayinModu>("planli");
   // Planlı yayının varsayılanı: takvimden seçilen gün, yoksa yayın düzenindeki ilk boş gün
   const [yayinZamani, setYayinZamani] = useState(() => yerelTarihGirdisi(planZamani ?? siradakiBosGun(bolumler, simdi) ?? undefined));
   const [zamanGecersiz, setZamanGecersiz] = useState(false);
@@ -496,8 +524,65 @@ function BolumlerEkrani({
   const derlemeSn = secilenBolumler.reduce((t, b) => t + (b.sure_sn ?? 0), 0);
   const sadeBaslik = (b: Bolum) => (b.yt_baslik ?? b.baslik ?? b.konu).split(" | ")[0];
 
+  // İki adım: konu yazılır → "Hazırla" seriyi (dil modeli), süreyi (serinin varsayılanı), sahneyi (konuya özel) ve
+  // yayın gününü (haftadaki ilk boş yayın günü) kendisi seçer → kısa onay → üretim tam otomatik başlar.
+  const [asama, setAsama] = useState<"yaz" | "onay">("yaz");
+  const [seriNedeni, setSeriNedeni] = useState<string | null>(null);
+  const [seciliyor, setSeciliyor] = useState(false);
+  const derlemeSerisi = hazirSeriler.find((s) => s.derleme);
+
   const gonderilebilir =
     !!etkinSeri && (derlemeModu ? secilenBolumler.length >= 2 : konu.trim().length >= 4) && !(yayin === "planli" && zamanGecersiz);
+
+  /** Onay adımına geçerken yayın gününü haftadaki ilk boş yayın gününe (takvimden gelindiyse o güne) koyar */
+  const yayinGununuSec = () => {
+    const bos = planZamani ?? siradakiBosGun(bolumler, simdi);
+    if (bos) {
+      setYayin("planli");
+      setYayinZamani(yerelTarihGirdisi(bos));
+      setZamanGecersiz(false);
+    } else {
+      setYayin("hemen");
+    }
+  };
+
+  const hazirla = async () => {
+    if (konu.trim().length < 4 || seciliyor) return;
+    setSeciliyor(true);
+    setSeriNedeni(null);
+    const secilemedi = "Seri otomatik seçilemedi; aşağıdan kontrol et.";
+    try {
+      const r = await fetch("/api/youtube/seri-sec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ konu: konu.trim() }),
+      });
+      const j = (await r.json()) as { seri_id?: string | null; neden?: string | null };
+      if (r.ok && j.seri_id && hazirSeriler.some((s) => s.id === j.seri_id)) {
+        setSeriId(j.seri_id);
+        setSeriNedeni(j.neden ?? null);
+      } else {
+        setSeriId(hazirSeriler.find((s) => !s.derleme)?.id ?? "");
+        setSeriNedeni(secilemedi);
+      }
+    } catch {
+      setSeriId(hazirSeriler.find((s) => !s.derleme)?.id ?? "");
+      setSeriNedeni(secilemedi);
+    }
+    setSureSecildi(false);
+    setElleSahne("");
+    yayinGununuSec();
+    setSeciliyor(false);
+    setAsama("onay");
+  };
+
+  const derlemeyeGec = () => {
+    if (!derlemeSerisi) return;
+    setSeriId(derlemeSerisi.id);
+    setSeriNedeni(null);
+    yayinGununuSec();
+    setAsama("onay");
+  };
 
   const gonder = async () => {
     if (!gonderilebilir || gonderiliyor) return;
@@ -518,11 +603,13 @@ function BolumlerEkrani({
     if (oldu) {
       setKonu("");
       setSecilenler([]);
+      setSeriNedeni(null);
+      setAsama("yaz");
       if (planZamani) onPlanKullanildi();  // form sıfırlansın; aynı güne ikinci bölüm yanlışlıkla eklenmesin
     }
   };
 
-  const onayBekleyen = bolumler.filter((b) => b.durum === "senaryo_onay" || b.durum === "hazir");
+  const onayBekleyen = bolumler.filter((b) => b.durum === "oneri" || b.durum === "senaryo_onay" || b.durum === "hazir");
   const digerleri = bolumler.filter((b) => !onayBekleyen.includes(b));
 
   return (
@@ -551,40 +638,50 @@ function BolumlerEkrani({
               </>
             )}
           </p>
+        ) : asama === "yaz" ? (
+          <div className="space-y-3">
+            <textarea
+              value={konu}
+              onChange={(e) => setKonu(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) hazirla();
+              }}
+              rows={2}
+              autoFocus={!!planZamani}
+              placeholder="Bu gece ne anlatılsın? Örn: Pablo Escobar kimdi? · Osmanlı'da kış geceleri nasıl geçerdi?"
+              className={girdiSinifi + " resize-none leading-relaxed"}
+            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[11.5px] leading-relaxed text-white/30">
+                Seri, süre, sahne ve yayın günü otomatik seçilir; başlamadan önce bir kez gösterilir.
+                {derlemeSerisi && (
+                  <>
+                    {" "}
+                    <button onClick={derlemeyeGec} className="text-[var(--accent-light)]/70 underline-offset-2 hover:underline">
+                      Derleme hazırla
+                    </button>
+                  </>
+                )}
+              </p>
+              <button onClick={hazirla} disabled={seciliyor || konu.trim().length < 4} className={birincilDugme + " sm:w-32"}>
+                {seciliyor ? <Loader2 size={14} className="animate-spin" /> : <Clapperboard size={14} />}
+                Hazırla
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="space-y-3">
             {derlemeModu ? (
               <DerlemeSecici adaylar={adaylar} secilenler={secilenler} onDegis={setSecilenler} toplamSn={derlemeSn} baslik={sadeBaslik} />
             ) : (
-            <textarea
-              value={konu}
-              onChange={(e) => setKonu(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) gonder();
-              }}
-              rows={2}
-              autoFocus={!!planZamani}
-              placeholder="Bu gece ne anlatılsın? Örn: İnsanlık neden takvim kullanıyor? · Bir şehrin kanalizasyonu nasıl çalışır?"
-              className={girdiSinifi + " resize-none leading-relaxed"}
-            />
+              <p className="rounded-lg border border-[var(--border)] bg-white/[0.03] px-3 py-2 text-[13.5px] leading-relaxed text-white/85">{konu.trim()}</p>
             )}
-            <div className="flex flex-col gap-2 sm:flex-row">
-              {hazirSeriler.length > 1 && (
-                <div className="sm:flex-1">
-                  <Secici deger={etkinSeri} onChange={setSeriId} secenekler={hazirSeriler.map((s) => ({ deger: s.id, etiket: s.ad, aciklama: KALIP_ETIKETI[s.kalip] }))} />
-                </div>
-              )}
+            {seriNedeni && <p className="px-1 text-[11.5px] leading-relaxed text-white/40">{seriNedeni}</p>}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Secici deger={etkinSeri} onChange={setSeriId} secenekler={hazirSeriler.map((s) => ({ deger: s.id, etiket: s.ad, aciklama: KALIP_ETIKETI[s.kalip] }))} />
               {!derlemeModu && (
-                <div className="sm:flex-1">
-                  <Secici deger={etkinSure} onChange={(d) => { setSure(d); setSureSecildi(true); }} secenekler={SURE_SECENEKLERI.map((d) => ({ deger: d as number, etiket: `${d} dakika` }))} />
-                </div>
+                <Secici deger={etkinSure} onChange={(d) => { setSure(d); setSureSecildi(true); }} secenekler={SURE_SECENEKLERI.map((d) => ({ deger: d as number, etiket: `${d} dakika` }))} />
               )}
-              <button onClick={gonder} disabled={gonderiliyor || !gonderilebilir} className={birincilDugme + " sm:w-32"}>
-                {gonderiliyor ? <Loader2 size={14} className="animate-spin" /> : <Clapperboard size={14} />}
-                Hazırla
-              </button>
-            </div>
-            <div>
               <Secici
                 deger={elleSahne}
                 onChange={setElleSahne}
@@ -595,11 +692,7 @@ function BolumlerEkrani({
                     .map((sh) => ({ deger: sh.id, etiket: `Sahne: ${sh.ad}`, aciklama: `${sahneKullanimi(sh.id, bolumler)} bölümde kullanıldı` })),
                 ]}
               />
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="sm:flex-1">
-                <Secici deger={yayin} onChange={setYayin} secenekler={(Object.keys(YAYIN_MODU_ETIKETI) as YayinModu[]).map((m) => ({ deger: m, etiket: YAYIN_MODU_ETIKETI[m] }))} />
-              </div>
+              <Secici deger={yayin} onChange={setYayin} secenekler={(Object.keys(YAYIN_MODU_ETIKETI) as YayinModu[]).map((m) => ({ deger: m, etiket: YAYIN_MODU_ETIKETI[m] }))} />
               {yayin === "planli" && (
                 <input
                   type="datetime-local"
@@ -608,13 +701,27 @@ function BolumlerEkrani({
                     setYayinZamani(e.target.value);
                     setZamanGecersiz(new Date(e.target.value).getTime() < Date.now());
                   }}
-                  className={girdiSinifi + " sm:w-52"}
+                  className={girdiSinifi}
                 />
               )}
             </div>
-            {yayin !== "elle" && (
-              <p className="text-[11.5px] leading-relaxed text-white/30">Tam otomatik: senaryo onayı beklenmez; ses, video ve kapak üretilip YouTube&apos;a yüklenir.</p>
-            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[11.5px] leading-relaxed text-white/30">
+                {yayin === "elle"
+                  ? "Senaryo onayın beklenir; video hazır olunca sen yüklersin."
+                  : "Tam otomatik: senaryo onayı beklenmez; ses, video ve kapak üretilip YouTube'a yüklenir."}
+              </p>
+              <div className="flex gap-2">
+                <button onClick={() => setAsama("yaz")} className={ikincilDugme}>
+                  <ArrowLeft size={14} />
+                  Geri
+                </button>
+                <button onClick={gonder} disabled={gonderiliyor || !gonderilebilir} className={birincilDugme}>
+                  {gonderiliyor ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  Onayla ve başlat
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </section>
@@ -1008,6 +1115,7 @@ function KalitePaneli({ rapor }: { rapor: KaliteRaporu }) {
 function BolumDetay({
   bolum,
   seriAdi,
+  seriler,
   cevrimici,
   onGeri,
   onYama,
@@ -1015,9 +1123,13 @@ function BolumDetay({
   shorts,
   onShortsYama,
   onShortsUret,
+  dublajlar,
+  onDublajYama,
+  onDublajUret,
 }: {
   bolum: Bolum;
   seriAdi: string;
+  seriler: Seri[];
   cevrimici: boolean;
   onGeri: () => void;
   onYama: (id: string, yama: Partial<Bolum>, mesaj?: string) => Promise<void>;
@@ -1025,6 +1137,9 @@ function BolumDetay({
   shorts: Shorts[];
   onShortsYama: (id: string, yama: Partial<Shorts>, mesaj?: string) => Promise<void>;
   onShortsUret: (bolum: Bolum) => Promise<void>;
+  dublajlar: Dublaj[];
+  onDublajYama: (id: string, yama: Partial<Dublaj>, mesaj?: string) => Promise<void>;
+  onDublajUret: (bolum: Bolum, dil: string) => Promise<void>;
 }) {
   return (
     <div className="animate-fade-in space-y-4">
@@ -1052,10 +1167,14 @@ function BolumDetay({
         )}
       </section>
 
+      {bolum.durum === "oneri" && <OneriPaneli bolum={bolum} seriler={seriler} onYama={onYama} />}
       {bolum.durum === "senaryo_onay" && <SenaryoOnay bolum={bolum} onYama={onYama} />}
       {(bolum.durum === "hazir" || bolum.durum === "yayinla" || bolum.durum === "yayinda") && <YayinPaneli bolum={bolum} onYama={onYama} />}
       {bolum.durum === "yayinda" && bolum.youtube_id && !bolum.derleme_idler?.length && (
         <ShortsPaneli bolum={bolum} shorts={shorts} onYama={onShortsYama} onUret={onShortsUret} />
+      )}
+      {bolum.durum === "yayinda" && bolum.youtube_id && !bolum.derleme_idler?.length && (
+        <DublajPaneli bolum={bolum} dublajlar={dublajlar} onYama={onDublajYama} onUret={onDublajUret} />
       )}
       {bolum.durum === "hata" && (
         <section className="glass rounded-xl border border-red-300/20 p-4">
@@ -1579,6 +1698,169 @@ function ShortsKarti({ s, onYama }: { s: Shorts; onYama: (id: string, yama: Part
             Tekrar dene
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Dublaj (youtube_dublajlar): videoya başka dilde ses parçası. Stüdyo metni yazar, seslendirir, o dildeki başlık,
+ * açıklama ve altyazıyı videoya ekler. Ses dosyası ile o dildeki kapak YouTube Studio'dan elle eklenir.
+ */
+/**
+ * Stüdyonun boş yayın gününe açtığı konu önerisi. Dokunulmazsa süresi gelince üretime girer; burada konu ve seri
+ * değiştirilebilir, hemen başlatılabilir ya da (en altta) silinebilir.
+ */
+function OneriPaneli({
+  bolum,
+  seriler,
+  onYama,
+}: {
+  bolum: Bolum;
+  seriler: Seri[];
+  onYama: (id: string, yama: Partial<Bolum>, mesaj?: string) => Promise<void>;
+}) {
+  const [konu, setKonu] = useState(bolum.konu);
+  const [seriId, setSeriId] = useState(bolum.seri_id ?? "");
+  const secenekler = seriler.filter((s) => !s.derleme);
+  const degisti = konu.trim() !== bolum.konu || seriId !== bolum.seri_id;
+  const yama = (): Partial<Bolum> => {
+    const seri = secenekler.find((s) => s.id === seriId);
+    return seriId !== bolum.seri_id && seri ? { konu: konu.trim(), seri_id: seri.id, sure_dk: seri.sure_dk } : { konu: konu.trim() };
+  };
+  const neden = (bolum.gunluk ?? []).find((g) => g.includes("öneri:"))?.split("öneri:")[1]?.trim();
+  return (
+    <section className="glass rounded-xl border border-amber-300/20 p-4">
+      <p className="text-[11px] uppercase tracking-wider text-white/35">Stüdyonun önerisi</p>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-white/50">
+        {tarihBicimle(oneriBaslangici(bolum).toISOString())} tarihinde kendiliğinden üretime girer
+        {bolum.yayin_zamani ? `, ${tarihBicimle(bolum.yayin_zamani)} yayınlanır` : ""}. İstersen konuyu ya da seriyi değiştir.
+      </p>
+      {neden && <p className="mt-1 text-[11.5px] leading-relaxed text-white/35">Neden: {neden}</p>}
+      <textarea
+        value={konu}
+        onChange={(e) => setKonu(e.target.value)}
+        rows={2}
+        className={girdiSinifi + " mt-3 resize-none leading-relaxed"}
+      />
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="sm:flex-1">
+          <Secici deger={seriId} onChange={setSeriId} secenekler={secenekler.map((s) => ({ deger: s.id, etiket: s.ad, aciklama: KALIP_ETIKETI[s.kalip] }))} />
+        </div>
+        {degisti && (
+          <button
+            onClick={() => onYama(bolum.id, yama(), "Öneri güncellendi.")}
+            disabled={konu.trim().length < 4}
+            className={ikincilDugme}
+          >
+            <Check size={14} />
+            Kaydet
+          </button>
+        )}
+        <button
+          onClick={() => onYama(bolum.id, { ...yama(), durum: "bekliyor" }, "Üretime girdi.")}
+          disabled={konu.trim().length < 4}
+          className={birincilDugme}
+        >
+          <Clapperboard size={14} />
+          Şimdi başlat
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function DublajPaneli({
+  bolum,
+  dublajlar,
+  onYama,
+  onUret,
+}: {
+  bolum: Bolum;
+  dublajlar: Dublaj[];
+  onYama: (id: string, yama: Partial<Dublaj>, mesaj?: string) => Promise<void>;
+  onUret: (bolum: Bolum, dil: string) => Promise<void>;
+}) {
+  const eksik = Object.keys(DUBLAJ_DIL_ADI).filter((k) => !dublajlar.some((d) => d.dil === k));
+  return (
+    <section className="glass rounded-xl border border-[var(--border)] p-4">
+      <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/35">
+        <Languages size={12} /> Dublaj
+      </p>
+      {dublajlar.map((d) => (
+        <DublajKarti key={d.id} d={d} onYama={onYama} />
+      ))}
+      {eksik.map((k) => (
+        <div key={k} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[12.5px] leading-relaxed text-white/45">
+            Videoya {DUBLAJ_DIL_ADI[k]} ses: o dildeki izleyici videoyu kendi dilinde dinler. Stüdyo hazırlar, ses dosyası
+            YouTube Studio&apos;dan eklenir.
+          </p>
+          <button onClick={() => onUret(bolum, k)} className={ikincilDugme}>
+            <Sparkles size={14} />
+            {DUBLAJ_DIL_ADI[k]} hazırla
+          </button>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function DublajKarti({ d, onYama }: { d: Dublaj; onYama: (id: string, yama: Partial<Dublaj>, mesaj?: string) => Promise<void> }) {
+  const ad = DUBLAJ_DIL_ADI[d.dil] ?? d.dil;
+  const durumMetni =
+    d.durum === "yuklendi"
+      ? "Videoda"
+      : d.durum === "hazir"
+        ? "Studio'ya yüklenecek"
+        : d.durum === "hata"
+          ? "Hata"
+          : d.durum === "uretiliyor"
+            ? `Hazırlanıyor${d.ilerleme ? ` · %${d.ilerleme}` : ""}${d.adim ? ` · ${d.adim}` : ""}`
+            : "Sırada";
+  return (
+    <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+      {d.kapak_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={d.kapak_url} alt={`${ad} kapak`} className="aspect-video w-full rounded-lg border border-[var(--border)] object-cover sm:w-[240px]" />
+      ) : (
+        <div className="flex aspect-video w-full items-center justify-center rounded-lg border border-dashed border-[var(--border)] text-white/25 sm:w-[240px]">
+          {d.durum === "bekliyor" || d.durum === "uretiliyor" ? <Loader2 size={18} className="animate-spin" /> : <Languages size={18} />}
+        </div>
+      )}
+      <div className="min-w-0 flex-1 space-y-2">
+        <p className="text-[11px] uppercase tracking-wider text-white/30">
+          {ad} · {durumMetni}
+        </p>
+        {d.baslik && <p className="text-[13px] font-medium leading-snug text-white/85">{d.baslik}</p>}
+        {d.onizleme_url && <audio src={d.onizleme_url} controls preload="none" className="w-full max-w-[360px]" />}
+        {d.durum === "hazir" && (
+          <p className="text-[12px] leading-relaxed text-white/45">
+            YouTube Studio → Altyazılar → bu video → {ad}: <span className="text-white/70">Ses</span> ve{" "}
+            <span className="text-white/70">Küçük resim</span> için &quot;Ekle&quot;. Dosyalar Drive klasöründe.
+          </p>
+        )}
+        {d.durum === "hata" && <p className="text-[12px] leading-relaxed text-red-100/75">{d.hata || "Dublaj hazırlanamadı."}</p>}
+        <div className="flex flex-wrap gap-2">
+          {d.drive_url && (d.durum === "hazir" || d.durum === "yuklendi") && (
+            <a href={d.drive_url} target="_blank" rel="noreferrer" className={ikincilDugme + " px-3 py-2 text-[12px]"}>
+              <ExternalLink size={13} />
+              Drive klasörü
+            </a>
+          )}
+          {d.durum === "hazir" && (
+            <button onClick={() => onYama(d.id, { durum: "yuklendi" }, `${ad} ses videoda olarak işaretlendi.`)} className={birincilDugme + " px-3 py-2 text-[12px]"}>
+              <Check size={13} />
+              Yükledim
+            </button>
+          )}
+          {d.durum === "hata" && (
+            <button onClick={() => onYama(d.id, { durum: "bekliyor", hata: null }, "Yeniden sıraya alındı.")} className={ikincilDugme + " px-3 py-2 text-[12px]"}>
+              <RotateCcw size={13} />
+              Tekrar dene
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

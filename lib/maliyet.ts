@@ -62,6 +62,7 @@ export const KALEM_ETIKETI: Record<string, string> = {
   kapak: "Kapak",
   metin: "Başlık ve diğer metinler",
   shorts: "Shorts fragmanı",
+  dublaj: "Dublaj (başka dilde ses)",
 };
 export const kalemEtiketi = (k: string) => KALEM_ETIKETI[k] ?? k;
 
