@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { chatJson } from "@/lib/ai";
 import type { Segment, Verdict } from "@/lib/ders";
-import { hataCevabi, kapiKontrol } from "@/lib/ders-server";
+import { dersProfili, hataCevabi, kapiKontrol } from "@/lib/ders-server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { cevresindekiBolum } from "@/lib/youtube";
 import { DEGERLENDIRME_PROMPT } from "@/lib/prompts";
@@ -198,6 +198,8 @@ export async function POST(request: Request) {
 
     const kayit: Record<string, unknown> = {
       session_id: soru.session_id,
+      // Dersler ortak, cevaplar kişiye özel (lib/profil.ts): aynı soruya her profilin bir cevabı
+      profil: await dersProfili(),
       question_id: soru.id,
       user_answer: soru.kind === "coktan" ? (secim !== null ? String(secim) : null) : cevap,
       verdict,
@@ -208,7 +210,7 @@ export async function POST(request: Request) {
 
     let { error: kayitHatasi } = await supabase
       .from("ders_answers")
-      .upsert(kayit, { onConflict: "question_id" });
+      .upsert(kayit, { onConflict: "question_id,profil" });
 
     // Deneme kolonları eklenmemişse cevabı kaybetmek yerine onlarsız yaz.
     // Sınavın ortasında "cevap kaydedilemedi" demek, çözülmüş soruyu çöpe atmak
@@ -218,7 +220,7 @@ export async function POST(request: Request) {
       delete kayit.sure_ms;
       ({ error: kayitHatasi } = await supabase
         .from("ders_answers")
-        .upsert(kayit, { onConflict: "question_id" }));
+        .upsert(kayit, { onConflict: "question_id,profil" }));
     }
 
     if (kayitHatasi) throw new Error(`Cevap kaydedilemedi: ${kayitHatasi.message}`);

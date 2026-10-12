@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DersKuyruguSaglayici, KuyrukRozeti } from "@/components/ders/DersKuyrugu";
+import ProfilSecici from "@/components/ders/ProfilSecici";
 
 // /ders bir istemci bileşeni ("use client") olduğu için metadata dışa
 // aktaramıyor; başlığı bu layout veriyor.
@@ -22,6 +23,8 @@ export default function DersLayout({ children }: { children: React.ReactNode }) 
     <DersKuyruguSaglayici>
       {children}
       <KuyrukRozeti />
+      {/* Dersler ortak, cevaplar kişiye özel: kim çalışıyor (bkz. lib/profil.ts) */}
+      <ProfilSecici />
     </DersKuyruguSaglayici>
   );
 }

@@ -12,7 +12,7 @@ import {
   TEKRAR_SORU_SAYISI,
   yeterinceFarkli,
 } from "@/lib/ders";
-import { hataCevabi, hepsiniCek, kapiKontrol } from "@/lib/ders-server";
+import { dersProfili, hataCevabi, hepsiniCek, kapiKontrol } from "@/lib/ders-server";
 import { SIK_SAYISI, SORU_OLGU_DENETIMI, tekrarVaryantPrompt } from "@/lib/prompts";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
@@ -333,6 +333,8 @@ export async function POST(request: Request) {
     const mod = govde.mod === "varyant" ? "varyant" : "kopya";
 
     const supabase = createServerSupabaseClient();
+    // Pratik ve deneme oturumları kişiye özel; ders havuzu ortak (lib/profil.ts)
+    const profil = await dersProfili();
 
     // Mevcut pratik oturumuna ekleme: kategori oturumdan okunuyor, çağıranın
     // göndermesine gerek yok.
@@ -378,6 +380,7 @@ export async function POST(request: Request) {
         .select("id")
         .eq("kategori", kategori)
         .eq("tur", "tekrar")
+        .eq("profil", profil)
         .order("created_at", { ascending: false })
         .range(SAKLANAN_PRATIK - 1, 999);
       const silinecek = (eskiler ?? []).map((o) => o.id);
@@ -482,6 +485,7 @@ export async function POST(request: Request) {
         .select("id")
         .eq("kategori", kategori)
         .eq("tur", "tekrar")
+        .eq("profil", profil)
         // Sıralama şart: sınır kadar satır çekiliyor, sırasız bırakılırsa
         // hangi pratiklerin geleceği garanti değil.
         .order("created_at", { ascending: false })
@@ -505,6 +509,7 @@ export async function POST(request: Request) {
             .from("ders_answers")
             .select("question_id, created_at")
             .in("session_id", kategoriOturumlari)
+            .eq("profil", profil)
             .order("id")
         ),
       ]);
@@ -576,6 +581,7 @@ export async function POST(request: Request) {
           title: deneme ? `${kategori} denemesi` : `${kategori} pratiği`,
           kategori,
           tur: deneme ? "deneme" : "tekrar",
+          profil,
           // Denemenin süresi created_at'ten işliyor (bkz. DenemeView): sunucu
           // saati tek doğru kaynak, sekme kapanıp açılınca sayaç kaldığı yerden
           // devam ediyor ve durdurulamıyor.
@@ -602,6 +608,7 @@ export async function POST(request: Request) {
             title: deneme ? `${kategori} denemesi` : `${kategori} pratiği`,
             kategori,
             tur: deneme ? "deneme" : "tekrar",
+            profil,
             summary: deneme
               ? `${kategori} derslerinden ${denemeSoru} soruluk deneme.`
               : `${kategori} derslerinden karışık pratik.`,

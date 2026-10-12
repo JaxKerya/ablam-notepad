@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { GATE_COOKIE, gateTokenGecerli } from "@/lib/gate";
 import { GUNLUK_URETIM_LIMITI } from "@/lib/ders";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { PROFIL_CEREZI, profilDogrula, type Profil } from "@/lib/profil";
 
 /**
  * SUPABASE SATIR TAVANI: PostgREST tek cevapta en fazla 1000 satır döner ve
@@ -30,6 +31,12 @@ export async function hepsiniCek<T>(
     hepsi.push(...sayfa);
     if (sayfa.length < SAYFA_BOYU) return hepsi;
   }
+}
+
+/** İsteği yapan profil (bkz. lib/profil.ts). Çerez yoksa "ablam". */
+export async function dersProfili(): Promise<Profil> {
+  const cerezler = await cookies();
+  return profilDogrula(cerezler.get(PROFIL_CEREZI)?.value);
 }
 
 /** Kapıyı geçmemiş istekleri reddeder. Geçtiyse null döner. */

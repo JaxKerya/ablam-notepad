@@ -11,6 +11,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
+import { aktifProfil } from "@/lib/profil";
 import { useToast } from "@/components/Toast";
 import SoruMetni from "@/components/ders/SoruMetni";
 import HocaNeDemisti from "@/components/ders/HocaNeDemisti";
@@ -112,7 +113,8 @@ export default function DenemeView({ oturum, sorular, ilkCevaplar }: Props) {
     const { data, error } = await supabase
       .from("ders_answers")
       .select("*")
-      .eq("session_id", oturum.id);
+      .eq("session_id", oturum.id)
+      .eq("profil", aktifProfil());
     // Okuma düşerse "0 net" gösterme: hata belli olsun, tekrar denenebilsin
     if (error) {
       setSonucHatasi(error.message);

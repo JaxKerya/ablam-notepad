@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { dersProfili } from "@/lib/ders-server";
 import DersView from "@/components/ders/DersView";
 import DenemeView from "@/components/ders/DenemeView";
 import type { DersAnswer, DersQuestion, DersSession } from "@/lib/ders";
@@ -46,7 +47,8 @@ export default async function DersOturumSayfasi({ params }: PageProps) {
       .eq("kind", "coktan")
       .eq("session_id", sessionId)
       .order("position", { ascending: true }),
-    supabase.from("ders_answers").select("*").eq("session_id", sessionId),
+    // Ders ortak, cevaplar kişiye özel: Ozi ablamın bitirdiği derse girince boş başlar
+    supabase.from("ders_answers").select("*").eq("session_id", sessionId).eq("profil", await dersProfili()),
   ]);
 
   const sorular = (sorularRes.data ?? []) as DersQuestion[];

@@ -42,8 +42,9 @@ export async function POST(istek: Request) {
           role: "system",
           content:
             "Uyku için uzun tarih/bilim anlatımları yayınlayan bir YouTube kanalının editörüsün. Verilen bölüm konusunu " +
-            "kanalın serilerinden en uygun olanına yerleştir. Kişi odaklı konular (biri kimdi, hayatı) kişi serisine; " +
-            "bir yerde/dönemde yaşamı anlatanlar deneyim serisine; neden/nasıl soruları soru serisine gider. " +
+            "kanalın serilerinden en uygun olanına yerleştir. Kural: bir kişinin hayatı ('… Kimdi?') kişi serisine; tarihte " +
+            "tek bir yerde geçen tek bir gece (akşamdan sabaha saat saat: '… Bir Kış Gecesi Nasıl Geçerdi?') gece " +
+            "serisine; diğer bütün sorular (neden, nasıl, bir dönemde hayat nasıldı / nasıl yaşardı) soru serisine. " +
             'Sadece JSON: {"seri": "<listedeki numara>", "neden": "<en fazla 12 kelime, Türkçe>"}',
         },
         { role: "user", content: `Seriler:\n${liste}\n\nBölüm konusu: ${metin}` },

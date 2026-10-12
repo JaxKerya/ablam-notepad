@@ -592,7 +592,8 @@ function BolumlerEkrani({
       ? await onYeni(
           etkinSeri,
           ("Derleme: " + secilenBolumler.map(sadeBaslik).join(" · ")).slice(0, 300),
-          Math.round(derlemeSn / 60),
+          // sure_dk sütunu en fazla 180 (db/youtube.sql); derlemede yalnızca bilgi, gerçek süre seslerden hesaplanır
+          Math.min(180, Math.round(derlemeSn / 60)),
           yayin,
           zaman,
           elleSahne || null,

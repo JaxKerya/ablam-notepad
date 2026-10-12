@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { onculluSiklarMi, siklariKaristir } from "@/lib/ders";
-import { hataCevabi, hepsiniCek, kapiKontrol } from "@/lib/ders-server";
+import { dersProfili, hataCevabi, hepsiniCek, kapiKontrol } from "@/lib/ders-server";
+import type { Profil } from "@/lib/profil";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import {
   oturumSirasi,
@@ -45,13 +46,13 @@ type Supa = ReturnType<typeof createServerSupabaseClient>;
  * Bütün cevapları kök soruya bağlayıp kutuları hesaplar. Tek istekte değil,
  * sayfalı okunuyor: soru ve cevap tabloları 1000 satırı çoktan geçti.
  */
-async function durumuHesapla(supabase: Supa) {
+async function durumuHesapla(supabase: Supa, profil: Profil) {
   const [sorular, cevaplar, oturumlar] = await Promise.all([
     hepsiniCek<SoruSatiri>(() =>
       supabase.from("ders_questions").select("id, session_id, kaynak_soru_id, kind, flagged").order("id")
     ),
     hepsiniCek<{ question_id: string; verdict: string | null; created_at: string }>(() =>
-      supabase.from("ders_answers").select("question_id, verdict, created_at").order("id")
+      supabase.from("ders_answers").select("question_id, verdict, created_at").eq("profil", profil).order("id")
     ),
     hepsiniCek<{ id: string; kategori: string | null; tur: string | null }>(() =>
       supabase.from("ders_sessions").select("id, kategori, tur").order("id")
@@ -104,12 +105,13 @@ function kategoriOzetleri(aktif: Map<string, YanlisDurumu>, ogrenilen: Set<strin
 }
 
 /** Bugün açılmış yanlış oturumları, kategori -> oturum (en yenisi) */
-async function bugunkuOturumlar(supabase: Supa, simdi: number) {
+async function bugunkuOturumlar(supabase: Supa, simdi: number, profil: Profil) {
   const gun = turkiyeGunu(simdi);
   const { data } = await supabase
     .from("ders_sessions")
     .select("id, kategori, created_at")
     .eq("tur", "yanlis")
+    .eq("profil", profil)
     .order("created_at", { ascending: false })
     .limit(50);
   const harita = new Map<string, string>();
@@ -127,9 +129,10 @@ export async function GET() {
   try {
     const supabase = createServerSupabaseClient();
     const simdi = Date.now();
+    const profil = await dersProfili();
     const [{ aktif, ogrenilen, kategorisi }, bugunku] = await Promise.all([
-      durumuHesapla(supabase),
-      bugunkuOturumlar(supabase, simdi),
+      durumuHesapla(supabase, profil),
+      bugunkuOturumlar(supabase, simdi, profil),
     ]);
     const kategoriler = kategoriOzetleri(aktif, ogrenilen, kategorisi, simdi);
 
@@ -139,6 +142,7 @@ export async function GET() {
         .from("ders_answers")
         .select("session_id")
         .in("session_id", [...bugunku.values()])
+        .eq("profil", profil)
         .limit(2000);
       const sayac = new Map<string, number>();
       for (const c of cevaplar ?? []) sayac.set(c.session_id, (sayac.get(c.session_id) ?? 0) + 1);
@@ -169,6 +173,7 @@ export async function POST(request: Request) {
     const adet = Math.min(Math.max(Number(govde.adet) || 1, 1), 10);
     const supabase = createServerSupabaseClient();
     const simdi = Date.now();
+    const profil = await dersProfili();
 
     // Oturum: verilen, yoksa bu kategorinin bugünkü oturumu, o da yoksa aşağıda yenisi
     let oturumId = typeof govde.sessionId === "string" ? govde.sessionId : "";
@@ -181,10 +186,10 @@ export async function POST(request: Request) {
       kategori = (data.kategori as string | null)?.trim() || "Diğer";
     } else {
       if (!kategori) return NextResponse.json({ hata: "kategori gerekli." }, { status: 400 });
-      oturumId = (await bugunkuOturumlar(supabase, simdi)).get(kategori) ?? "";
+      oturumId = (await bugunkuOturumlar(supabase, simdi, profil)).get(kategori) ?? "";
     }
 
-    const { aktif, ogrenilen, kategorisi } = await durumuHesapla(supabase);
+    const { aktif, ogrenilen, kategorisi } = await durumuHesapla(supabase, profil);
 
     // Doğru yapılan soru aynı gün yine vadeli (lib/yanlislar.ts); bu oturumda en
     // son hangi sırada sorulduğuna bakılıp araya YANLIS_ARA_SORU başka soru
@@ -248,6 +253,7 @@ export async function POST(request: Request) {
           title: `${kategori} yanlışları`,
           kategori,
           tur: "yanlis",
+          profil,
           summary: `Daha önce yanlış yaptığın sorular. ${yanlisKuraliMetni()}`,
           topics: [],
           status: "hazir",

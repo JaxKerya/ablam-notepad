@@ -32,6 +32,7 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
+import { aktifProfil } from "@/lib/profil";
 import { useToast } from "@/components/Toast";
 import { useModal } from "@/components/useModal";
 import { useKuyruk } from "@/components/ders/DersKuyrugu";
@@ -306,6 +307,8 @@ export default function DersAnaSayfa() {
       // "arsiv": aşağıda ayrı ve hafif bir sorguyla geliyor; burada olsaydı
       // LISTE_TAVANI'nı yiyip gerçek dersleri listeden atardı
       .not("tur", "in", "(yanlis,test,arsiv)")
+      // Dersler ortak (profil boş), pratik ve denemeler kişiye özel (lib/profil.ts)
+      .or(`tur.eq.ders,profil.eq.${aktifProfil()}`)
       .order("created_at", { ascending: false })
       .limit(LISTE_TAVANI);
 
@@ -336,6 +339,8 @@ export default function DersAnaSayfa() {
         .select("session_id, verdict, ders_questions!inner(kind)")
         .eq("ders_questions.kind", "coktan")
         .in("session_id", kimlikler)
+        // Kartlardaki "8/14 doğru" bu profilin cevaplarından
+        .eq("profil", aktifProfil())
         .order("id")
         .range(bas, bas + SAYFA - 1);
       if (sayfaHatasi) {
