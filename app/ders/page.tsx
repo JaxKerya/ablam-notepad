@@ -32,7 +32,7 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
-import { aktifProfil } from "@/lib/profil";
+import { aktifProfil, VARSAYILAN_PROFIL } from "@/lib/profil";
 import { useToast } from "@/components/Toast";
 import { useModal } from "@/components/useModal";
 import { useKuyruk } from "@/components/ders/DersKuyrugu";
@@ -175,8 +175,17 @@ function kategoriYeri(kategori: string, sira: string[]): number {
   return 1000 + (j >= 0 ? j : 500);
 }
 
-/** Hangi kategoriler açık bırakıldı — sayfa en son bırakıldığı gibi açılsın */
-const ACIK_KATEGORI_HAFIZASI = "ablam-ders-acik-kategoriler";
+/**
+ * Hangi kategoriler açık bırakıldı — sayfa en son bırakıldığı gibi açılsın.
+ * Profile özel: ablamınki eski anahtarda kaldı (kaydı kaybolmasın), diğerleri
+ * sonuna profil adı eklenmiş anahtarda.
+ */
+const acikKategoriHafizasi = () => {
+  const profil = aktifProfil();
+  return profil === VARSAYILAN_PROFIL
+    ? "ablam-ders-acik-kategoriler"
+    : `ablam-ders-acik-kategoriler-${profil}`;
+};
 
 /** Kuyruktaki bir işin ekranda görünen hâli */
 const DURUM_METNI: Record<IsDurumu, string> = {
@@ -825,8 +834,8 @@ export default function DersAnaSayfa() {
    * Katlanır kategoriler. Kategori sayısı arttıkça sayfa 150 satırlık düz bir
    * kaydırmaya dönüyordu ve "Soru Gönder" düğmeleri arada kayboluyordu.
    *
-   * Hangi kategorinin açık olduğu tarayıcıda saklanıyor: sayfa ablamın en son
-   * bıraktığı gibi açılıyor. Eskiden en son ders eklenen kategori her girişte
+   * Hangi kategorinin açık olduğu tarayıcıda, profil başına saklanıyor: sayfa
+   * o profilin en son bıraktığı gibi açılıyor. Eskiden en son ders eklenen kategori her girişte
    * kendiliğinden açılıyordu (07.10.2026'da kaldırıldı). Hiç kayıt yoksa hepsi
    * kapalı. İlk çizimde liste henüz yüklenmediği için sunucu çizimiyle
    * uyuşmazlık olmuyor.
@@ -834,7 +843,7 @@ export default function DersAnaSayfa() {
   const [acikKategoriler, setAcikKategoriler] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
     try {
-      const ham: unknown = JSON.parse(localStorage.getItem(ACIK_KATEGORI_HAFIZASI) ?? "[]");
+      const ham: unknown = JSON.parse(localStorage.getItem(acikKategoriHafizasi()) ?? "[]");
       return new Set(Array.isArray(ham) ? ham.filter((k): k is string => typeof k === "string") : []);
     } catch {
       return new Set();
@@ -847,7 +856,7 @@ export default function DersAnaSayfa() {
       if (yeni.has(k)) yeni.delete(k);
       else yeni.add(k);
       try {
-        localStorage.setItem(ACIK_KATEGORI_HAFIZASI, JSON.stringify([...yeni]));
+        localStorage.setItem(acikKategoriHafizasi(), JSON.stringify([...yeni]));
       } catch {
         // Depolama kapalıysa yalnızca bu oturum boyunca hatırlanır
       }
