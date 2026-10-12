@@ -27,6 +27,29 @@ export type Durum =
 
 export type Gizlilik = "unlisted" | "public" | "private";
 export type ShortsDurum = "bekliyor" | "uretiliyor" | "onay" | "yayinla" | "yayinda" | "hata";
+
+/**
+ * Shorts tanıtım fragmanı (tablo: youtube_shorts, db/youtube-shorts-2.sql). Bölüm başına birkaç tane (sira 1, 2…):
+ * stüdyo bölümün kendi anlatımından kesit üretir, uzun videolar gibi onay beklemeden planlar.
+ */
+export interface Shorts {
+  id: string;
+  bolum_id: string;
+  sira: number;
+  durum: ShortsDurum;
+  baslik: string | null;
+  metin: string | null;
+  /** Sitede izlenen hafif önizleme (Storage youtube/shorts/<id>.mp4) */
+  url: string | null;
+  youtube_id: string | null;
+  yayin_zamani: string | null;
+  hata: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Yeni bölüm yayına girince stüdyonun açtığı Shorts sayısı (gece config [shorts] adet ile aynı) */
+export const SHORTS_ADET = 2;
 export type LoopDurum = "bekliyor" | "uretiliyor" | "hazir" | "hata";
 
 /** Sahne — bölümlerin arkasında dönen loop görsel (tablo: youtube_sahneler) */
@@ -124,14 +147,6 @@ export interface Bolum {
   /** YouTube istatistikleri (stüdyo birkaç saatte bir günceller; veriler 2-3 gün gecikmeli) */
   istatistik?: Istatistik | null;
   istatistik_zaman?: string | null;
-  /** Shorts tanıtım fragmanı (db/youtube-shorts.sql): bekliyor → uretiliyor → onay → yayinla → yayinda; ya da hata */
-  shorts_durum?: ShortsDurum | null;
-  /** Sitede izlenen hafif önizleme (Storage youtube/shorts/<id>.mp4) */
-  shorts_url?: string | null;
-  shorts_baslik?: string | null;
-  shorts_youtube_id?: string | null;
-  shorts_yayin_zamani?: string | null;
-  shorts_hata?: string | null;
   hata: string | null;
   gunluk: string[];
   created_at: string;
@@ -192,6 +207,16 @@ export interface MaliyetKaydi {
 /** 1.234 → "$1.23" */
 export const dolar = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/** Haftalık rapor (tablo: youtube_raporlar, db/youtube-rapor.sql): stüdyo her pazartesi yazar (gece/rapor.py) */
+export interface Rapor {
+  id: string;
+  /** Haftanın pazartesisi (YYYY-AA-GG) */
+  hafta: string;
+  /** Markdown: "## " başlıklar, "- " maddeler */
+  metin: string | null;
+  created_at: string;
+}
+
 export interface Nabiz {
   son_gorulme: string | null;
   mesaj: string | null;
@@ -234,9 +259,9 @@ export function yayinDurumu(b: Pick<Bolum, "durum" | "gizlilik" | "yayin_zamani"
 }
 
 /** Yüklenmiş Shorts fragmanının durumu: planlı (tarih gelecekte) ya da yayında */
-export function shortsYayinDurumu(b: Pick<Bolum, "shorts_yayin_zamani">): string {
-  if (b.shorts_yayin_zamani && new Date(b.shorts_yayin_zamani).getTime() > Date.now()) {
-    return `Planlandı · ${tarihBicimle(b.shorts_yayin_zamani)}`;
+export function shortsYayinDurumu(s: Pick<Shorts, "yayin_zamani">): string {
+  if (s.yayin_zamani && new Date(s.yayin_zamani).getTime() > Date.now()) {
+    return `Planlandı · ${tarihBicimle(s.yayin_zamani)}`;
   }
   return "Yayında";
 }

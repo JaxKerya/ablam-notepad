@@ -21,13 +21,13 @@ const BASE_URL = process.env.AI_BASE_URL;
 const API_KEY = process.env.AI_API_KEY;
 
 /** Uzun transkriptten soru üretimi */
-const URETIM_MODELI = process.env.AI_MODEL ?? "openai/gpt-5.6-sol";
+const URETIM_MODELI = process.env.AI_MODEL ?? "openai/gpt-6.1-sol";
 
 /**
  * Cevap değerlendirme — küçük ama en sık tekrarlanan iş, hız burada daha çok önemli.
  * Üretimden ayrı tutuldu ki ileride biri değişirken diğeri sabit kalabilsin.
  */
-const DEGERLENDIRME_MODELI = process.env.AI_GRADE_MODEL ?? "openai/gpt-5.6-sol";
+const DEGERLENDIRME_MODELI = process.env.AI_GRADE_MODEL ?? "openai/gpt-6.1-sol";
 
 /**
  * Cevap anahtarı denetimi — bkz. generate route'taki `denetle`. Ölçüm: kasten

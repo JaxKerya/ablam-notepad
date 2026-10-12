@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
+  BarChart3,
   CalendarClock,
   CalendarDays,
   Check,
@@ -49,9 +50,12 @@ import {
   planliMi,
   yayinDurumu,
   shortsYayinDurumu,
+  SHORTS_ADET,
+  type Shorts,
   tarihBicimle,
   yerelTarihGirdisi,
   type Nabiz,
+  type Rapor,
   type Seri,
   type Sahne,
   type Kalip,
@@ -68,7 +72,7 @@ import {
   siradakiBosGun,
 } from "@/lib/ablam-youtube";
 
-type Sekme = "bolumler" | "takvim" | "seriler" | "sahneler";
+type Sekme = "bolumler" | "takvim" | "seriler" | "sahneler" | "rapor";
 
 const girdiSinifi =
   "focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-[13.5px] text-white/90 placeholder-white/25";
@@ -137,6 +141,10 @@ function YoutubeUygulamasi() {
   const [seriler, setSeriler] = useState<Seri[]>([]);
   const [sahneler, setSahneler] = useState<Sahne[]>([]);
   const [nabiz, setNabiz] = useState<Nabiz | null>(null);
+  /** Shorts fragmanları (youtube_shorts); tablo yoksa (SQL çalıştırılmamış) boş kalır */
+  const [shorts, setShorts] = useState<Shorts[]>([]);
+  /** Haftalık raporlar (youtube_raporlar); tablo yoksa boş kalır, hata şeridine yazılmaz */
+  const [raporlar, setRaporlar] = useState<Rapor[]>([]);
   /** Açık bölüm — liste yerine ayrıntı ekranı */
   const [seciliId, setSeciliId] = useState<string | null>(null);
   /** "şimdi": nabız ve "x dk önce" hesapları render içinde Date.now() çağırmasın */
@@ -151,11 +159,13 @@ function YoutubeUygulamasi() {
   const [veriHatasi, setVeriHatasi] = useState<string | null>(null);
 
   const getir = useCallback(async () => {
-    const [b, s, sh, n] = await Promise.all([
+    const [b, s, sh, n, sr, rp] = await Promise.all([
       supabase.from("youtube_bolumler").select("*").order("created_at", { ascending: false }).limit(100),
       supabase.from("youtube_seriler").select("*").order("created_at", { ascending: true }),
       supabase.from("youtube_sahneler").select("*").order("created_at", { ascending: true }),
       supabase.from("youtube_nabiz").select("*").eq("id", 1).maybeSingle(),
+      supabase.from("youtube_shorts").select("*").order("sira", { ascending: true }),
+      supabase.from("youtube_raporlar").select("id,hafta,metin,created_at").order("hafta", { ascending: false }).limit(12),
     ]);
     if (b.error) addToast("Bölümler okunamadı: " + b.error.message, "error");
     const hatalar = [
@@ -170,6 +180,8 @@ function YoutubeUygulamasi() {
     if (!s.error) setSeriler((s.data ?? []) as Seri[]);
     if (!sh.error) setSahneler((sh.data ?? []) as Sahne[]);
     if (!n.error) setNabiz((n.data as Nabiz | null) ?? null);
+    if (!sr.error) setShorts((sr.data ?? []) as Shorts[]);
+    if (!rp.error) setRaporlar((rp.data ?? []) as Rapor[]);
     setSimdi(Date.now());
     setYukleniyor(false);
   }, [addToast]);
@@ -186,6 +198,8 @@ function YoutubeUygulamasi() {
       .on("postgres_changes", { event: "*", schema: "public", table: "youtube_bolumler" }, () => getir())
       .on("postgres_changes", { event: "*", schema: "public", table: "youtube_seriler" }, () => getir())
       .on("postgres_changes", { event: "*", schema: "public", table: "youtube_sahneler" }, () => getir())
+      .on("postgres_changes", { event: "*", schema: "public", table: "youtube_shorts" }, () => getir())
+      .on("postgres_changes", { event: "*", schema: "public", table: "youtube_raporlar" }, () => getir())
       .subscribe();
     const zamanlayici = setInterval(getir, 20_000);
     return () => {
@@ -230,6 +244,22 @@ function YoutubeUygulamasi() {
     const { error } = await supabase.from("youtube_bolumler").update(yama).eq("id", id);
     if (error) return addToast("Kaydedilemedi: " + error.message, "error");
     if (mesaj) addToast(mesaj);
+    getir();
+  };
+
+  const shortsYama = async (id: string, yama: Partial<Shorts>, mesaj?: string) => {
+    const { error } = await supabase.from("youtube_shorts").update(yama).eq("id", id);
+    if (error) return addToast("Kaydedilemedi: " + error.message, "error");
+    if (mesaj) addToast(mesaj);
+    getir();
+  };
+
+  /** Yayındaki eski bölüm için Shorts satırlarını açar; yeni bölümlerde stüdyo bunu yayından sonra kendisi yapar */
+  const shortsUret = async (b: Bolum) => {
+    const satirlar = Array.from({ length: SHORTS_ADET }, (_, i) => ({ bolum_id: b.id, sira: i + 1 }));
+    const { error } = await supabase.from("youtube_shorts").upsert(satirlar, { onConflict: "bolum_id,sira", ignoreDuplicates: true });
+    if (error) return addToast("Sıraya alınamadı: " + error.message, "error");
+    addToast("Stüdyo fragmanları hazırlıyor; her biri birkaç dakika sürer.");
     getir();
   };
 
@@ -303,6 +333,9 @@ function YoutubeUygulamasi() {
             onGeri={() => setSeciliId(null)}
             onYama={bolumYama}
             onSil={() => bolumSil(secili)}
+            shorts={shorts.filter((s) => s.bolum_id === secili.id)}
+            onShortsYama={shortsYama}
+            onShortsUret={shortsUret}
           />
         ) : (
           <>
@@ -313,6 +346,7 @@ function YoutubeUygulamasi() {
                   ["takvim", "Takvim", CalendarDays],
                   ["seriler", "Seriler", Layers],
                   ["sahneler", "Sahneler", Clapperboard],
+                  ["rapor", "Rapor", BarChart3],
                 ] as const
               ).map(([ad, etiket, Ikon]) => (
                 <button
@@ -338,6 +372,8 @@ function YoutubeUygulamasi() {
               <div className="flex justify-center py-16 text-white/30">
                 <Loader2 size={20} className="animate-spin" />
               </div>
+            ) : sekme === "rapor" ? (
+              <RaporEkrani raporlar={raporlar} />
             ) : sekme === "sahneler" ? (
               <SahnelerEkrani sahneler={sahneler} bolumler={bolumler} onYeni={yeniSahne} onSil={sahneSil} />
             ) : sekme === "takvim" ? (
@@ -976,6 +1012,9 @@ function BolumDetay({
   onGeri,
   onYama,
   onSil,
+  shorts,
+  onShortsYama,
+  onShortsUret,
 }: {
   bolum: Bolum;
   seriAdi: string;
@@ -983,6 +1022,9 @@ function BolumDetay({
   onGeri: () => void;
   onYama: (id: string, yama: Partial<Bolum>, mesaj?: string) => Promise<void>;
   onSil: () => void;
+  shorts: Shorts[];
+  onShortsYama: (id: string, yama: Partial<Shorts>, mesaj?: string) => Promise<void>;
+  onShortsUret: (bolum: Bolum) => Promise<void>;
 }) {
   return (
     <div className="animate-fade-in space-y-4">
@@ -1012,8 +1054,8 @@ function BolumDetay({
 
       {bolum.durum === "senaryo_onay" && <SenaryoOnay bolum={bolum} onYama={onYama} />}
       {(bolum.durum === "hazir" || bolum.durum === "yayinla" || bolum.durum === "yayinda") && <YayinPaneli bolum={bolum} onYama={onYama} />}
-      {bolum.durum === "yayinda" && bolum.youtube_id && !bolum.derleme_idler?.length && bolum.shorts_durum !== undefined && (
-        <ShortsPaneli bolum={bolum} onYama={onYama} />
+      {bolum.durum === "yayinda" && bolum.youtube_id && !bolum.derleme_idler?.length && (
+        <ShortsPaneli bolum={bolum} shorts={shorts} onYama={onShortsYama} onUret={onShortsUret} />
       )}
       {bolum.durum === "hata" && (
         <section className="glass rounded-xl border border-red-300/20 p-4">
@@ -1436,90 +1478,109 @@ function YayinPaneli({ bolum, onYama }: { bolum: Bolum; onYama: (id: string, yam
 }
 
 /**
- * Shorts tanıtım fragmanı: stüdyo bölümün kendi anlatımından kısa bir dikey video üretir (gece/fragman.py).
- * Burada izlenir; onaylanınca uzun videodan bir gün sonra Shorts olarak planlı yüklenir.
+ * Shorts tanıtım fragmanları (youtube_shorts): stüdyo bölümün kendi anlatımından kısa dikey videolar üretir
+ * (gece/fragman.py) ve uzun videolar gibi onay beklemeden planlar; günde en fazla bir Shorts çıkar.
+ * Önizlemeler burada izlenir. (config [shorts] otomatik_onay = false ise "onay" durumunda burada onay bekler.)
  */
-function ShortsPaneli({ bolum, onYama }: { bolum: Bolum; onYama: (id: string, yama: Partial<Bolum>, mesaj?: string) => Promise<void> }) {
-  const durum = bolum.shorts_durum;
-  const calisiyor = durum === "bekliyor" || durum === "uretiliyor" || durum === "yayinla";
+function ShortsPaneli({
+  bolum,
+  shorts,
+  onYama,
+  onUret,
+}: {
+  bolum: Bolum;
+  shorts: Shorts[];
+  onYama: (id: string, yama: Partial<Shorts>, mesaj?: string) => Promise<void>;
+  onUret: (bolum: Bolum) => Promise<void>;
+}) {
   return (
-    <section className={`glass rounded-xl border p-4 ${durum === "onay" ? "border-[var(--accent)]/25" : "border-[var(--border)]"}`}>
-      <div className="flex items-center justify-between gap-3">
-        <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/35">
-          <Film size={12} /> Shorts fragmanı
-        </p>
-        {calisiyor && (
-          <span className="flex items-center gap-1.5 text-[12px] text-white/45">
-            <Loader2 size={12} className="animate-spin" />
-            {durum === "yayinla" ? "YouTube'a yükleniyor" : "Hazırlanıyor"}
-          </span>
-        )}
-      </div>
+    <section className="glass rounded-xl border border-[var(--border)] p-4">
+      <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/35">
+        <Film size={12} /> Shorts fragmanları
+      </p>
 
-      {!durum && (
+      {shorts.length === 0 ? (
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[12.5px] leading-relaxed text-white/45">
-            Bölümün kendi anlatımından ~25 saniyelik dikey bir tanıtım. Önce burada izlersin, onaylarsan yayınlanır.
+            Bölümün kendi anlatımından {SHORTS_ADET} kısa dikey tanıtım. Stüdyo hazırlayıp uzun videodan sonraki günlere planlar.
           </p>
-          <button onClick={() => onYama(bolum.id, { shorts_durum: "bekliyor", shorts_hata: null }, "Stüdyo fragmanı hazırlıyor (birkaç dakika).")} className={ikincilDugme}>
+          <button onClick={() => onUret(bolum)} className={ikincilDugme}>
             <Sparkles size={14} />
             Fragman üret
           </button>
         </div>
-      )}
-
-      {durum === "onay" && bolum.shorts_url && (
-        <div className="mt-3 flex flex-col gap-4 sm:flex-row">
-          <video src={bolum.shorts_url} controls playsInline preload="metadata" className="aspect-[9/16] w-full max-w-[220px] self-center rounded-lg border border-[var(--border)] bg-black/40 sm:self-start" />
-          <div className="flex min-w-0 flex-1 flex-col justify-between gap-3">
-            <div>
-              <p className="text-[13.5px] font-medium text-white/85">{bolum.shorts_baslik}</p>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-white/40">
-                Onaylarsan uzun videodan bir gün sonra saat {String(YAYIN_SAATI).padStart(2, "0")}:00&apos;de Shorts olarak yayınlanır;
-                açıklamasında uzun videonun bağlantısı olur. Beğenmezsen stüdyo bölümden başka bir kesit seçer.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => onYama(bolum.id, { shorts_durum: "yayinla" }, "Stüdyo Shorts'u yükleyip planlıyor.")} className={birincilDugme}>
-                <Check size={14} />
-                Onayla ve planla
-              </button>
-              <button onClick={() => onYama(bolum.id, { shorts_durum: "bekliyor" }, "Stüdyo başka bir kesit seçiyor.")} className={ikincilDugme}>
-                <RotateCcw size={14} />
-                Başka kesit seç
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {durum === "yayinda" && bolum.shorts_youtube_id && (
-        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="truncate text-[13px] font-medium text-white/85">{bolum.shorts_baslik}</p>
-            <p className="text-[12px] text-white/40">{shortsYayinDurumu(bolum)}</p>
-          </div>
-          <a href={`https://youtube.com/shorts/${bolum.shorts_youtube_id}`} target="_blank" rel="noreferrer" className={ikincilDugme}>
-            <ExternalLink size={14} />
-            YouTube&apos;da aç
-          </a>
-        </div>
-      )}
-
-      {durum === "hata" && (
-        <div className="mt-3 space-y-3">
-          <p className="text-[12.5px] leading-relaxed text-red-100/75">{bolum.shorts_hata || "Fragman hazırlanamadı."}</p>
-          <button
-            // Video YouTube'a gittiyse yeniden üretme: kayıtlı kimlikle yüklemeyi tamamla (ikinci kopya açılmaz)
-            onClick={() => onYama(bolum.id, { shorts_durum: bolum.shorts_youtube_id ? "yayinla" : "bekliyor", shorts_hata: null }, "Yeniden sıraya alındı.")}
-            className={ikincilDugme}
-          >
-            <RotateCcw size={14} />
-            Tekrar dene
-          </button>
+      ) : (
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          {shorts.map((s) => (
+            <ShortsKarti key={s.id} s={s} onYama={onYama} />
+          ))}
         </div>
       )}
     </section>
+  );
+}
+
+function ShortsKarti({ s, onYama }: { s: Shorts; onYama: (id: string, yama: Partial<Shorts>, mesaj?: string) => Promise<void> }) {
+  const calisiyor = s.durum === "bekliyor" || s.durum === "uretiliyor" || s.durum === "yayinla";
+  const durumMetni =
+    s.durum === "yayinda"
+      ? shortsYayinDurumu(s)
+      : s.durum === "yayinla"
+        ? "YouTube'a yükleniyor"
+        : s.durum === "onay"
+          ? "Onay bekliyor"
+          : s.durum === "hata"
+            ? "Hata"
+            : s.durum === "uretiliyor"
+              ? "Hazırlanıyor"
+              : "Sırada";
+  return (
+    <div className="flex flex-col gap-2">
+      {s.url && s.durum !== "bekliyor" && s.durum !== "uretiliyor" ? (
+        <video src={s.url} controls playsInline preload="metadata" className="aspect-[9/16] w-full max-w-[220px] self-center rounded-lg border border-[var(--border)] bg-black/40" />
+      ) : (
+        <div className="flex aspect-[9/16] w-full max-w-[220px] items-center justify-center self-center rounded-lg border border-dashed border-[var(--border)] text-white/25">
+          {calisiyor ? <Loader2 size={18} className="animate-spin" /> : <Film size={18} />}
+        </div>
+      )}
+      <div className="min-w-0">
+        <p className="text-[11px] uppercase tracking-wider text-white/30">
+          {s.sira}. Shorts · {durumMetni}
+        </p>
+        {s.baslik && <p className="mt-0.5 text-[13px] font-medium leading-snug text-white/85">{s.baslik}</p>}
+        {s.durum === "hata" && <p className="mt-1 text-[12px] leading-relaxed text-red-100/75">{s.hata || "Fragman hazırlanamadı."}</p>}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {s.durum === "yayinda" && s.youtube_id && (
+          <a href={`https://youtube.com/shorts/${s.youtube_id}`} target="_blank" rel="noreferrer" className={ikincilDugme + " px-3 py-2 text-[12px]"}>
+            <ExternalLink size={13} />
+            YouTube&apos;da aç
+          </a>
+        )}
+        {s.durum === "onay" && (
+          <>
+            <button onClick={() => onYama(s.id, { durum: "yayinla" }, "Stüdyo Shorts'u yükleyip planlıyor.")} className={birincilDugme + " px-3 py-2 text-[12px]"}>
+              <Check size={13} />
+              Onayla
+            </button>
+            <button onClick={() => onYama(s.id, { durum: "bekliyor" }, "Stüdyo başka bir kesit seçiyor.")} className={ikincilDugme + " px-3 py-2 text-[12px]"}>
+              <RotateCcw size={13} />
+              Başka kesit
+            </button>
+          </>
+        )}
+        {s.durum === "hata" && (
+          <button
+            // Video YouTube'a gittiyse yeniden üretme: kayıtlı kimlikle yüklemeyi tamamla (ikinci kopya açılmaz)
+            onClick={() => onYama(s.id, { durum: s.youtube_id ? "yayinla" : "bekliyor", hata: null }, "Yeniden sıraya alındı.")}
+            className={ikincilDugme + " px-3 py-2 text-[12px]"}
+          >
+            <RotateCcw size={13} />
+            Tekrar dene
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1734,6 +1795,78 @@ function SeriFormu({
 }
 
 // ---------------------------------------------------------------- sahneler
+
+// ---------------------------------------------------------------- rapor
+
+/** Haftalık rapor: stüdyo her pazartesi son 7 günün verisini yorumlar (gece/rapor.py). Son 12 hafta seçilebilir. */
+function RaporEkrani({ raporlar }: { raporlar: Rapor[] }) {
+  const [secili, setSecili] = useState<string | null>(null);
+  const rapor = raporlar.find((r) => r.hafta === secili) ?? raporlar[0];
+  if (!rapor) {
+    return (
+      <section className="glass rounded-xl border border-[var(--border)] px-4 py-10 text-center text-[13px] leading-relaxed text-white/45">
+        Henüz rapor yok. Stüdyo her pazartesi sabah son haftanın YouTube verisinden bir rapor hazırlar:
+        neyin işe yaradığı, izleyicinin nerede bıraktığı ve önümüzdeki hafta için öneriler.
+      </section>
+    );
+  }
+  const haftaEtiketi = (h: string) => {
+    const d = new Date(h + "T12:00:00");
+    return d.toLocaleDateString("tr-TR", { day: "numeric", month: "long" }) + " haftası";
+  };
+  return (
+    <div className="space-y-4">
+      {raporlar.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {raporlar.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setSecili(r.hafta)}
+              className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
+                r.hafta === rapor.hafta
+                  ? "border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent-light)]"
+                  : "border-[var(--border)] text-white/45 hover:text-white/75"
+              }`}
+            >
+              {haftaEtiketi(r.hafta)}
+            </button>
+          ))}
+        </div>
+      )}
+      <section className="glass rounded-xl border border-[var(--border)] p-4">
+        <p className="text-[11px] uppercase tracking-wider text-white/35">{haftaEtiketi(rapor.hafta)}</p>
+        <RaporMetni md={rapor.metin ?? ""} />
+      </section>
+    </div>
+  );
+}
+
+function RaporMetni({ md }: { md: string }) {
+  return (
+    <div className="mt-2 space-y-1.5 text-[13px] leading-relaxed text-white/75">
+      {md.split("\n").map((satir, i) => {
+        const t = satir.trim();
+        if (!t) return null;
+        if (t.startsWith("## ")) {
+          return (
+            <h3 key={i} className="pt-3 text-[12px] font-medium uppercase tracking-wider text-[var(--accent-light)]/70">
+              {t.slice(3)}
+            </h3>
+          );
+        }
+        if (t.startsWith("- ")) {
+          return (
+            <p key={i} className="pl-4">
+              <span className="-ml-4 mr-2 text-white/25">•</span>
+              {t.slice(2)}
+            </p>
+          );
+        }
+        return <p key={i}>{t.replace(/^#+\s*/, "")}</p>;
+      })}
+    </div>
+  );
+}
 
 function SahnelerEkrani({
   sahneler,
