@@ -497,7 +497,10 @@ function BolumlerEkrani({
 }) {
   // Sahne bölüme özel üretilir; yine de yedek için en az bir hazır genel sahne gerekir. En yeni seri varsayılan.
   const yedekSahneVar = sahneler.some((sh) => sh.loop_durum === "hazir" && !sh.bolum_id);
+  // Derleme (çok saatlik birleştirme) serileri formda yok: kullanıcı istemedi (2026-10-13). Kod duruyor; geri açmak için
+  // aşağıdaki filtreyi kaldırmak yeter.
   const hazirSeriler = (yedekSahneVar ? seriler : [])
+    .filter((s) => !s.derleme)
     .slice()
     .reverse()
     .sort((a, b) => Number(!!a.derleme) - Number(!!b.derleme));

@@ -697,7 +697,7 @@ export default function Home() {
         </button>
 
         {/*
-          Diğer uygulamalar. 2+2 ızgara, tek satırlık kompakt kartlar: ikon + ad.
+          Diğer uygulamalar. 2 sütunlu ızgara, tek satırlık kompakt kartlar: ikon + ad.
           Açıklama yok — ablam hepsini biliyor. Dar ekranda da 2 sütun kalıyor
           (kartlar küçük, ad kısa).
         */}
@@ -719,12 +719,14 @@ export default function Home() {
               { href: "/ders", Icon: GraduationCap, ad: "Ablam Ders", acik: true },
               { href: "/kariyer", Icon: Briefcase, ad: "Ablam Kariyer", acik: KARIYER_ACIK },
               { href: "/youtube", Icon: Youtube, ad: "Ablam YouTube", acik: YOUTUBE_ACIK },
-            ].map(({ href, Icon, ad, acik }) =>
+              { href: "/kanvas", Icon: PenLine, ad: "Ablam Kanvas", acik: true },
+            ].map(({ href, Icon, ad, acik }, i, hepsi) =>
               acik ? (
                 <Link
                   key={href}
                   href={href}
-                  className="glass group flex items-center gap-2.5 rounded-xl border border-[var(--border)] px-3 py-2.5 transition-all duration-200 hover:border-[var(--border-hover)] hover:bg-white/[0.04]"
+                  // Tek sayıda kart varsa sonuncusu iki sütunu kaplasın, ızgarada yalnız kalmasın
+                  className={`${i === hepsi.length - 1 && hepsi.length % 2 ? "col-span-2 " : ""}glass group flex items-center gap-2.5 rounded-xl border border-[var(--border)] px-3 py-2.5 transition-all duration-200 hover:border-[var(--border-hover)] hover:bg-white/[0.04]`}
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]/80 transition-colors duration-200 group-hover:bg-[var(--accent)]/15 group-hover:text-[var(--accent)]">
                     <Icon size={15} />

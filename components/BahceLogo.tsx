@@ -70,6 +70,7 @@ export const MODUL_PALETLERI = {
   sheets: { cicek: "#F4AE6A", cizgi: "#FFF3E2" },
   kariyer: { cicek: "#C3A6EE", cizgi: "#F7F0FF" },
   youtube: { cicek: "#E35D4E", cizgi: "#FFDCD5" },
+  kanvas: { cicek: "#7DBBEE", cizgi: "#EEF7FF" },
 } satisfies Record<string, Partial<BahcePaleti>>;
 
 type Nokta = [number, number];

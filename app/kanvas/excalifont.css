@@ -1,0 +1,66 @@
+/*
+ * Excalifont — Excalidraw'ın el yazısı metin fontu (Ablam Kanvas'taki yazılar).
+ * Kaynak: @excalidraw/excalidraw@0.18.1 npm paketi (dist/prod/fonts/Excalifont),
+ * lisans: SIL Open Font License 1.1 (https://plus.excalidraw.com/excalifont).
+ *
+ * Excalidraw fontu karakter gruplarına bölünmüş dağıtıyor; tarayıcı yalnızca
+ * sayfada geçen karakterlerin dosyasını indirir. Aralıklar dosyaların kendi
+ * karakter tablosundan çıkarıldı. Türkçe harflerin hepsi var; ², √, ≤ gibi bazı
+ * matematik sembolleri yok, onlar yedek fonttan (sitenin yazı tipi) geliyor.
+ */
+@font-face {
+  font-family: "Excalifont";
+  src: url("/fonts/excalifont/excalifont-a88b72a24.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+20-7E, U+A0-A3, U+A5-A6, U+A8-AB, U+AD-B1, U+B4, U+B6-B8, U+BA-FF, U+131, U+152-153, U+2BC, U+2C6, U+2DA, U+2DC, U+304, U+308, U+2013-2014, U+2018-201A, U+201C-201E, U+2020, U+2022, U+2024-2026, U+2030, U+2039-203A, U+20AC, U+2122, U+2212;
+}
+@font-face {
+  font-family: "Excalifont";
+  src: url("/fonts/excalifont/excalifont-b9dcf9d2e.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+400-45F, U+490-491, U+2116;
+}
+@font-face {
+  font-family: "Excalifont";
+  src: url("/fonts/excalifont/excalifont-be310b9bc.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+100-130, U+132-137, U+139-149, U+14C-151, U+154-17E, U+192, U+1FC-1FF, U+218-21B, U+237, U+1E80-1E85, U+1EF2-1EF3, U+2113;
+}
+@font-face {
+  font-family: "Excalifont";
+  src: url("/fonts/excalifont/excalifont-41b173a47.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+37E, U+384-38A, U+38C, U+38E-393, U+395-3A1, U+3A3-3A8, U+3AA-3CF, U+3D7;
+}
+@font-face {
+  font-family: "Excalifont";
+  src: url("/fonts/excalifont/excalifont-349fac6ca.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+462-463, U+472-475, U+4D8-4D9, U+4E2-4E3, U+4E6-4E9, U+4EE-4EF;
+}
+@font-face {
+  font-family: "Excalifont";
+  src: url("/fonts/excalifont/excalifont-3f2c5db56.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+2C7, U+2D8-2D9, U+2DB, U+2DD, U+302, U+306-307, U+30A-30C, U+326-328, U+212E, U+2211, U+FB01-FB02;
+}
+@font-face {
+  font-family: "Excalifont";
+  src: url("/fonts/excalifont/excalifont-623ccf21b.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+300-301, U+303;
+}
