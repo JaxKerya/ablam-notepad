@@ -8,8 +8,7 @@ import { supabase } from "@/lib/supabase-browser";
 import { useToast } from "@/components/Toast";
 import { useModal } from "@/components/useModal";
 import BahceLogo, { MODUL_PALETLERI } from "@/components/BahceLogo";
-import ProfilSecici from "@/components/ders/ProfilSecici";
-import { aktifProfil, PROFIL_ADI, profilDogrula } from "@/lib/profil";
+import { aktifProfil } from "@/lib/profil";
 import { tarihMetni } from "@/lib/ders";
 import { ZEMIN, type Kanvas } from "@/lib/kanvas";
 
@@ -121,8 +120,6 @@ export default function KanvasListesi() {
         <ArrowLeft size={14} />
         <span>Ana sayfa</span>
       </Link>
-      {/* Kim çiziyor: karşı tarafta imlecin üstünde bu ad görünüyor */}
-      <ProfilSecici />
 
       <div className="relative z-10 mx-auto max-w-3xl px-5 pb-20 pt-24 sm:pt-28">
         <div className="animate-fade-in mb-10 flex flex-col items-center text-center">
@@ -220,7 +217,6 @@ export default function KanvasListesi() {
                       )}
                       <p className="mt-0.5 truncate text-[11.5px] text-white/35">
                         {k.oge} öğe · {tarihMetni(k.updated_at)}
-                        {k.olusturan ? ` · ${PROFIL_ADI[profilDogrula(k.olusturan)]}` : ""}
                       </p>
                     </div>
                     <button
