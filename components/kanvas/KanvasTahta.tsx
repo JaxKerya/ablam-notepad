@@ -68,6 +68,8 @@ const TASLAK_ARALIK = 50, IMLEC_ARALIK = 70;
  * birlikte uzar. Gecikme = en uzun mesaj aralığı + ağ titremesi payı.
  */
 const OYNATMA_GECIKMESI = 130;
+/** Karşı tarafın imleci; hem koyu tahtada hem açık kâğıtta seçiliyor */
+const UZAK_IMLEC_RENGI = "#FF7A59";
 interface Ornek { t: number; x: number; y: number }
 
 /** Örnekler arasında t anındaki konum (doğrusal ara değer); t sondan büyükse son konum */
@@ -379,8 +381,10 @@ export default function KanvasTahta({ kanvas }: { kanvas: Kanvas }) {
       ctx.arc((im.x - k.x) * k.z, (im.y - k.y) * k.z, 9, 0, Math.PI * 2);
       ctx.stroke();
     }
-    // Karşı tarafın imleci: isimsiz, sıradan bir fare oku (kimin olduğu bilinemiyor:
-    // profil seçimi cihazda, yanlış seçilmiş olabilir)
+    // Karşı tarafın imleci: isimsiz (kimin olduğu bilinemiyor: profil seçimi cihazda,
+    // yanlış seçilmiş olabilir). Kendi fare okumuzla karışmasın diye ondan bilerek
+    // farklı: kuyruksuz, yuvarlatılmış, mercan renkli üçgen ok, beyaz kenarlı.
+    // Beyaz/siyah klasik ok Windows imlecinin aynısıydı (17.10.2026).
     for (const [, c] of imlecler.current) {
       if (simdi - c.son > 15_000) continue;
       const p = aradeger(c.ornekler, an);
@@ -392,23 +396,20 @@ export default function KanvasTahta({ kanvas }: { kanvas: Kanvas }) {
       ctx.translate(Math.round(sx) + 0.5, Math.round(sy) + 0.5);
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.lineTo(0, 16.5);
-      ctx.lineTo(4.2, 12.6);
-      ctx.lineTo(7, 18.8);
-      ctx.lineTo(9.7, 17.6);
-      ctx.lineTo(7, 11.6);
-      ctx.lineTo(12.4, 11.6);
+      ctx.lineTo(5, 17);
+      ctx.lineTo(8.6, 10.2);
+      ctx.lineTo(16, 7.6);
       ctx.closePath();
-      ctx.shadowColor = "rgba(0,0,0,0.25)";
-      ctx.shadowBlur = 3;
-      ctx.shadowOffsetY = 1;
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fill();
-      ctx.shadowColor = "transparent";
-      ctx.strokeStyle = "#111";
-      ctx.lineWidth = 1;
       ctx.lineJoin = "round";
+      ctx.shadowColor = "rgba(0,0,0,0.3)";
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetY = 1;
+      ctx.strokeStyle = "#FFFFFF";
+      ctx.lineWidth = 3;
       ctx.stroke();
+      ctx.shadowColor = "transparent";
+      ctx.fillStyle = UZAK_IMLEC_RENGI;
+      ctx.fill();
       ctx.restore();
     }
     if (devam) istek();
