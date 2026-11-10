@@ -1255,9 +1255,9 @@ function EslesmeKarti({
   const kunye = [kaynakEtiketi(e.ilan.kaynak), `${tarihMetni(e.degerlendirildi)} bulundu`, sonBasvuruMetni(e.ilan.son_basvuru)].filter(Boolean).join(" · ");
 
   return (
-    <article className={`rounded-2xl p-3 ring-1 sm:p-4 ${basvurdu ? "bg-[var(--accent)]/[0.06]" : "bg-[var(--k-card)]"} ${halka}`}>
+    <article className={`rounded-2xl p-4 ring-1 sm:p-5 ${basvurdu ? "bg-[var(--accent)]/[0.06]" : "bg-[var(--k-card)]"} ${halka}`}>
       {/* 1: title (+ new dot, open-ad corner button) */}
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-3">
         {yeni && <span aria-hidden className="mt-[7px] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[var(--accent)]" />}
         <h3 className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-5 text-[var(--k-t1)]">
           {yeni && <span className="sr-only">Yeni: </span>}
@@ -1284,7 +1284,7 @@ function EslesmeKarti({
             rel="noopener noreferrer"
             tabIndex={-1}
             aria-hidden
-            className="relative -my-1 -mr-1 grid h-7 w-7 flex-shrink-0 place-items-center rounded-full bg-white/[0.06] text-[var(--k-t2)] transition-colors after:absolute after:-inset-1.5 after:content-[''] hover:bg-white/[0.10] hover:text-[var(--k-t1)]"
+            className="relative -mt-0.5 grid h-7 w-7 flex-shrink-0 place-items-center rounded-full bg-white/[0.06] text-[var(--k-t2)] transition-colors after:absolute after:-inset-1.5 after:content-[''] hover:bg-white/[0.10] hover:text-[var(--k-t1)]"
           >
             <ExternalLink size={14} aria-hidden />
           </a>
@@ -1293,7 +1293,7 @@ function EslesmeKarti({
 
       {/* 2: where (city kept whole, company truncates first) + deadline + fit. Chips wrap below
           when the place would get narrower than ~9rem. */}
-      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] leading-5 text-[var(--k-t2)]">
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[12.5px] leading-5 text-[var(--k-t2)]">
         <span className="flex min-w-0 flex-[1_1_9rem]">
           {sirket && <span className="min-w-0 truncate">{sirket}</span>}
           {sirket && sehir && (
@@ -1328,7 +1328,7 @@ function EslesmeKarti({
         onClick={() => setGerekceAcik((a) => !a)}
         aria-expanded={gerekceAcik}
         aria-controls={ayrintiId}
-        className={`-mx-1 flex min-h-9 w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-lg px-1 text-left text-[12.5px] transition-colors hover:bg-white/[0.04] ${ODAK}`}
+        className={`-mx-1.5 mt-1 flex min-h-9 w-[calc(100%+0.75rem)] items-center gap-1.5 rounded-lg px-1.5 text-left text-[12.5px] transition-colors hover:bg-white/[0.04] ${ODAK}`}
       >
         <span className="sr-only">Neden uygun: </span>
         {e.uyusan.length > 0 ? (
@@ -1396,7 +1396,7 @@ function EslesmeKarti({
       )}
 
       {/* 4: actions. On an applied card the feedback buttons are hidden (they are locked anyway). */}
-      <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+      <div className="mt-2.5 grid grid-cols-3 gap-2">
         <EylemDugmesi
           ref={basvuruDugme}
           aktif={basvurdu}
