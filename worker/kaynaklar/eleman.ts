@@ -112,22 +112,25 @@ function kartlar(html: string, pozisyonKelimeleri: string[]): { url: string; id:
 export async function elemanTara(secenekler: ElemanSecenekleri) {
   const { aramaTerimleri, sehirler = [], bilinenKimlikler = new Set<string>() } = secenekler;
   const log = secenekler.log ?? (() => {});
-  if (!sehirler.length) return { ilanlar: [], gorulen: 0 };
-
-  // 1) Terimleri pozisyon sayfalarına çöz (şehir başına), aynı sayfa bir kez
+  // 1) Terimleri pozisyon sayfalarına çöz (şehir başına), aynı sayfa bir kez.
+  // No cities in the profile means "all of Türkiye": the search without a
+  // province (/is-ilanlari?aranan=…) redirects to the nationwide position page
+  // (/is-ilanlari/buro-personeli). Checked 10.11.2026.
   const pozisyonSayfalari = new Set<string>();
   const cozulemeyen = new Set<string>();
-  for (const sehir of sehirler) {
-    const il = ilSlug(sehir);
+  for (const sehir of sehirler.length ? sehirler : [null]) {
+    const il = sehir ? ilSlug(sehir) : null;
     for (const terim of aramaTerimleri) {
       try {
-        const cevap = await getir(`${TABAN}/is-ilanlari/${il}?aranan=${encodeURIComponent(terim)}`, { headers: BASLIKLAR });
+        const yol = il ? `/is-ilanlari/${il}` : "/is-ilanlari";
+        const cevap = await getir(`${TABAN}${yol}?aranan=${encodeURIComponent(terim)}`, { headers: BASLIKLAR });
         const son = new URL(cevap.url);
-        const parcalar = son.pathname.split("/").filter(Boolean); // ["is-ilanlari", il, pozisyon?]
-        if (parcalar.length >= 3 && parcalar[1] === il) pozisyonSayfalari.add(`${son.origin}${son.pathname}`);
+        const parcalar = son.pathname.split("/").filter(Boolean); // ["is-ilanlari", il?, pozisyon?]
+        const pozisyonSayfasi = il ? parcalar.length >= 3 && parcalar[1] === il : parcalar.length === 2 && parcalar[0] === "is-ilanlari";
+        if (pozisyonSayfasi) pozisyonSayfalari.add(`${son.origin}${son.pathname}`);
         else cozulemeyen.add(terim);
       } catch (e) {
-        log(`Eleman.net "${terim}" (${sehir}) çözülemedi: ${(e as Error).message}`);
+        log(`Eleman.net "${terim}" (${sehir ?? "tüm iller"}) çözülemedi: ${(e as Error).message}`);
       }
       await nazikBekle();
     }

@@ -357,6 +357,9 @@ async function butceyiKur(db: SupabaseClient, log: (m: string) => void) {
  * Eşleşmesi olmayan kayıtlı ilanlar: önceki koşuda model düşmüşse ya da
  * profil o sırada boşsa burada kalırlar. Her koşunun başında yeniden denenir.
  */
+/** Unscored or flagged-for-rescore ads retried per run (YARIM_SINIRI env overrides) */
+const YARIM_SINIRI = Number(process.env.YARIM_SINIRI) || 150;
+
 export async function yarimKalanlariTamamla(
   db: SupabaseClient,
   profil: KariyerProfili,
@@ -371,9 +374,11 @@ export async function yarimKalanlariTamamla(
     .select("id, kaynak, kaynak_id, baslik, sirket, sehir, aciklama, url, son_basvuru, kariyer_eslesmeler(ilan_id)")
     .is("kariyer_eslesmeler", null)
     .order("gorulme", { ascending: false })
-    .limit(25);
+    // 25 per run left a 937-ad backlog after the 10.11.2026 credit outage (~37 h to
+    // clear). Most are dropped by the cheap gate; the daily cost cap still applies.
+    .limit(YARIM_SINIRI);
   const eslesmesizler = (data ?? []).map((r) => ({ ilan: r, oncekiMaliyetUsd: 0 }));
-  const yenidenler = await yenidenPuanlanacaklar(db, Math.max(0, 25 - eslesmesizler.length));
+  const yenidenler = await yenidenPuanlanacaklar(db, Math.max(0, YARIM_SINIRI - eslesmesizler.length));
   const liste = [...eslesmesizler, ...yenidenler];
   if (!liste.length) return ozet;
 

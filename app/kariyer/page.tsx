@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
-  Activity,
   ArrowLeft,
+  Briefcase,
   Check,
+  ChevronDown,
+  ChevronRight,
+  CircleCheck,
   ExternalLink,
-  ListChecks,
   Loader2,
   Plus,
   RefreshCw,
@@ -28,7 +30,6 @@ import { useToast } from "@/components/Toast";
 import BahceLogo, { MODUL_PALETLERI } from "@/components/BahceLogo";
 import {
   BOS_PROFIL,
-  KARAR_ETIKETI,
   kalanGun,
   KARIYER_ACIK,
   kaynakEtiketi,
@@ -138,12 +139,62 @@ function kaynakDurumlari(satirlar: Tarama[]): KaynakDurumu[] {
 
 const SIRA: Karar[] = ["bildir", "ozet", "listele"];
 
+// Decision tone (local redefinition): no borders, no amber; the colour only says how well it fits.
 const KARAR_STIL: Record<Karar, string> = {
-  bildir: "border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent-light)]",
-  ozet: "border-amber-400/35 bg-amber-400/10 text-amber-200",
-  listele: "border-white/15 bg-white/[0.04] text-white/50",
-  ele: "border-white/10 bg-white/[0.03] text-white/30",
+  bildir: "bg-[var(--accent)]/15 text-[var(--accent-light)]",
+  ozet: "bg-white/[0.08] text-[var(--k-t1)]",
+  listele: "bg-white/[0.05] text-[var(--k-t2)]",
+  ele: "bg-white/[0.03] text-[var(--k-t3)]",
 };
+
+/** Page-only group names: plain, non-judging, same wording as the e-mail. DB values stay as they are. */
+const GRUP: Record<Karar, { etiket: string; aciklama: string }> = {
+  bildir: { etiket: "Sana çok uygun", aciklama: "Profilinle en çok örtüşenler; önce bunlara bak" },
+  ozet: { etiket: "Bakmaya değer", aciklama: "Kısmen uyuyor, bir göz at" },
+  listele: { etiket: "Daha az uygun", aciklama: "Uyumu düşük; vaktin olursa bak" },
+  // Never shown as a group (the list excludes "ele"); only counted in the full list
+  ele: { etiket: "Uymadı", aciklama: "" },
+};
+
+/**
+ * Local soft-contrast tokens. Set on <main> and again on the portal panel,
+ * which is mounted on document.body and would not inherit them otherwise.
+ * Text levels are tuned for small type on the sage background: t2 stays near
+ * 4.5:1 on plain sage, t3 only on darker surfaces (cards, panels) where it
+ * clears 4.5:1. Softness comes from weight and size, not from low opacity.
+ */
+const KARIYER_TOKENLARI = {
+  "--k-t1": "var(--foreground)",
+  "--k-t2": "rgba(255,255,255,.90)",
+  "--k-t3": "rgba(255,255,255,.78)",
+  "--k-card": "rgba(0,0,0,.14)",
+  "--k-card-open": "rgba(0,0,0,.20)",
+  "--k-hair": "rgba(255,255,255,.07)",
+  // Darker than the page so chip text keeps its contrast (a light chip washed it out)
+  "--k-chip": "rgba(0,0,0,.12)",
+  "--k-chip-hover": "rgba(0,0,0,.20)",
+  "--k-chip-on": "rgb(var(--accent-rgb) / .18)",
+} as React.CSSProperties;
+
+/** Visible keyboard focus for every button and link */
+const ODAK =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgb(var(--accent-rgb)/0.7)]";
+
+/**
+ * Same focus look for text fields. Not the global .focus-ring: its unlayered
+ * `outline: none` would beat these utilities.
+ */
+const GIRDI_ODAK =
+  "transition-colors focus:border-[rgb(var(--accent-rgb)/0.5)] focus:outline focus:outline-2 focus:outline-offset-0 focus:outline-[rgb(var(--accent-rgb)/0.7)]";
+
+/** Shared chip style: filter chips and reason chips look the same */
+const cipSinifi = (aktif: boolean) =>
+  `flex h-10 items-center gap-1 rounded-full px-3.5 text-[12.5px] transition-colors ${ODAK} ${
+    aktif ? "bg-[var(--k-chip-on)] text-[var(--accent-light)]" : "bg-[var(--k-chip)] text-[var(--k-t2)] hover:bg-[var(--k-chip-hover)] hover:text-[var(--k-t1)]"
+  }`;
+
+/** Remembered open/closed choice for the "Daha az uygun" group */
+const ZAYIF_ANAHTARI = "kariyer-zayif-acik";
 
 export default function KariyerSayfasi() {
   // Bölüm kapalıysa "yakında" ekranı. ?onizleme=1 ile gelen (geliştiren kişi)
@@ -172,17 +223,11 @@ export default function KariyerSayfasi() {
 function YakindaEkrani({ gizli }: { gizli: boolean }) {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-x-hidden px-5">
-      <Link
-        href="/"
-        className="glass fixed top-5 left-5 z-20 flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85 sm:top-6 sm:left-7"
-      >
-        <ArrowLeft size={14} />
-        <span>Ana sayfa</span>
-      </Link>
-      <div className={`animate-fade-in flex flex-col items-center text-center transition-opacity ${gizli ? "opacity-0" : ""}`}>
+      <AnaSayfaDugmesi />
+      <div className={`animate-fade-in motion-reduce:animate-none flex flex-col items-center text-center transition-opacity ${gizli ? "opacity-0" : ""}`}>
         <h1 className="sr-only">Ablam Kariyer</h1>
         <BahceLogo metin="Ablam Kariyer" palet={MODUL_PALETLERI.kariyer} yukseklik={200} className="w-[min(36rem,90vw)]" />
-        <span className="-mt-6 rounded-full border border-[var(--accent)]/25 bg-[var(--accent)]/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-[var(--accent-light)]/80">
+        <span className="-mt-6 rounded-full border border-[var(--accent)]/25 bg-[var(--accent)]/10 px-3 py-1 text-[12px] font-medium text-[var(--accent-light)]/85">
           Yakında
         </span>
       </div>
@@ -394,7 +439,9 @@ function KariyerUygulamasi() {
       })
       .eq("ilan_id", e.ilan_id);
     if (error) {
-      addToast("Kaydedilemedi: " + error.message, "error");
+      // Raw message goes to the console for the developer; the toast stays plain
+      console.error(error);
+      addToast("Kaydedilemedi, tekrar dene.", "error");
       getir();
     }
   };
@@ -416,19 +463,26 @@ function KariyerUygulamasi() {
     };
     const uygula = (l: Eslesme[]) => l.map((x) => (x.ilan_id === e.ilan_id ? { ...x, ...yama } : x));
     setEslesmeler(uygula);
-    // Başvurularım listesi yalnızca işaretlileri taşır: geri alınan satır anında düşer
-    setBasvurular((l) => (l ? uygula(l).filter((x) => x.basvuru_durumu) : l));
+    // Başvurularım listesi yalnızca işaretlileri taşır: geri alınan satır anında düşer.
+    // Re-marking a row that already left the list (undo on that screen) puts it back.
+    setBasvurular((l) =>
+      l ? (basvurdu && !l.some((x) => x.ilan_id === e.ilan_id) ? [...l, { ...e, ...yama }] : uygula(l).filter((x) => x.basvuru_durumu)) : l
+    );
     setBasvuruSayisi((n) => n + (basvurdu && !e.basvuru_durumu ? 1 : !basvurdu && e.basvuru_durumu ? -1 : 0));
     const { error } = await supabase.from("kariyer_eslesmeler").update(yama).eq("ilan_id", e.ilan_id);
     if (error) {
-      addToast("Kaydedilemedi: " + error.message, "error");
+      console.error(error);
+      addToast("Kaydedilemedi, tekrar dene.", "error");
       getir();
       basvurulariGetir();
     }
   };
 
+  // Başvurularım is its own tab now; the full list ("tumu") still belongs to İlanlar
+  const vurguSekme: Sekme = etkinSekme === "tumu" ? "eslesmeler" : etkinSekme;
+
   return (
-    <main className="relative min-h-screen overflow-x-hidden">
+    <main className="relative min-h-screen overflow-x-hidden" style={KARIYER_TOKENLARI}>
       <div
         className="pointer-events-none fixed inset-0"
         style={{
@@ -439,51 +493,75 @@ function KariyerUygulamasi() {
         }}
       />
 
-      <Link
-        href="/"
-        className="glass fixed top-5 left-5 z-20 animate-fade-in flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2 text-[13px] text-white/55 transition-all duration-200 hover:border-[var(--border-hover)] hover:text-white/85 sm:top-6 sm:left-7"
-      >
-        <ArrowLeft size={14} />
-        <span>Ana sayfa</span>
-      </Link>
+      <AnaSayfaDugmesi />
 
-      <div className="relative z-10 mx-auto w-full max-w-2xl px-5 pb-24 pt-24 sm:pt-28">
-        <div className="mb-8 flex flex-col items-center text-center">
+      <div className="relative z-10 mx-auto w-full max-w-2xl px-4 pb-24 pt-16 sm:pt-28">
+        <div className="mb-2 flex flex-col items-center text-center">
           {/* Bahçe logosu (components/BahceLogo): yazı açılışta kendiliğinden yazılır,
               harflerden güller açar. Başlığın kendisi ekran okuyucu için duruyor. */}
           <h1 className="sr-only">Ablam Kariyer</h1>
           <BahceLogo metin="Ablam Kariyer" palet={MODUL_PALETLERI.kariyer} yukseklik={200} className="-mt-10 w-full max-w-xl sm:-mt-16" />
         </div>
 
-        {/* Sekmeler */}
-        <div className="glass mb-6 flex rounded-xl border border-[var(--border)] p-1">
+        {/* Tabs. The middle column is a little wider so "Başvurularım" + badge fits at 320-375 px. */}
+        <nav aria-label="Bölümler" className="glass mb-4 grid grid-cols-[1fr_1.35fr_1fr] gap-1 rounded-2xl p-1 ring-1 ring-[var(--k-hair)]">
           {(
             [
-              ["eslesmeler", "Eşleşmeler", Sparkles],
-              ["profil", "Profil", UserRound],
+              ["eslesmeler", "İlanlar", Briefcase],
+              ["basvurular", "Başvurularım", Send],
+              ["profil", "Profilim", UserRound],
             ] as const
-          ).map(([ad, etiket, Ikon]) => (
-            <button
-              key={ad}
-              onClick={() => setSekme(ad)}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-[13px] transition-colors ${
-                (etkinSekme === "tumu" || etkinSekme === "basvurular" ? "eslesmeler" : etkinSekme) === ad ? "bg-[var(--accent)]/15 text-[var(--accent-light)]" : "text-white/45 hover:text-white/75"
-              }`}
-            >
-              <Ikon size={14} />
-              {etiket}
-            </button>
-          ))}
-        </div>
+          ).map(([ad, etiket, Ikon]) => {
+            const aktif = vurguSekme === ad;
+            const kapali = profilBos && ad !== "profil";
+            return (
+              <button
+                key={ad}
+                type="button"
+                onClick={() => {
+                  // A closed tab must not change hidden state (it would open after saving); say why instead
+                  if (kapali) {
+                    addToast("Önce profilini kaydet; ilanlar sonra burada görünür.", "info");
+                    return;
+                  }
+                  setSekme(ad);
+                }}
+                aria-current={aktif ? "page" : undefined}
+                aria-disabled={kapali ? "true" : undefined}
+                aria-describedby={kapali ? "kariyer-kapali-ipucu" : undefined}
+                className={`flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl px-1 text-[13.5px] font-medium transition-colors ${ODAK} ${
+                  aktif ? "bg-[var(--accent)]/14 text-[var(--accent-light)]" : "text-[var(--k-t2)] hover:text-[var(--k-t1)]"
+                } ${kapali ? "opacity-50" : ""}`}
+              >
+                <Ikon size={15} className="hidden flex-shrink-0 sm:inline" aria-hidden />
+                <span className="truncate">{etiket}</span>
+                {ad === "basvurular" && basvuruSayisi > 0 && (
+                  <span className="grid h-[18px] min-w-[18px] flex-shrink-0 place-items-center rounded-full bg-white/[0.12] px-1 text-[11px] tabular-nums">
+                    {basvuruSayisi}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {profilBos && (
+          <p id="kariyer-kapali-ipucu" className="-mt-1 mb-3 text-center text-[12.5px] leading-[18px] text-[var(--k-t2)]">
+            İlanlar ve Başvurularım, profilini kaydedince açılır.
+          </p>
+        )}
 
         {yukleniyor ? (
-          <div className="flex justify-center py-16 text-white/30">
-            <Loader2 size={20} className="animate-spin" />
-          </div>
+          <IlanIskeleti />
         ) : etkinSekme === "tumu" ? (
           <TumuEkrani liste={tumu} onGeri={() => setSekme("eslesmeler")} />
         ) : etkinSekme === "basvurular" ? (
-          <BasvurularEkrani liste={basvurular} simdi={basvuruZamani} onGeri={() => setSekme("eslesmeler")} onGeriAl={(e) => basvuruDegistir(e, false)} />
+          <BasvurularEkrani
+            liste={basvurular}
+            simdi={basvuruZamani}
+            onGeriAl={(e) => basvuruDegistir(e, false)}
+            onYenidenEkle={(e) => basvuruDegistir(e, true)}
+          />
         ) : etkinSekme === "profil" ? (
           <ProfilEkrani key={profilSatiri?.updated_at ?? "yok"} satir={profilSatiri} onKaydedildi={getir} />
         ) : (
@@ -495,8 +573,6 @@ function KariyerUygulamasi() {
             onBasvuru={basvuruDegistir}
             onProfileGit={() => setSekme("profil")}
             onTumuGit={() => setSekme("tumu")}
-            onBasvurularGit={() => setSekme("basvurular")}
-            basvuruSayisi={basvuruSayisi}
             toplamInceleme={toplamInceleme}
             kaynaklar={kaynaklar}
             listeHatasi={listeHatasi}
@@ -514,6 +590,49 @@ function KariyerUygulamasi() {
   );
 }
 
+/** Home link: a 40 px round icon on phones (absolute, so it never floats over cards), labelled and fixed from sm up */
+function AnaSayfaDugmesi() {
+  return (
+    <Link
+      href="/"
+      aria-label="Ana sayfa"
+      className={`glass absolute top-4 left-4 z-20 flex h-10 w-10 items-center justify-center gap-2 rounded-full border border-[var(--border)] text-[13px] text-[var(--k-t2)] transition-colors duration-200 hover:border-[var(--border-hover)] hover:text-[var(--k-t1)] sm:fixed sm:top-6 sm:left-7 sm:h-auto sm:w-auto sm:rounded-xl sm:px-3 sm:py-2 ${ODAK}`}
+    >
+      <ArrowLeft size={16} aria-hidden />
+      <span className="hidden sm:inline">Ana sayfa</span>
+    </Link>
+  );
+}
+
+/** First-load placeholder: summary bar + four card shapes instead of a spinner */
+function IlanIskeleti() {
+  return (
+    <div aria-busy="true" className="space-y-2">
+      <span className="sr-only">Yükleniyor</span>
+      <div className="mb-3 h-11 rounded-2xl bg-white/[0.05] motion-safe:animate-pulse" />
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="flex h-[140px] flex-col rounded-2xl bg-white/[0.05] p-3 motion-safe:animate-pulse">
+          <div className="h-3.5 w-[70%] rounded-full bg-white/[0.07]" />
+          <div className="mt-2 h-2.5 w-[45%] rounded-full bg-white/[0.07]" />
+          <div className="mt-auto h-11 w-full rounded-xl bg-white/[0.07]" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Row placeholder for the list screens */
+function SatirIskeleti({ adet }: { adet: number }) {
+  return (
+    <div aria-busy="true" className="space-y-2">
+      <span className="sr-only">Yükleniyor</span>
+      {Array.from({ length: adet }, (_, i) => (
+        <div key={i} className="h-14 rounded-2xl bg-white/[0.05] motion-safe:animate-pulse" />
+      ))}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- tümü
 
 /**
@@ -523,14 +642,19 @@ function KariyerUygulamasi() {
  */
 function TumuEkrani({ liste, onGeri }: { liste: Eslesme[] | null; onGeri: () => void }) {
   const geri = (
-    <button onClick={onGeri} className="mb-4 flex items-center gap-1.5 text-[12.5px] text-white/40 transition-colors hover:text-white/75">
-      <ArrowLeft size={13} /> Eşleşmelere dön
+    <button
+      type="button"
+      onClick={onGeri}
+      className={`-ml-2 mb-2 flex h-10 items-center gap-1.5 rounded-xl px-2 text-[13px] text-[var(--k-t2)] transition-colors hover:bg-[var(--k-chip)] hover:text-[var(--k-t1)] ${ODAK}`}
+    >
+      <ArrowLeft size={14} aria-hidden /> İlanlara dön
     </button>
   );
   if (liste === null) {
     return (
-      <div className="flex justify-center py-16 text-white/30">
-        <Loader2 size={20} className="animate-spin" />
+      <div>
+        {geri}
+        <SatirIskeleti adet={6} />
       </div>
     );
   }
@@ -538,42 +662,59 @@ function TumuEkrani({ liste, onGeri }: { liste: Eslesme[] | null; onGeri: () => 
     return (
       <div>
         {geri}
-        <div className="glass rounded-2xl border border-[var(--border)] px-5 py-10 text-center text-[13.5px] text-white/45">Henüz incelenen ilan yok.</div>
+        <div className="rounded-2xl p-6 text-center text-[13.5px] text-[var(--k-t2)] ring-1 ring-[var(--k-hair)]">Henüz incelenen ilan yok.</div>
       </div>
     );
   }
   const sayim = liste.reduce<Record<string, number>>((t, e) => ({ ...t, [e.karar]: (t[e.karar] ?? 0) + 1 }), {});
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in motion-reduce:animate-none">
       {geri}
-      <p className="mb-4 text-center text-[11.5px] text-white/30">
-        Son {liste.length} inceleme · {SIRA.map((k) => `${sayim[k] ?? 0} ${KARAR_ETIKETI[k].toLocaleLowerCase("tr")}`).join(" · ")} · {sayim.ele ?? 0} elendi
+      <p className="mb-3 text-[12.5px] leading-[18px] text-[var(--k-t2)]">
+        Sistemin baktığı son {liste.length} ilan · {SIRA.map((k) => `${sayim[k] ?? 0} ${GRUP[k].etiket.toLocaleLowerCase("tr")}`).join(" · ")} ·{" "}
+        {sayim.ele ?? 0} uymadı
+        <span className="mt-0.5 block">
+          Uymayanlar profilinle örtüşmediği için İlanlar listesinde gösterilmiyor. Soldaki sayı 100 üzerinden uyum.
+        </span>
       </p>
-      <div className="glass divide-y divide-[var(--border)] overflow-hidden rounded-2xl border border-[var(--border)]">
+      <div className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl bg-[var(--k-card)] ring-1 ring-[var(--k-hair)]">
         {liste.map((e) => {
           const gecti = (kalanGun(e.ilan?.son_basvuru) ?? 0) < 0;
+          const elendi = e.karar === "ele";
           return (
-            <div key={e.ilan_id} className={`flex items-start gap-3 px-4 py-3 ${e.karar === "ele" || gecti ? "opacity-50" : ""}`}>
-              <span className={`mt-0.5 w-9 flex-shrink-0 rounded-md border px-1.5 py-0.5 text-center text-[11.5px] font-medium tabular-nums ${KARAR_STIL[e.karar]}`}>
-                {e.puan}
+            <div key={e.ilan_id} className="flex items-start gap-3 px-3.5 py-2.5">
+              <span className={`mt-0.5 w-9 flex-shrink-0 rounded-md px-1.5 py-0.5 text-center text-[11.5px] font-medium tabular-nums ${KARAR_STIL[e.karar]}`}>
+                <span aria-hidden>{e.puan}</span>
+                <span className="sr-only">Uyum {e.puan}/100</span>
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13.5px] text-white/85">
+                <p className={`text-[13.5px] ${elendi || gecti ? "text-[var(--k-t3)]" : "text-[var(--k-t1)]"}`}>
                   {e.ilan?.url ? (
-                    <a href={e.ilan.url} target="_blank" rel="noopener noreferrer" className="hover:text-[var(--accent-light)]">
+                    <a href={e.ilan.url} target="_blank" rel="noopener noreferrer" className={`block truncate rounded-sm hover:text-[var(--accent-light)] ${ODAK}`}>
                       {e.ilan.baslik}
+                      <span className="sr-only"> (yeni sekmede açılır)</span>
                     </a>
                   ) : (
-                    e.ilan?.baslik
+                    <span className="block truncate">{e.ilan?.baslik}</span>
                   )}
                 </p>
-                <p className="truncate text-[11.5px] text-white/35">
+                <p className="truncate text-[12px] text-[var(--k-t3)]">
                   {[e.ilan?.sirket, e.ilan?.sehir, kaynakEtiketi(e.ilan?.kaynak ?? ""), tarihMetni(e.degerlendirildi)].filter(Boolean).join(" · ")}
+                  {elendi && " · uymadı"}
                   {gecti && " · süresi geçti"}
-                  {e.basvuru_durumu ? " · başvurdun" : e.geri_bildirim && ` · ${e.geri_bildirim === "ilgilendim" ? "ilgilendin" : "ilgilenmedin"}`}
-                  {e.risk && <span className="text-red-300/80"> · ⚠ {e.uyarilar?.join(", ") || "şüpheli ilan"}</span>}
+                  {e.basvuru_durumu ? " · başvurdun" : e.geri_bildirim && ` · ${e.geri_bildirim === "ilgilendim" ? "ilgini çekti" : "uymaz dedin"}`}
+                  {e.risk && (
+                    <span className="text-rose-200/80">
+                      {" · "}
+                      <TriangleAlert size={11} className="-mt-0.5 inline" aria-hidden /> {e.uyarilar?.join(", ") || "şüpheli ilan"}
+                    </span>
+                  )}
                 </p>
-                {e.gerekce && <p className="mt-0.5 truncate text-[12px] text-white/50" title={e.gerekce}>{e.gerekce}</p>}
+                {e.gerekce && (
+                  <p className="mt-0.5 truncate text-[12px] text-[var(--k-t2)]" title={e.gerekce}>
+                    {e.gerekce}
+                  </p>
+                )}
               </div>
             </div>
           );
@@ -595,19 +736,34 @@ function KaynakPaneli({ kaynaklar, sorunlu }: { kaynaklar: KaynakDurumu[]; sorun
   const [acik, setAcik] = useState(false);
   const [konum, setKonum] = useState<{ top: number; left: number } | null>(null);
   const dugme = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const panelId = useId();
 
   const ac = () => {
     const r = dugme.current?.getBoundingClientRect();
-    if (r) setKonum({ top: r.bottom + 8, left: r.left + r.width / 2 });
+    if (r) {
+      // Keep the centred panel inside the viewport with an 8 px margin (trigger sits at the right edge)
+      const w = Math.min(0.92 * window.innerWidth, 352);
+      const orta = r.left + r.width / 2;
+      setKonum({ top: r.bottom + 8, left: Math.min(Math.max(orta, 8 + w / 2), window.innerWidth - 8 - w / 2) });
+    }
     setAcik((a) => !a);
   };
 
-  // Dışarı tıklayınca, Escape'te ve sayfa kayınca kapan
+  // Close on an outside press, on Escape (focus back to the trigger) and when the page scrolls.
+  // Presses and scrolling inside the panel itself keep it open.
   useEffect(() => {
     if (!acik) return;
+    panel.current?.focus();
     const kapat = (e: Event) => {
-      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
-      if (e instanceof MouseEvent && dugme.current?.contains(e.target as Node)) return;
+      if (e instanceof KeyboardEvent) {
+        if (e.key !== "Escape") return;
+        setAcik(false);
+        dugme.current?.focus();
+        return;
+      }
+      const hedef = e.target as Node;
+      if (dugme.current?.contains(hedef) || panel.current?.contains(hedef)) return;
       setAcik(false);
     };
     document.addEventListener("mousedown", kapat);
@@ -620,6 +776,8 @@ function KaynakPaneli({ kaynaklar, sorunlu }: { kaynaklar: KaynakDurumu[]; sorun
     };
   }, [acik]);
 
+  const etiket = sorunlu === 0 ? "Siteler" : sorunlu < kaynaklar.length ? `${sorunlu} site gecikti` : "Siteler gecikti";
+
   return (
     <>
       <button
@@ -627,33 +785,49 @@ function KaynakPaneli({ kaynaklar, sorunlu }: { kaynaklar: KaynakDurumu[]; sorun
         type="button"
         onClick={ac}
         aria-expanded={acik}
-        className={`glass flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12px] transition-colors hover:border-[var(--border-hover)] hover:text-white/85 ${
-          sorunlu ? "border-amber-400/40 text-amber-200/80" : "border-[var(--border)] text-white/50"
-        }`}
+        aria-controls={acik ? panelId : undefined}
+        title="Hangi sitelere bakıldığını göster"
+        className={`flex h-10 flex-shrink-0 items-center gap-1.5 rounded-full bg-[var(--k-chip)] px-3 text-[12.5px] text-[var(--k-t2)] transition-colors hover:bg-[var(--k-chip-hover)] hover:text-[var(--k-t1)] ${ODAK}`}
       >
-        <Activity size={13} />
-        {sorunlu ? `${kaynaklar.length} kaynak, ${sorunlu} sorunlu` : `${kaynaklar.length} kaynak çalışıyor`}
+        <span aria-hidden className={`h-2 w-2 flex-shrink-0 rounded-full ${sorunlu === 0 ? "bg-emerald-300/80" : "bg-amber-300"}`} />
+        {etiket}
       </button>
       {acik &&
         konum &&
         createPortal(
           <div
-            style={{ top: konum.top, left: konum.left }}
-            className="animate-fade-in-scale fixed z-[var(--z-panel)] w-[min(92vw,22rem)] -translate-x-1/2 divide-y divide-[var(--border)] overflow-hidden rounded-xl border border-[var(--border)] glass-strong shadow-xl shadow-black/40"
+            ref={panel}
+            id={panelId}
+            role="dialog"
+            aria-label="Site durumu"
+            tabIndex={-1}
+            style={{ ...KARIYER_TOKENLARI, top: konum.top, left: konum.left, maxHeight: `calc(100dvh - ${konum.top}px - 16px)` }}
+            className="animate-fade-in-scale fixed z-[var(--z-panel)] w-[min(92vw,22rem)] -translate-x-1/2 overflow-y-auto overscroll-contain rounded-2xl glass-strong shadow-xl shadow-black/30 outline-none ring-1 ring-[var(--k-hair)] motion-reduce:animate-none"
           >
-            {kaynaklar.map((k) => (
-              <div key={k.kaynak} className="flex items-start gap-2.5 px-3.5 py-2.5 text-left">
-                <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${k.sonHata ? "bg-red-400" : k.bayat ? "bg-amber-400" : "bg-emerald-400"}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[12.5px] text-white/85">
-                    {kaynakEtiketi(k.kaynak)}
-                    <span className="text-white/35"> · {k.sonBasari ? `${tarihMetni(k.sonBasari)}, ${k.bulunan} ilan` : "hiç başarılı tarama yok"}</span>
-                  </p>
-                  {k.sonHata && <p className="mt-0.5 truncate text-[11.5px] text-red-200/70" title={k.sonHata}>son koşu hata: {k.sonHata}</p>}
-                  {!k.sonHata && k.bayat && <p className="mt-0.5 text-[11.5px] text-amber-200/70">beklenenden uzun süredir taranmadı</p>}
+            <p className="px-3.5 pb-1 pt-3 text-[11.5px] text-[var(--k-t3)]">Bu liste bilgi içindir; bir şey yapman gerekmez.</p>
+            <div className="divide-y divide-white/[0.06]">
+              {kaynaklar.map((k) => (
+                <div key={k.kaynak} className="flex items-start gap-2.5 px-3.5 py-2.5 text-left">
+                  <span
+                    aria-hidden
+                    className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${k.sonHata ? "bg-rose-300/80" : k.bayat ? "bg-amber-300" : "bg-emerald-300/80"}`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12.5px] text-[var(--k-t1)]">
+                      {kaynakEtiketi(k.kaynak)}
+                      <span className="text-[var(--k-t3)]"> · {k.sonBasari ? `${tarihMetni(k.sonBasari)}, ${k.bulunan} ilan` : "henüz ilan alınamadı"}</span>
+                    </p>
+                    {k.sonHata && (
+                      // Raw error only as a tooltip, for the developer
+                      <p className="mt-0.5 text-[12px] text-rose-100/90" title={k.sonHata}>
+                        Son denemede açılamadı
+                      </p>
+                    )}
+                    {!k.sonHata && k.bayat && <p className="mt-0.5 text-[12px] text-amber-200">Bir süredir bakılamadı</p>}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>,
           document.body
         )}
@@ -671,8 +845,6 @@ function EslesmeEkrani({
   onBasvuru,
   onProfileGit,
   onTumuGit,
-  onBasvurularGit,
-  basvuruSayisi,
   toplamInceleme,
   kaynaklar,
   listeHatasi,
@@ -691,8 +863,6 @@ function EslesmeEkrani({
   onBasvuru: (e: Eslesme, basvurdu: boolean) => void;
   onProfileGit: () => void;
   onTumuGit: () => void;
-  onBasvurularGit: () => void;
-  basvuruSayisi: number;
   toplamInceleme: number | null;
   kaynaklar: KaynakDurumu[];
   listeHatasi: string | null;
@@ -709,123 +879,246 @@ function EslesmeEkrani({
   const suzgecAcik = secilenSehirler.length > 0 || son24;
   const sehirDegistir = (sehir: string) =>
     onSuzgec(secilenSehirler.includes(sehir) ? secilenSehirler.filter((x) => x !== sehir) : [...secilenSehirler, sehir], son24);
-  const cipSinifi = (aktif: boolean) =>
-    `rounded-full border px-3 py-1 text-[12px] transition-colors ${
-      aktif ? "border-[var(--accent)]/50 bg-[var(--accent)]/20 text-[var(--accent-light)]" : "border-white/15 bg-white/[0.04] text-white/50 hover:border-white/30 hover:text-white/80"
-    }`;
+
+  // "Daha az uygun" fold: open when the two upper groups are empty, else the remembered choice, else closed.
+  // null = no toggle in this visit yet, follow the default.
+  const [zayifSecim, setZayifSecim] = useState<boolean | null>(null);
+  const [zayifKayitli, setZayifKayitli] = useState(false);
+  useEffect(() => {
+    queueMicrotask(() => {
+      try {
+        setZayifKayitli(localStorage.getItem(ZAYIF_ANAHTARI) === "1");
+      } catch {
+        // storage blocked: stay closed
+      }
+    });
+  }, []);
+  const ustBos = gruplar.bildir.length === 0 && gruplar.ozet.length === 0;
+  const zayifAcik = zayifSecim ?? (ustBos || zayifKayitli);
+  const zayifDegistir = () => {
+    const yeni = !zayifAcik;
+    setZayifSecim(yeni);
+    try {
+      localStorage.setItem(ZAYIF_ANAHTARI, yeni ? "1" : "0");
+    } catch {
+      // not remembered, fine
+    }
+  };
+
+  const tetik = !profilBos && kaynaklar.length > 0 ? <KaynakPaneli kaynaklar={kaynaklar} sorunlu={sorunlu.length} /> : null;
+  const sessiz = !!sonTarama?.sessiz;
+  const aksadi = !sessiz && !!sonTarama?.hata;
 
   return (
-    <div className="animate-fade-in">
-      {/* Durum şeridi — sistem çalışıyor mu, tek satırda. 3 saatten eski tarama = sunucu sessiz, kırmızı. */}
-      <p className="mb-5 text-center text-[11.5px] text-white/30">
-        {sonTarama ? (
-          sonTarama.sessiz ? (
-            <span className="text-red-300/80">
-              Tarayıcı {tarihMetni(sonTarama.baslangic)}den beri sessiz — sunucuya bakılmalı
-            </span>
-          ) : sonTarama.hata ? (
-            <span className="text-red-300/70">
-              Son tarama {tarihMetni(sonTarama.baslangic)} hata verdi — sistem yeniden deneyecek
-            </span>
-          ) : (
-            <>
-              Son tarama {tarihMetni(sonTarama.baslangic)}
-              {bugun && ` · bugün ${bugun.kaynak} kaynaktan ${bugun.yeni} yeni ilan`}
-              {sonZiyaret && (
-                <>
-                  {" · "}
-                  <span className={ziyarettenBeriYeni ? "text-[var(--accent-light)]/80" : ""}>
-                    son bakışından beri {ziyarettenBeriYeni ? `${ziyarettenBeriYeni} yeni` : "yeni yok"}
-                  </span>
-                </>
+    <div className="animate-fade-in motion-reduce:animate-none">
+      {/* Summary row: what is new since the last visit, when the system last looked. Silent/error turns it into a soft box. */}
+      {sonTarama && (sessiz || aksadi) ? (
+        <div className={`mb-3 flex items-center gap-3 rounded-2xl p-3 ${sessiz ? "bg-rose-300/[0.10] text-rose-100/90" : "bg-amber-300/[0.10] text-amber-200"}`}>
+          <TriangleAlert size={14} className="flex-shrink-0 self-start mt-[3px]" aria-hidden />
+          <div className="min-w-0 flex-1 text-[13px] leading-5">
+            {sessiz ? (
+              <>
+                Sistem {tarihMetni(sonTarama.baslangic)}den beri yeni ilana bakamadı.
+                <span className="block text-[12px] opacity-85">Haber ver, düzeltilsin.</span>
+              </>
+            ) : (
+              <>Son deneme {tarihMetni(sonTarama.baslangic)} aksadı; sistem kendisi yeniden deneyecek.</>
+            )}
+          </div>
+          {tetik}
+        </div>
+      ) : (
+        <div className="mb-3 flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] leading-5 text-[var(--k-t1)]">
+              {sonZiyaret ? (
+                ziyarettenBeriYeni > 0 ? (
+                  <>
+                    Son bakışından beri <span className="font-medium text-[var(--accent-light)]">{ziyarettenBeriYeni} yeni ilan</span>
+                  </>
+                ) : (
+                  "Son bakışından beri yeni ilan yok"
+                )
+              ) : (
+                `Bugün ${bugun?.yeni ?? 0} yeni ilan bulundu`
               )}
-            </>
-          )
-        ) : (
-          "Henüz tarama yapılmadı"
-        )}
-      </p>
-
-      {/* Tüm incelenenler + kaynak sağlığı: sekme değil ama görünür — durum şeridinin hemen altında */}
-      {!profilBos && (
-        <div className="-mt-2 mb-5 flex flex-wrap items-center justify-center gap-2">
-          <button
-            onClick={onTumuGit}
-            className="glass flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3.5 py-1.5 text-[12px] text-white/50 transition-colors hover:border-[var(--border-hover)] hover:text-white/85"
-          >
-            <ListChecks size={13} />
-            İncelenen tüm ilanlar{toplamInceleme ? ` (${toplamInceleme})` : ""}
-          </button>
-          <button
-            onClick={onBasvurularGit}
-            className="glass flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3.5 py-1.5 text-[12px] text-white/50 transition-colors hover:border-[var(--border-hover)] hover:text-white/85"
-          >
-            <Send size={13} />
-            Başvurularım{basvuruSayisi ? ` (${basvuruSayisi})` : ""}
-          </button>
-          {kaynaklar.length > 0 && <KaynakPaneli kaynaklar={kaynaklar} sorunlu={sorunlu.length} />}
+            </p>
+            {/* "Bakmak" is the sister's verb above; the system "checks". Today's count only once. */}
+            <p className="truncate text-[12px] leading-[18px] text-[var(--k-t2)]">
+              {sonTarama
+                ? `Siteler en son ${tarihMetni(sonTarama.baslangic)} kontrol edildi${
+                    bugun && sonZiyaret ? ` · bugün ${bugun.kaynak} siteden ${bugun.yeni} yeni ilan` : ""
+                  }`
+                : "Siteler henüz kontrol edilmedi"}
+            </p>
+          </div>
+          {tetik}
         </div>
       )}
 
       {/* Süzgeç: birden fazla şehir varsa şehir çipleri, her zaman "son 24 saat". Belirsiz konum gizlenmez. */}
       {!profilBos && (sehirSecenekleri.length > 1 || son24 || eslesmeVarMi(gruplar)) && (
-        <div className="-mt-1 mb-6 flex flex-wrap items-center justify-center gap-1.5">
+        <div className="mb-4 flex flex-wrap gap-2">
           {sehirSecenekleri.length > 1 &&
-            sehirSecenekleri.map((sehir) => (
-              <button key={sehir} type="button" onClick={() => sehirDegistir(sehir)} className={cipSinifi(secilenSehirler.includes(sehir))}>
-                {sehir}
-              </button>
-            ))}
-          <button type="button" onClick={() => onSuzgec(secilenSehirler, !son24)} className={cipSinifi(son24)}>
+            sehirSecenekleri.map((sehir) => {
+              const aktif = secilenSehirler.includes(sehir);
+              return (
+                <button key={sehir} type="button" onClick={() => sehirDegistir(sehir)} aria-pressed={aktif} className={cipSinifi(aktif)}>
+                  {aktif && <Check size={12} aria-hidden />}
+                  {sehir}
+                </button>
+              );
+            })}
+          <button type="button" onClick={() => onSuzgec(secilenSehirler, !son24)} aria-pressed={son24} className={cipSinifi(son24)}>
+            {son24 && <Check size={12} aria-hidden />}
             Son 24 saat
           </button>
           {suzgecAcik && (
-            <button type="button" onClick={() => onSuzgec([], false)} className="rounded-full px-2.5 py-1 text-[12px] text-white/35 transition-colors hover:text-white/70">
-              temizle
+            <button
+              type="button"
+              onClick={() => onSuzgec([], false)}
+              className={`h-10 rounded-full px-3 text-[12.5px] text-[var(--k-t2)] transition-colors hover:bg-[var(--k-chip)] hover:text-[var(--k-t1)] ${ODAK}`}
+            >
+              Süzgeci kaldır
             </button>
           )}
         </div>
       )}
 
       {listeHatasi && (
-        <div className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-center text-[12.5px] text-red-200/80">
-          Eşleşmeler yüklenemedi: {listeHatasi}. Sayfayı yenile; sürerse veritabanına bakılmalı.
+        <div className="mb-4 flex items-start gap-3 rounded-2xl bg-rose-300/[0.10] p-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] leading-5 text-[var(--k-t1)]">İlanlar şu an yüklenemedi. Sayfayı yenile; düzelmezse haber ver.</p>
+            {/* Raw error folded away for the developer */}
+            <details className="mt-0.5 text-[11.5px] text-[var(--k-t2)]">
+              <summary className={`flex min-h-8 w-fit cursor-pointer items-center rounded-sm ${ODAK}`}>Teknik ayrıntı</summary>
+              <p className="break-words">{listeHatasi}</p>
+            </details>
+          </div>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className={`h-10 flex-shrink-0 rounded-xl bg-white/[0.08] px-4 text-[13px] text-[var(--k-t1)] transition-colors hover:bg-white/[0.12] ${ODAK}`}
+          >
+            Yenile
+          </button>
         </div>
       )}
 
       {profilBos ? (
-        <div className="glass rounded-2xl border border-[var(--border)] px-5 py-10 text-center">
-          <p className="text-[14px] text-white/70">Önce kendini anlat, sistem ona göre arasın.</p>
+        <div className="rounded-2xl p-6 text-center ring-1 ring-[var(--k-hair)]">
+          <p className="text-[13.5px] leading-5 text-[var(--k-t2)]">Önce kendini anlat; sana uygun ilanları buna göre ararız.</p>
           <button
+            type="button"
             onClick={onProfileGit}
-            className="mt-4 rounded-xl bg-[var(--accent)] px-5 py-2.5 text-[13px] font-medium text-[var(--background)] transition-colors hover:bg-[var(--accent-light)]"
+            className={`mt-4 h-11 rounded-xl bg-[var(--accent)] px-5 text-[13px] font-medium text-[var(--background)] transition-colors hover:bg-[var(--accent-light)] ${ODAK}`}
           >
-            Profili oluştur
+            Profilini oluştur
           </button>
         </div>
       ) : toplam === 0 ? (
-        <div className="glass rounded-2xl border border-[var(--border)] px-5 py-10 text-center text-[13.5px] text-white/45">
-          {suzgecAcik ? "Bu süzgeçle eşleşme yok." : "Henüz eşleşme yok. Sistem saat başı tarıyor; bir şey bulunca burada ve e-postanda olacak."}
-        </div>
+        // A failed query is explained above; do not also claim "no ads"
+        !listeHatasi && (
+          <div className="rounded-2xl p-6 text-center text-[13.5px] leading-5 text-[var(--k-t2)] ring-1 ring-[var(--k-hair)]">
+            {suzgecAcik ? (
+              <>
+                <p>Bu süzgeçle ilan yok.</p>
+                <button
+                  type="button"
+                  onClick={() => onSuzgec([], false)}
+                  className={`mt-3 h-10 rounded-xl bg-white/[0.08] px-4 text-[13px] text-[var(--k-t1)] transition-colors hover:bg-white/[0.12] ${ODAK}`}
+                >
+                  Süzgeci kaldır
+                </button>
+              </>
+            ) : (
+              "Şimdilik sana uygun ilan yok. Sistem saat başı bakıyor; bulunca burada ve e-postanda olacak."
+            )}
+          </div>
+        )
       ) : (
-        <>
-          {SIRA.map(
-            (k) =>
-              gruplar[k].length > 0 && (
-                <section key={k} className="mb-7">
-                  <h2 className="mb-3 flex items-center gap-2 text-[12px] font-medium uppercase tracking-wider text-white/35">
-                    {KARAR_ETIKETI[k]}
-                    <span className="text-white/20">{gruplar[k].length}</span>
+        SIRA.map((k) => {
+          const liste = gruplar[k];
+          if (!liste.length) return null;
+          const katlanir = k === "listele";
+          const acik = !katlanir || zayifAcik;
+          const listeId = `kariyer-grup-${k}`;
+          const baslik = (
+            <span className="flex items-center gap-2">
+              <span className="text-[14px] font-semibold text-[var(--k-t1)]">{GRUP[k].etiket}</span>
+              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-white/[0.10] px-1.5 text-[11.5px] tabular-nums text-[var(--k-t2)]">
+                {liste.length}
+              </span>
+            </span>
+          );
+          return (
+            <section key={k} className="mb-6">
+              {katlanir ? (
+                <>
+                  <h2>
+                    <button
+                      type="button"
+                      onClick={zayifDegistir}
+                      aria-expanded={acik}
+                      aria-controls={listeId}
+                      className={`-mx-1 flex h-12 w-[calc(100%+0.5rem)] items-center gap-2 rounded-xl px-1 text-left transition-colors hover:bg-white/[0.04] ${ODAK}`}
+                    >
+                      <span className="min-w-0 flex-1">
+                        {baslik}
+                        <span className="mt-0.5 block text-[12px] font-normal text-[var(--k-t2)]">{GRUP[k].aciklama}</span>
+                      </span>
+                      <ChevronDown
+                        size={16}
+                        aria-hidden
+                        className={`flex-shrink-0 text-[var(--k-t2)] transition-transform duration-150 motion-reduce:transition-none ${acik ? "rotate-180" : ""}`}
+                      />
+                    </button>
                   </h2>
-                  <div className="space-y-2.5">
-                    {gruplar[k].map((e) => (
-                      <EslesmeKarti key={e.ilan_id} e={e} onGeriBildir={onGeriBildir} onBasvuru={onBasvuru} yeni={!!sonZiyaret && e.degerlendirildi > sonZiyaret} />
-                    ))}
-                  </div>
-                </section>
-              )
-          )}
-        </>
+                  {!acik && (
+                    // Same action as the heading button; kept out of the tab order to avoid a duplicate stop
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-hidden
+                      onClick={zayifDegistir}
+                      className="mt-0.5 min-h-10 text-left text-[12.5px] text-[var(--k-t2)] transition-colors hover:text-[var(--k-t1)]"
+                    >
+                      {liste.length} ilan gizli · göster
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h2>{baslik}</h2>
+                  <p className="mt-0.5 text-[12px] text-[var(--k-t2)]">{GRUP[k].aciklama}</p>
+                </>
+              )}
+              {acik && (
+                <div id={listeId} className="mt-2 space-y-2">
+                  {liste.map((e) => (
+                    <EslesmeKarti key={e.ilan_id} e={e} onGeriBildir={onGeriBildir} onBasvuru={onBasvuru} yeni={!!sonZiyaret && e.degerlendirildi > sonZiyaret} />
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })
+      )}
+
+      {/* Full list incl. eliminated ads: a quiet row at the end, always reachable */}
+      {!profilBos && (
+        <button
+          type="button"
+          onClick={onTumuGit}
+          className={`mt-3 flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--k-chip)] px-3 text-[13px] text-[var(--k-t2)] transition-colors hover:bg-[var(--k-chip-hover)] hover:text-[var(--k-t1)] ${ODAK}`}
+        >
+          {/* The full list loads at most 300 rows; the count must not promise more */}
+          <span className="min-w-0 truncate">
+            Bakılan bütün ilanlar (uymayanlar dahil)
+            {toplamInceleme != null && toplamInceleme > 0 ? ` · ${toplamInceleme > 300 ? "son 300" : toplamInceleme}` : ""}
+          </span>
+          <ChevronRight size={14} aria-hidden />
+        </button>
       )}
     </div>
   );
@@ -837,6 +1130,9 @@ const SEBEPLER = ["Alanım değil", "Şartları taşımıyorum", "Şehir / mesaf
 
 /** Eşleşme var mı — süzgeç satırı boş listede de görünsün ama hiç eşleşme yokken görünmesin */
 const eslesmeVarMi = (g: Record<Karar, Eslesme[]>) => SIRA.some((k) => g[k].length > 0);
+
+/** Small inline chip on the meta row */
+const META_CIP = "inline-flex h-5 flex-shrink-0 items-center rounded-md px-1.5 text-[11.5px]";
 
 function EslesmeKarti({
   e,
@@ -856,11 +1152,32 @@ function EslesmeKarti({
   const [panelAcik, setPanelAcik] = useState(false);
   const [secili, setSecili] = useState<string[]>([]);
   const [metin, setMetin] = useState("");
-  // Gerekçe iki satırda kesilir; dokununca açılır. Kart kompakt kalsın, bilgi kaybolmasın.
+  // Details (full reason, tags, source) open from the "why it fits" row
   const [gerekceAcik, setGerekceAcik] = useState(false);
+  const ayrintiId = useId();
+  const panelBaslik = useRef<HTMLParagraphElement>(null);
+  const uymazDugme = useRef<HTMLButtonElement>(null);
+  const basvuruDugme = useRef<HTMLButtonElement>(null);
+  const geriAlDugme = useRef<HTMLButtonElement>(null);
+  /** Where focus lands after the card swaps between its full and folded forms (the old button unmounts) */
+  const odakHedefi = useRef<"geriAl" | "uymaz" | "basvuru" | null>(null);
+  const katli = sonuk && !basvurdu;
+
+  // Move focus into the reason panel when it opens
+  useEffect(() => {
+    if (panelAcik) panelBaslik.current?.focus();
+  }, [panelAcik]);
+
+  useEffect(() => {
+    const hedef = odakHedefi.current;
+    if (!hedef) return;
+    odakHedefi.current = null;
+    (hedef === "geriAl" ? geriAlDugme : hedef === "uymaz" ? uymazDugme : basvuruDugme).current?.focus();
+  }, [katli]);
 
   const ilgilenmedimTikla = () => {
     if (sonuk) {
+      odakHedefi.current = "uymaz";
       onGeriBildir(e, null); // geri al
       return;
     }
@@ -868,112 +1185,274 @@ function EslesmeKarti({
   };
   const kaydet = () => {
     const not = [...secili, metin.trim()].filter(Boolean).join(", ") || null;
+    odakHedefi.current = "geriAl";
     onGeriBildir(e, "ilgilenmedim", not);
     setPanelAcik(false);
     setSecili([]);
     setMetin("");
   };
+  const vazgec = () => {
+    setPanelAcik(false);
+    uymazDugme.current?.focus();
+  };
+
+  const kritik = e.risk === "kritik";
+
+  // "Bana uymaz" marked: fold to one quiet row in place. The ad link, "Başvurdum" and a critical
+  // warning stay; "Geri al" restores the full card (and with it "İlgimi çekti").
+  if (katli) {
+    return (
+      <article className={`flex items-center gap-2 rounded-2xl bg-black/[0.06] p-3 ring-1 ${kritik ? "ring-rose-300/25" : "ring-[var(--k-hair)]"}`}>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[13.5px] text-[var(--k-t2)]">
+            {e.ilan.url ? (
+              <a href={e.ilan.url} target="_blank" rel="noopener noreferrer" className={`block truncate rounded-sm hover:text-[var(--accent-light)] ${ODAK}`}>
+                {e.ilan.baslik}
+                <span className="sr-only"> (yeni sekmede açılır)</span>
+              </a>
+            ) : (
+              <span className="block truncate">{e.ilan.baslik}</span>
+            )}
+          </h3>
+          <p className="truncate text-[12px] text-[var(--k-t2)]">
+            {kritik && (
+              <span className="text-rose-200">
+                <TriangleAlert size={11} className="-mt-0.5 inline" aria-hidden /> Güvenilir görünmüyor ·{" "}
+              </span>
+            )}
+            Uymaz dedin{e.geri_bildirim_notu ? ` · ${e.geri_bildirim_notu}` : ""}
+          </p>
+        </div>
+        <button
+          ref={basvuruDugme}
+          type="button"
+          onClick={() => {
+            odakHedefi.current = "basvuru";
+            onBasvuru(e, true);
+          }}
+          aria-label={`${e.ilan.baslik}: başvurdum olarak işaretle`}
+          className={`h-10 flex-shrink-0 rounded-xl bg-[var(--accent)]/12 px-3 text-[13px] text-[var(--accent-light)] transition-colors hover:bg-[var(--accent)]/20 ${ODAK}`}
+        >
+          Başvurdum
+        </button>
+        <button
+          ref={geriAlDugme}
+          type="button"
+          onClick={ilgilenmedimTikla}
+          aria-label={`${e.ilan.baslik}: “Bana uymaz” işaretini geri al`}
+          className={`h-10 flex-shrink-0 rounded-xl bg-white/[0.06] px-3 text-[13px] text-[var(--k-t2)] transition-colors hover:bg-white/[0.10] hover:text-[var(--k-t1)] ${ODAK}`}
+        >
+          Geri al
+        </button>
+      </article>
+    );
+  }
 
   const kalan = kalanGun(e.ilan.son_basvuru);
-  const meta = [e.ilan.sirket, e.ilan.sehir, kaynakEtiketi(e.ilan.kaynak), tarihMetni(e.degerlendirildi)].filter(Boolean);
+  const { sirket, sehir } = e.ilan;
+  const orta = !!e.risk && !kritik;
+  const halka = kritik ? "ring-rose-300/30" : basvurdu ? "ring-[var(--accent)]/25" : "ring-[var(--k-hair)]";
+  const kunye = [kaynakEtiketi(e.ilan.kaynak), `${tarihMetni(e.degerlendirildi)} bulundu`, sonBasvuruMetni(e.ilan.son_basvuru)].filter(Boolean).join(" · ");
 
   return (
-    <article
-      className={`glass rounded-2xl border p-3.5 transition-opacity sm:p-4 ${
-        e.risk === "kritik" ? "border-red-400/40" : basvurdu ? "border-[var(--accent)]/30" : "border-[var(--border)]"
-      } ${sonuk ? "opacity-45" : ""}`}
-    >
-      <div className="flex gap-3">
-        {/* Puan: sol sütun, karar rengi. Sayı büyük, "uygunluk" küçük — göz önce buraya düşer */}
-        <div className={`flex h-11 w-11 flex-shrink-0 flex-col items-center justify-center rounded-xl border ${KARAR_STIL[e.karar]}`}>
-          <span className="text-[15px] font-semibold leading-none tabular-nums">{e.puan}</span>
-          <span className="mt-0.5 text-[8.5px] uppercase tracking-wider opacity-60">puan</span>
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="min-w-0 text-[14px] font-medium leading-snug text-white/92">
-              {e.ilan.url ? (
-                <a href={e.ilan.url} target="_blank" rel="noopener noreferrer" className="hover:text-[var(--accent-light)]">
-                  {e.ilan.baslik}
-                  <ExternalLink size={10} className="ml-1 inline opacity-40" />
-                </a>
-              ) : (
-                e.ilan.baslik
-              )}
-            </h3>
-            <div className="flex flex-shrink-0 items-center gap-1.5 pt-0.5">
-              {yeni && (
-                <span className="rounded-md bg-[var(--accent)]/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[var(--accent-light)]">yeni</span>
-              )}
-            </div>
-          </div>
-
-          <p className="mt-0.5 truncate text-[11.5px] text-white/40">
-            {meta.join(" · ")}
-            {e.ilan.son_basvuru && (
-              <>
-                {" · "}
-                <span className={(kalan ?? 99) <= 3 ? "font-medium text-red-300/80" : ""}>{sonBasvuruMetni(e.ilan.son_basvuru)}</span>
-              </>
-            )}
-          </p>
-
-          {e.gerekce && (
-            <p
-              onClick={() => setGerekceAcik((a) => !a)}
-              className={`mt-2 cursor-pointer text-[12.5px] leading-relaxed text-white/65 ${gerekceAcik ? "" : "line-clamp-2"}`}
-              title={gerekceAcik ? undefined : "Tamamını okumak için dokun"}
+    <article className={`rounded-2xl p-3 ring-1 sm:p-4 ${basvurdu ? "bg-[var(--accent)]/[0.06]" : "bg-[var(--k-card)]"} ${halka}`}>
+      {/* 1: title (+ new dot, open-ad corner button) */}
+      <div className="flex items-start gap-2">
+        {yeni && <span aria-hidden className="mt-[7px] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[var(--accent)]" />}
+        <h3 className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-5 text-[var(--k-t1)]">
+          {yeni && <span className="sr-only">Yeni: </span>}
+          {e.ilan.url ? (
+            <a
+              href={e.ilan.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`line-clamp-2 rounded-sm transition-colors hover:text-[var(--accent-light)] ${ODAK}`}
             >
-              {e.gerekce}
-            </p>
+              {e.ilan.baslik}
+              <span className="sr-only"> (yeni sekmede açılır)</span>
+            </a>
+          ) : (
+            <span className="line-clamp-2">{e.ilan.baslik}</span>
           )}
-
-          {(e.uyusan.length > 0 || e.uyusmayan.length > 0) && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {e.uyusan.map((u) => (
-                <span key={"+" + u} className="rounded bg-[var(--accent)]/10 px-1.5 py-px text-[10.5px] text-[var(--accent-light)]/80">+ {u}</span>
-              ))}
-              {e.uyusmayan.map((u) => (
-                <span key={"-" + u} className="rounded bg-red-400/10 px-1.5 py-px text-[10.5px] text-red-200/70">− {u}</span>
-              ))}
-            </div>
-          )}
-        </div>
+        </h3>
+        {e.ilan.url && (
+          // Touch shortcut to the same link: small to the eye, 40 px to the finger (after:),
+          // and it does not grow the title row. The title link covers keyboard and screen readers.
+          <a
+            href={e.ilan.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            tabIndex={-1}
+            aria-hidden
+            className="relative -my-1 -mr-1 grid h-7 w-7 flex-shrink-0 place-items-center rounded-full bg-white/[0.06] text-[var(--k-t2)] transition-colors after:absolute after:-inset-1.5 after:content-[''] hover:bg-white/[0.10] hover:text-[var(--k-t1)]"
+          >
+            <ExternalLink size={14} aria-hidden />
+          </a>
+        )}
       </div>
 
-      {e.risk && <UyariSeridi risk={e.risk} uyarilar={e.uyarilar} />}
+      {/* 2: where (city kept whole, company truncates first) + deadline + fit. Chips wrap below
+          when the place would get narrower than ~9rem. */}
+      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] leading-5 text-[var(--k-t2)]">
+        <span className="flex min-w-0 flex-[1_1_9rem]">
+          {sirket && <span className="min-w-0 truncate">{sirket}</span>}
+          {sirket && sehir && (
+            <span aria-hidden className="flex-shrink-0 px-1">
+              ·
+            </span>
+          )}
+          {sehir && <span className={`truncate ${sirket ? "max-w-[65%] flex-shrink-0" : "min-w-0"}`}>{sehir}</span>}
+        </span>
+        <span className="ml-auto flex flex-shrink-0 items-center gap-1.5">
+          {orta && (
+            <span className={`${META_CIP} gap-1 bg-amber-300/[0.10] text-amber-200`}>
+              <TriangleAlert size={11} aria-hidden />
+              Kontrol et
+            </span>
+          )}
+          {kalan !== null && kalan >= 0 && kalan <= 14 && (
+            <span className={`${META_CIP} ${kalan <= 3 ? "bg-amber-300/[0.10] text-amber-200" : "bg-white/[0.08] text-[var(--k-t2)]"}`}>
+              {kalan === 0 ? "Bugün son gün" : `${kalan} gün kaldı`}
+            </span>
+          )}
+          <span className={`${META_CIP} font-semibold tabular-nums ${KARAR_STIL[e.karar]}`}>
+            <span aria-hidden>Uyum {e.puan}</span>
+            <span className="sr-only">Uyum {e.puan}/100</span>
+          </span>
+        </span>
+      </div>
 
-      {/* Eylemler: tek satır, sağa yaslı, sessiz. Başvurdum işaretliyse geri bildirim kilitlenir */}
-      <div className="mt-2.5 flex items-center justify-end gap-1 border-t border-[var(--border)] pt-2">
-        {sonuk && e.geri_bildirim_notu && <span className="mr-auto truncate text-[11px] text-white/35">İlgilenmedin: {e.geri_bildirim_notu}</span>}
+      {/* 3: why it fits, one line; also the details toggle */}
+      <button
+        type="button"
+        onClick={() => setGerekceAcik((a) => !a)}
+        aria-expanded={gerekceAcik}
+        aria-controls={ayrintiId}
+        className={`-mx-1 flex min-h-9 w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-lg px-1 text-left text-[12.5px] transition-colors hover:bg-white/[0.04] ${ODAK}`}
+      >
+        <span className="sr-only">Neden uygun: </span>
+        {e.uyusan.length > 0 ? (
+          <>
+            <Check size={13} aria-hidden className="flex-shrink-0 text-[var(--accent)]" />
+            <span className="min-w-0 truncate text-[var(--accent-light)]/90">{e.uyusan.slice(0, 2).join(" · ")}</span>
+            {e.uyusan.length > 2 && <span className="flex-shrink-0 text-[var(--k-t3)]">+{e.uyusan.length - 2}</span>}
+          </>
+        ) : e.gerekce ? (
+          <span className="min-w-0 truncate text-[var(--k-t2)]">{e.gerekce}</span>
+        ) : (
+          <span className="text-[var(--k-t2)]">Ayrıntılar</span>
+        )}
+        {e.uyusmayan.length > 0 && <span className="flex-shrink-0 whitespace-nowrap text-[var(--k-t3)]">· {e.uyusmayan.length} eksik</span>}
+        <ChevronDown
+          size={16}
+          aria-hidden
+          className={`ml-auto flex-shrink-0 text-[var(--k-t3)] transition-transform duration-150 motion-reduce:transition-none ${gerekceAcik ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {kritik && <UyariSeridi risk={e.risk!} uyarilar={e.uyarilar} className="mt-2" />}
+
+      {gerekceAcik && (
+        <div id={ayrintiId} className="mt-2 space-y-2.5 rounded-xl bg-[var(--k-card-open)] p-3">
+          {e.gerekce && <p className="text-[13px] leading-5 text-[var(--k-t2)]">{e.gerekce}</p>}
+          {e.uyusan.length > 0 && (
+            <div>
+              <p className="text-[11.5px] text-[var(--k-t3)]">Uyanlar</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {e.uyusan.map((u) => (
+                  <span key={"+" + u} className="h-6 max-w-full truncate rounded-full bg-[var(--accent)]/10 px-2 text-[12px] leading-6 text-[var(--accent-light)]/90">
+                    {u}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {e.uyusmayan.length > 0 && (
+            <div>
+              <p className="text-[11.5px] text-[var(--k-t3)]">Eksikler</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {e.uyusmayan.map((u) => (
+                  <span key={"-" + u} className="h-6 max-w-full truncate rounded-full bg-white/[0.06] px-2 text-[12px] leading-6 text-[var(--k-t2)]">
+                    {u}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="text-[12px] text-[var(--k-t3)]">{kunye}</p>
+          {orta && <UyariSeridi risk={e.risk!} uyarilar={e.uyarilar} />}
+          {e.ilan.url && (
+            <a
+              href={e.ilan.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-white/[0.06] text-[13px] text-[var(--k-t1)] transition-colors hover:bg-white/[0.10] ${ODAK}`}
+            >
+              İlanı sitede aç
+              <ExternalLink size={14} aria-hidden />
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* 4: actions. On an applied card the feedback buttons are hidden (they are locked anyway). */}
+      <div className="mt-1.5 grid grid-cols-3 gap-1.5">
         <EylemDugmesi
+          ref={basvuruDugme}
           aktif={basvurdu}
-          vurgulu
+          birincil
           onClick={() => {
             setPanelAcik(false);
             onBasvuru(e, !basvurdu);
           }}
-          Ikon={basvurdu ? CircleCheckBig : Send}
+          Ikon={basvurdu ? CircleCheckBig : CircleCheck}
           etiket={basvurdu ? "Başvurdun" : "Başvurdum"}
         />
-        <EylemDugmesi
-          aktif={e.geri_bildirim === "ilgilendim" && !panelAcik}
-          kilitli={basvurdu}
-          onClick={() => {
-            // Tek değer: biri seçilince öbürü düşer; açık sebep paneli de kapanır
-            setPanelAcik(false);
-            onGeriBildir(e, e.geri_bildirim === "ilgilendim" ? null : "ilgilendim");
-          }}
-          Ikon={ThumbsUp}
-          etiket="İlgilendim"
-        />
-        <EylemDugmesi aktif={sonuk || panelAcik} kilitli={basvurdu} onClick={ilgilenmedimTikla} Ikon={ThumbsDown} etiket="İlgilenmedim" />
+        {basvurdu ? (
+          <p className="col-span-2 self-center text-[12px] leading-4 text-[var(--k-t2)]">
+            {"Başvurularım'da takip ediliyor"}
+            <span className="block">Kaldırmak için yeniden bas</span>
+          </p>
+        ) : (
+          <>
+            <EylemDugmesi
+              aktif={e.geri_bildirim === "ilgilendim" && !panelAcik}
+              onClick={() => {
+                // Tek değer: biri seçilince öbürü düşer; açık sebep paneli de kapanır
+                setPanelAcik(false);
+                onGeriBildir(e, e.geri_bildirim === "ilgilendim" ? null : "ilgilendim");
+              }}
+              Ikon={ThumbsUp}
+              etiket="İlgimi çekti"
+            />
+            <EylemDugmesi
+              ref={uymazDugme}
+              aktif={sonuk || panelAcik}
+              aktifSinif="bg-black/[0.18] text-[var(--k-t1)]"
+              onClick={ilgilenmedimTikla}
+              Ikon={ThumbsDown}
+              etiket="Bana uymaz"
+            />
+          </>
+        )}
       </div>
 
       {panelAcik && !sonuk && (
-        <div className="mt-2.5 rounded-xl border border-[var(--border)] bg-white/[0.03] p-3">
-          <p className="text-[12.5px] text-white/60">Neden ilgini çekmedi? Sistem bir dahakine buna göre eler. İstersen boş bırak.</p>
+        <div
+          role="group"
+          aria-label="Neden uymadı?"
+          className="mt-2 rounded-xl bg-white/[0.05] p-3"
+          onKeyDown={(ev) => {
+            if (ev.key === "Escape") {
+              ev.stopPropagation();
+              vazgec();
+            }
+          }}
+        >
+          <p ref={panelBaslik} tabIndex={-1} className="text-[13px] font-semibold text-[var(--k-t1)] outline-none">
+            Neden uymadı?
+          </p>
+          <p className="mt-0.5 text-[12px] text-[var(--k-t2)]">Seçersen benzerlerini daha az gösteririz. Boş da bırakabilirsin.</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {SEBEPLER.map((sebep) => {
               const acik = secili.includes(sebep);
@@ -981,13 +1460,11 @@ function EslesmeKarti({
                 <button
                   key={sebep}
                   type="button"
+                  aria-pressed={acik}
                   onClick={() => setSecili((l) => (acik ? l.filter((x) => x !== sebep) : [...l, sebep]))}
-                  className={`rounded-full border px-2.5 py-1 text-[12px] transition-colors ${
-                    acik
-                      ? "border-[var(--accent)]/50 bg-[var(--accent)]/20 text-[var(--accent-light)]"
-                      : "border-white/15 bg-white/[0.04] text-white/60 hover:border-white/30 hover:text-white/85"
-                  }`}
+                  className={cipSinifi(acik)}
                 >
+                  {acik && <Check size={12} aria-hidden />}
                   {sebep}
                 </button>
               );
@@ -997,14 +1474,23 @@ function EslesmeKarti({
             value={metin}
             onChange={(ev) => setMetin(ev.target.value)}
             onKeyDown={(ev) => ev.key === "Enter" && kaydet()}
-            placeholder="Başka bir sebep… (isteğe bağlı)"
-            className="focus-ring mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[12.5px] text-white/90 placeholder-white/25"
+            placeholder="Başka bir sebep (isteğe bağlı)"
+            aria-label="Başka bir sebep (isteğe bağlı)"
+            className={`mt-2 h-10 w-full rounded-xl border border-white/[0.08] bg-[var(--surface)] px-3 text-[13px] text-[var(--k-t1)] placeholder-[var(--k-t3)] ${GIRDI_ODAK}`}
           />
           <div className="mt-2 flex justify-end gap-1.5">
-            <button type="button" onClick={() => setPanelAcik(false)} className="rounded-lg px-3 py-1.5 text-[12px] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70">
+            <button
+              type="button"
+              onClick={vazgec}
+              className={`h-10 rounded-xl px-4 text-[13px] text-[var(--k-t2)] transition-colors hover:bg-white/[0.06] hover:text-[var(--k-t1)] ${ODAK}`}
+            >
               Vazgeç
             </button>
-            <button type="button" onClick={kaydet} className="rounded-lg bg-[var(--accent)]/15 px-3 py-1.5 text-[12px] font-medium text-[var(--accent-light)] transition-colors hover:bg-[var(--accent)]/25">
+            <button
+              type="button"
+              onClick={kaydet}
+              className={`h-10 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--background)] transition-colors hover:bg-[var(--accent-light)] ${ODAK}`}
+            >
               Kaydet
             </button>
           </div>
@@ -1018,19 +1504,19 @@ function EslesmeKarti({
  * Kırmızı bayrak şeridi. Puan tavanı kodda uygulanıyor (lib/kariyer.ts riskliPuan);
  * burası ablama NEDENİNİ söylüyor — "puan neden 40" sorusu cevapsız kalmasın.
  */
-function UyariSeridi({ risk, uyarilar }: { risk: Risk; uyarilar: string[] }) {
+function UyariSeridi({ risk, uyarilar, className = "" }: { risk: Risk; uyarilar: string[]; className?: string }) {
   const kritik = risk === "kritik";
   return (
     <div
-      className={`mt-2.5 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12.5px] ${
-        kritik ? "border-red-400/40 bg-red-400/10 text-red-200/90" : "border-amber-400/35 bg-amber-400/10 text-amber-200/90"
-      }`}
+      className={`flex items-start gap-2 rounded-xl px-3 py-2 text-[12.5px] leading-[18px] ${
+        kritik ? "bg-rose-300/[0.10] text-rose-100/90" : "bg-amber-300/[0.10] text-amber-200"
+      } ${className}`}
     >
-      <TriangleAlert size={14} className="mt-0.5 flex-shrink-0" />
+      <TriangleAlert size={14} className="mt-0.5 flex-shrink-0" aria-hidden />
       <div>
-        <span className="font-medium">{kritik ? "Dikkat, bu ilan güvenilir görünmüyor" : "Şüpheli noktalar var"}</span>
+        <span className="font-medium">{kritik ? "Dikkat, bu ilan güvenilir görünmüyor" : "Kontrol et, şüpheli noktalar var"}</span>
         {uyarilar.length > 0 && <span className="text-current/80">: {uyarilar.join(", ")}</span>}
-        {kritik && <span className="block text-[11.5px] opacity-75">Para, kimlik ya da kart bilgisi isteyen ilana başvurma.</span>}
+        {kritik && <span className="block text-[11.5px] opacity-80">Para, kimlik ya da kart bilgisi isteyen ilana başvurma.</span>}
       </div>
     </div>
   );
@@ -1044,79 +1530,107 @@ function UyariSeridi({ risk, uyarilar }: { risk: Risk; uyarilar: string[] }) {
 function BasvurularEkrani({
   liste,
   simdi,
-  onGeri,
   onGeriAl,
+  onYenidenEkle,
 }: {
   liste: Eslesme[] | null;
   simdi: number;
-  onGeri: () => void;
   onGeriAl: (e: Eslesme) => void;
+  onYenidenEkle: (e: Eslesme) => void;
 }) {
-  const geri = (
-    <button onClick={onGeri} className="mb-4 flex items-center gap-1.5 text-[12.5px] text-white/40 transition-colors hover:text-white/75">
-      <ArrowLeft size={13} /> Eşleşmelere dön
-    </button>
-  );
-  if (liste === null) {
+  // Rows removed during this visit stay in place, faded, with "Geri al": the button must not read as
+  // "withdraw my application" with no way back. Snapshot keeps the original application date.
+  const [cikarilan, setCikarilan] = useState<Record<string, Eslesme>>({});
+  if (liste === null) return <SatirIskeleti adet={5} />;
+  const kalanlar = Object.values(cikarilan).filter((c) => !liste.some((x) => x.ilan_id === c.ilan_id));
+  if (!liste.length && !kalanlar.length) {
     return (
-      <div className="flex justify-center py-16 text-white/30">
-        <Loader2 size={20} className="animate-spin" />
-      </div>
-    );
-  }
-  if (!liste.length) {
-    return (
-      <div>
-        {geri}
-        <div className="glass rounded-2xl border border-[var(--border)] px-5 py-10 text-center text-[13.5px] text-white/45">
-          Henüz başvuru işaretlemedin. Bir ilana başvurduğunda kartındaki <span className="text-white/70">Başvurdum</span> düğmesine bas; burada görürsün, cevap gelmezse akşam e-postası hatırlatır.
-        </div>
+      <div className="rounded-2xl p-6 text-center text-[13.5px] leading-5 text-[var(--k-t2)] ring-1 ring-[var(--k-hair)]">
+        Henüz başvuru işaretlemedin. Bir ilana başvurunca kartındaki “Başvurdum”a bas; burada görürsün. 10 gün cevap gelmezse akşam e-postası hatırlatır.
       </div>
     );
   }
   const gunOnce = (ts: string | null) => (ts ? Math.floor((simdi - new Date(ts).getTime()) / 86_400_000) : null);
-  const satirlar = [...liste].sort((x, y) => (gunOnce(y.basvuru_ts) ?? 0) - (gunOnce(x.basvuru_ts) ?? 0));
-  const takipSayisi = satirlar.filter((e) => takipGerekli(e.basvuru_durumu, e.basvuru_ts, null, new Date(simdi)) !== null).length;
+  const cikarildiMi = (e: Eslesme) => !liste.some((x) => x.ilan_id === e.ilan_id);
+  const satirlar = [...liste, ...kalanlar].sort((x, y) => (gunOnce(y.basvuru_ts) ?? 0) - (gunOnce(x.basvuru_ts) ?? 0));
+  const takipSayisi = liste.filter((e) => takipGerekli(e.basvuru_durumu, e.basvuru_ts, null, new Date(simdi)) !== null).length;
   return (
-    <div className="animate-fade-in">
-      {geri}
-      <p className="mb-4 text-center text-[11.5px] text-white/30">
-        {satirlar.length} başvuru{takipSayisi ? ` · ${takipSayisi} tanesi 10 günü geçti, cevap yok` : ""}
+    <div className="animate-fade-in motion-reduce:animate-none">
+      <p className="mb-3 text-[12.5px] leading-[18px] text-[var(--k-t2)]">
+        {liste.length} başvurun var
+        {takipSayisi > 0 && <span className="text-amber-200"> · {takipSayisi} tanesine 10 günden uzun süredir cevap yok</span>}
       </p>
-      <div className="glass divide-y divide-[var(--border)] overflow-hidden rounded-2xl border border-[var(--border)]">
+      <div className="space-y-2">
         {satirlar.map((e) => {
+          const cikti = cikarildiMi(e);
           const gun = gunOnce(e.basvuru_ts);
-          const takip = takipGerekli(e.basvuru_durumu, e.basvuru_ts, null, new Date(simdi)) !== null;
+          const takip = !cikti && takipGerekli(e.basvuru_durumu, e.basvuru_ts, null, new Date(simdi)) !== null;
+          const meta = [
+            e.ilan?.sirket,
+            e.ilan?.sehir,
+            kaynakEtiketi(e.ilan?.kaynak ?? ""),
+            gun !== null ? `${gun === 0 ? "bugün" : `${gun} gün önce`} başvurdun` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
           return (
-            <div key={e.ilan_id} className="flex items-center gap-3 px-4 py-3">
+            <div
+              key={e.ilan_id}
+              className={`flex items-center gap-2 rounded-2xl p-3 ring-1 ring-[var(--k-hair)] ${cikti ? "bg-black/[0.06]" : "bg-[var(--k-card)]"}`}
+            >
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13.5px] text-white/85">
+                <p className={`text-[14px] font-medium ${cikti ? "text-[var(--k-t2)]" : "text-[var(--k-t1)]"}`}>
                   {e.ilan?.url ? (
-                    <a href={e.ilan.url} target="_blank" rel="noopener noreferrer" className="hover:text-[var(--accent-light)]">
+                    <a href={e.ilan.url} target="_blank" rel="noopener noreferrer" className={`block truncate rounded-sm hover:text-[var(--accent-light)] ${ODAK}`}>
                       {e.ilan.baslik}
+                      <span className="sr-only"> (yeni sekmede açılır)</span>
                     </a>
                   ) : (
-                    e.ilan?.baslik
+                    <span className="block truncate">{e.ilan?.baslik}</span>
                   )}
                 </p>
-                <p className="truncate text-[11.5px] text-white/35">
-                  {[e.ilan?.sirket, e.ilan?.sehir, kaynakEtiketi(e.ilan?.kaynak ?? "")].filter(Boolean).join(" · ")}
-                  {gun !== null && ` · ${gun === 0 ? "bugün" : `${gun} gün önce`} başvurdun`}
-                </p>
+                {cikti ? (
+                  <p className="truncate text-[12px] text-[var(--k-t2)]">Listeden çıkarıldı; şirketteki başvurun etkilenmez</p>
+                ) : (
+                  meta && <p className="truncate text-[12px] text-[var(--k-t2)]">{meta}</p>
+                )}
                 {takip && (
-                  <p className="mt-1 flex items-center gap-1 text-[11.5px] text-amber-200/80">
-                    <TriangleAlert size={11} /> {gun} gündür cevap yok — kurumu arayıp sorabilirsin
+                  <p className="mt-1 flex w-fit max-w-full items-start gap-1 rounded-md bg-amber-300/[0.10] px-1.5 py-0.5 text-[11.5px] text-amber-200">
+                    <TriangleAlert size={11} className="mt-[3px] flex-shrink-0" aria-hidden />
+                    <span>{gun} gündür cevap yok; kurumu arayıp sorabilirsin</span>
                   </p>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => onGeriAl(e)}
-                title="Başvuru işaretini kaldır"
-                className="flex-shrink-0 rounded-lg px-2.5 py-1.5 text-[11.5px] text-white/35 transition-colors hover:bg-white/[0.06] hover:text-white/70"
-              >
-                Geri al
-              </button>
+              {cikti ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Undo: re-mark from the snapshot (as "not applied" so the counter goes up again)
+                    onYenidenEkle({ ...e, basvuru_durumu: null });
+                    setCikarilan((m) => {
+                      const geri = { ...m };
+                      delete geri[e.ilan_id];
+                      return geri;
+                    });
+                  }}
+                  aria-label={`${e.ilan?.baslik ?? "İlan"}: listeye geri al`}
+                  className={`h-10 flex-shrink-0 rounded-xl bg-[var(--accent)]/12 px-3 text-[13px] text-[var(--accent-light)] transition-colors hover:bg-[var(--accent)]/20 ${ODAK}`}
+                >
+                  Geri al
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCikarilan((m) => ({ ...m, [e.ilan_id]: e }));
+                    onGeriAl(e);
+                  }}
+                  aria-label={`${e.ilan?.baslik ?? "İlan"}: başvuru işaretini kaldır`}
+                  className={`h-10 flex-shrink-0 rounded-xl bg-white/[0.06] px-3 text-[13px] text-[var(--k-t2)] transition-colors hover:bg-white/[0.10] hover:text-[var(--k-t1)] ${ODAK}`}
+                >
+                  İşareti kaldır
+                </button>
+              )}
             </div>
           );
         })}
@@ -1126,44 +1640,43 @@ function BasvurularEkrani({
 }
 
 /**
- * Kart eyleme düğmesi. kilitli: başvurulmuş ilanda geri bildirim değişmez
- * ("İlgilendim" zorunlu açık, "İlgilenmedim" kapalı). vurgulu: Başvurdum,
- * aktifken dolgulu görünür — ablam bir bakışta hangisine başvurduğunu görsün.
+ * Card action button. Label always visible, icon beside it in one 40 px row
+ * (the icon drops below 370 px so the label fits). birincil: "Başvurdum", accent-tinted.
  */
 function EylemDugmesi({
   aktif,
   onClick,
   Ikon,
   etiket,
-  kilitli = false,
-  vurgulu = false,
+  birincil = false,
+  aktifSinif = "bg-[var(--accent)]/15 text-[var(--accent-light)]",
+  ref,
 }: {
   aktif: boolean;
   onClick: () => void;
   Ikon: typeof ThumbsUp;
   etiket: string;
-  kilitli?: boolean;
-  vurgulu?: boolean;
+  birincil?: boolean;
+  aktifSinif?: string;
+  ref?: React.Ref<HTMLButtonElement>;
 }) {
+  const durum = birincil
+    ? aktif
+      ? "bg-[var(--accent)]/25 text-[var(--accent-light)]"
+      : "bg-[var(--accent)]/12 text-[var(--accent-light)] hover:bg-[var(--accent)]/20"
+    : aktif
+      ? aktifSinif
+      : "bg-white/[0.05] text-[var(--k-t2)] hover:bg-white/[0.08] hover:text-[var(--k-t1)]";
   return (
     <button
+      ref={ref}
+      type="button"
       onClick={onClick}
-      disabled={kilitli}
-      title={kilitli ? `${etiket} — başvurduğun ilanda değiştirilemez` : etiket}
-      aria-label={etiket}
       aria-pressed={aktif}
-      className={`flex h-7.5 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] transition-colors disabled:cursor-not-allowed ${
-        aktif
-          ? vurgulu
-            ? "bg-[var(--accent)]/25 text-[var(--accent-light)]"
-            : "bg-[var(--accent)]/15 text-[var(--accent-light)]"
-          : kilitli
-            ? "text-white/20"
-            : "text-white/40 hover:bg-white/[0.06] hover:text-white/75"
-      } ${kilitli && aktif ? "opacity-70" : ""}`}
+      className={`flex h-10 min-w-0 items-center justify-center gap-1 rounded-xl px-1 text-[12.5px] font-medium leading-tight transition-colors sm:gap-1.5 sm:text-[13px] ${ODAK} ${durum}`}
     >
-      <Ikon size={13} />
-      <span className="hidden sm:inline">{etiket}</span>
+      <Ikon size={15} className="flex-shrink-0 max-[369px]:hidden" aria-hidden />
+      <span className="max-w-full truncate">{etiket}</span>
     </button>
   );
 }
@@ -1232,7 +1745,7 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
       const res = await fetch("/api/kariyer/yeniden-degerlendir", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.hata ?? "Başlatılamadı.");
-      addToast(`${data.sifirlanan} ilan sıraya alındı — sonraki taramalarda yeniden puanlanacak`, "success");
+      addToast(`${data.sifirlanan} ilan sıraya alındı — uyumları sonraki taramalarda yeniden hesaplanacak`, "success");
       setYenidenSayi(0);
     } catch (err) {
       addToast((err as Error).message, "error");
@@ -1299,7 +1812,7 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
       if (!res.ok) throw new Error(data?.hata ?? "Kaydedilemedi.");
       addToast(
         data.sifirlanan
-          ? `Kaydedildi — şehir filtresiyle elenmiş ${data.sifirlanan} ilan yeni şartlarla yeniden bakılacak`
+          ? `Kaydedildi — şehir süzgecine takılan ${data.sifirlanan} ilana yeni şartlarla yeniden bakılacak`
           : "Kaydedildi — bir sonraki taramada bu profil kullanılacak",
         "success"
       );
@@ -1328,7 +1841,7 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.hata ?? "Sıfırlanamadı.");
-      addToast("Profil sıfırlandı — tarayıcı yeni profil kaydedilene kadar bekler", "success");
+      addToast("Profil sıfırlandı — yeni profil kaydedilene kadar ilan aranmaz", "success");
       onKaydedildi();
     } catch (err) {
       addToast((err as Error).message, "error");
@@ -1344,11 +1857,15 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
     setSurum((n) => n + 1);
   };
 
+  const kartSinifi = "rounded-2xl bg-[var(--k-card)] p-4 ring-1 ring-[var(--k-hair)]";
+  const baslikSinifi = "text-[15px] font-semibold text-[var(--k-t1)]";
+  const aciklamaSinifi = "mt-1 text-[13px] leading-5 text-[var(--k-t2)]";
+
   return (
-    <div className="animate-fade-in space-y-4">
-      <section className="glass rounded-2xl border border-[var(--border)] p-5">
-        <h2 className="text-[14px] font-medium text-white/90">1 · Kendini anlat</h2>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-white/40">
+    <div className="animate-fade-in space-y-3 motion-reduce:animate-none">
+      <section className={kartSinifi}>
+        <h2 className={baslikSinifi}>1 · Kendini anlat</h2>
+        <p className={aciklamaSinifi}>
           Eğitimin, yaptığın işler, bildiğin programlar, ne istediğin, ne istemediğin — kendi cümlelerinle.
           Şehri aşağıda ayrıca soruyoruz.
         </p>
@@ -1356,25 +1873,33 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
           value={metin}
           onChange={(e) => setMetin(e.target.value)}
           rows={6}
+          aria-label="Kendini anlat"
           placeholder="Örn: Grafik tasarım mezunuyum, 3 yıl ajansta çalıştım, Photoshop ve Illustrator bilirim. Tasarım ya da sosyal medya işi arıyorum; satış istemem…"
-          className="focus-ring mt-3 w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5 text-[13.5px] leading-relaxed text-white/90 placeholder-white/25"
+          className={`mt-3 w-full resize-y rounded-xl border border-white/[0.08] bg-[var(--surface)] p-3.5 text-[13.5px] leading-relaxed text-[var(--k-t1)] placeholder-[var(--k-t3)] ${GIRDI_ODAK}`}
         />
         <button
           onClick={cikar}
           disabled={cikariliyor || metin.trim().length < 20}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3 text-[13px] font-medium text-[var(--background)] transition-all hover:bg-[var(--accent-light)] disabled:cursor-not-allowed disabled:opacity-30"
+          aria-describedby={!cikariliyor && metin.trim().length < 20 ? "kariyer-anlat-ipucu" : undefined}
+          className={`mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-5 text-[13px] font-medium text-[var(--background)] transition-colors hover:bg-[var(--accent-light)] disabled:cursor-not-allowed disabled:opacity-40 ${ODAK}`}
         >
-          {cikariliyor ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-          {cikariliyor ? "Okuyorum..." : bos ? "Profili çıkar" : "Metinden yeniden çıkar"}
+          {cikariliyor ? <Loader2 size={14} className="motion-safe:animate-spin" aria-hidden /> : <Sparkles size={14} aria-hidden />}
+          {cikariliyor ? "Okuyorum..." : bos ? "Yazdıklarımdan profil oluştur" : "Yazdıklarımdan yeniden oluştur"}
         </button>
+        {/* Why the button is dim: the 20-character minimum was never said */}
+        {!cikariliyor && metin.trim().length < 20 && (
+          <p id="kariyer-anlat-ipucu" className="mt-1.5 text-center text-[12px] text-[var(--k-t3)]">
+            {metin.trim().length === 0
+              ? "Önce birkaç cümle yaz, sonra bu düğme açılır."
+              : `Biraz daha anlat: ${20 - metin.trim().length} harf daha yazınca düğme açılır.`}
+          </p>
+        )}
       </section>
 
       {!bos && (
-        <section key={surum} className="glass rounded-2xl border border-[var(--border)] p-5">
-          <h2 className="text-[14px] font-medium text-white/90">2 · Seni şöyle anladım</h2>
-          <p className="mt-1 text-[12.5px] text-white/40">
-            İlanlar buna göre puanlanıyor. Yanlış ya da eksik varsa doğrudan düzelt — her satır bir madde.
-          </p>
+        <section key={surum} className={kartSinifi}>
+          <h2 className={baslikSinifi}>2 · Seni şöyle anladım</h2>
+          <p className={aciklamaSinifi}>İlanlar buna göre sıralanıyor. Yanlış ya da eksik varsa doğrudan düzelt — her satır bir madde.</p>
           <div className="mt-4 space-y-4">
             <Alan etiket="Özet">
               <textarea value={profil.ozet} onChange={(e) => setProfil({ ...profil, ozet: e.target.value })} rows={2} className={girdiSinifi} />
@@ -1383,8 +1908,8 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
             <ListeAlani etiket="Kabul edeceğin işler" deger={profil.kabulEder} onChange={(v) => setProfil({ ...profil, kabulEder: v })} />
 
             {oneriler.length > 0 && (
-              <div className="rounded-xl border border-dashed border-[var(--accent)]/30 bg-[var(--accent)]/[0.04] p-3.5">
-                <p className="text-[12.5px] text-white/60">
+              <div className="rounded-xl bg-[var(--accent)]/[0.06] p-3.5">
+                <p className="text-[13px] leading-5 text-[var(--k-t2)]">
                   <span className="font-medium text-[var(--accent-light)]">Bunlar da uyabilir.</span> Tıkladığın &quot;kabul
                   edeceğin işler&quot;e eklenir; tıklamadığın yok sayılır.
                 </p>
@@ -1392,18 +1917,8 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
                   {oneriler.map((o) => {
                     const secili = profil.kabulEder.includes(o.is);
                     return (
-                      <button
-                        key={o.is}
-                        type="button"
-                        onClick={() => oneriyiDegistir(o.is)}
-                        title={o.neden}
-                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12.5px] transition-colors ${
-                          secili
-                            ? "border-[var(--accent)]/50 bg-[var(--accent)]/20 text-[var(--accent-light)]"
-                            : "border-white/15 bg-white/[0.04] text-white/60 hover:border-white/30 hover:text-white/85"
-                        }`}
-                      >
-                        {secili ? <Check size={12} /> : <Plus size={12} />}
+                      <button key={o.is} type="button" onClick={() => oneriyiDegistir(o.is)} title={o.neden} aria-pressed={secili} className={cipSinifi(secili)}>
+                        {secili ? <Check size={12} aria-hidden /> : <Plus size={12} aria-hidden />}
                         {o.is}
                       </button>
                     );
@@ -1415,11 +1930,14 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
             <ListeAlani etiket="İstemediklerin" deger={profil.istemez} onChange={(v) => setProfil({ ...profil, istemez: v })} />
             <ListeAlani etiket="Güçlü yanların" deger={profil.guclu} onChange={(v) => setProfil({ ...profil, guclu: v })} />
 
-            <details className="group rounded-xl border border-[var(--border)] bg-white/[0.02] px-3.5 py-2.5">
-              <summary className="cursor-pointer list-none text-[12.5px] text-white/45 transition-colors hover:text-white/75">
-                Arama terimleri ({profil.aramaTerimleri.length}) — iş sitelerinde bunlar aranıyor
+            <details className="group rounded-xl bg-white/[0.03] px-3.5">
+              <summary
+                className={`flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg text-[13px] text-[var(--k-t2)] transition-colors hover:text-[var(--k-t1)] ${ODAK}`}
+              >
+                <span className="min-w-0 flex-1">Arama terimleri ({profil.aramaTerimleri.length}) — iş sitelerinde bunlar aranıyor</span>
+                <ChevronDown size={14} aria-hidden className="flex-shrink-0 transition-transform duration-150 group-open:rotate-180 motion-reduce:transition-none" />
               </summary>
-              <div className="mt-3">
+              <div className="pb-3 pt-1">
                 <ListeAlani
                   etiket="Terimler"
                   aciklama="Her satır bir arama. Türkçe ve İngilizce karışık olabilir; LinkedIn'de İngilizce başlık çok."
@@ -1432,76 +1950,142 @@ function ProfilEkrani({ satir, onKaydedildi }: { satir: ProfilSatiri | null; onK
         </section>
       )}
 
-      <section className="glass rounded-2xl border border-[var(--border)] p-5">
-        <h2 className="text-[14px] font-medium text-white/90">{bos ? "2" : "3"} · Şartlar</h2>
-        <p className="mt-1 text-[12.5px] text-white/40">Bunlar kesin filtre — uymayan ilan hiç değerlendirilmez.</p>
+      <section className={kartSinifi}>
+        <h2 className={baslikSinifi}>{bos ? "2" : "3"} · Nerede, nasıl çalışırsın</h2>
+        <p className={aciklamaSinifi}>Bunlar kesin süzgeç: uymayan ilana hiç bakılmaz.</p>
         <div className="mt-4 space-y-4">
           <Alan etiket="Şehirler" aciklama="Birden fazla olabilir. Boş bırakırsan her yer." sarmalama={false}>
-            <EtiketGirdisi deger={sehirler} onChange={(v) => setSehirler(sehirleriDogrula(v))} placeholder="Şehir yaz, Enter'a bas" />
+            <EtiketGirdisi deger={sehirler} onChange={(v) => setSehirler(sehirleriDogrula(v))} placeholder="Şehir yaz, Ekle'ye bas" />
           </Alan>
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-3">
-            <input type="checkbox" checked={uzaktan} onChange={(e) => setUzaktan(e.target.checked)} className="h-4 w-4 accent-[var(--accent)]" />
-            <span className="text-[13px] text-white/80">Uzaktan çalışma olur (şehir dışı ilan uzaktansa geçer)</span>
+          <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl bg-[var(--surface)] px-3.5 py-2">
+            <input
+              type="checkbox"
+              checked={uzaktan}
+              onChange={(e) => setUzaktan(e.target.checked)}
+              className={`h-5 w-5 flex-shrink-0 accent-[var(--accent)] ${ODAK}`}
+            />
+            <span className="min-w-0">
+              <span className="block text-[13px] text-[var(--k-t1)]">Uzaktan (evden) çalışmaya açığım</span>
+              <span className="block text-[12px] text-[var(--k-t3)]">Başka şehirdeki ilan uzaktansa yine gösterilir</span>
+            </span>
           </label>
-          <Alan etiket="Bildirim e-postası" aciklama="Güçlü eşleşmeler ve akşam özeti buraya gelir.">
+          <Alan etiket="E-posta" aciklama="Sana çok uygun ilanlar ve akşam özeti buraya gelir.">
             <input value={eposta} onChange={(e) => setEposta(e.target.value)} type="email" placeholder="sen@ornek.com" className={girdiSinifi} />
           </Alan>
         </div>
       </section>
 
-      <div className="sticky bottom-4 z-10">
-        {degisti && !bos && (
-          <p className="mb-2 text-center text-[11.5px] text-amber-200/70">Kaydedilmemiş değişiklik var</p>
-        )}
+      <div className="glass sticky bottom-4 z-10 rounded-2xl p-2 shadow-lg shadow-black/20 ring-1 ring-[var(--k-hair)]">
+        {degisti && !bos && <p className="mb-1.5 text-center text-[12px] text-amber-200/85">Kaydedilmemiş değişiklik var</p>}
         <button
           onClick={kaydet}
           disabled={kaydediliyor || bos || !degisti}
-          className="glass flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/15 px-5 py-3 text-[13px] font-medium text-[var(--accent-light)] shadow-lg shadow-black/20 transition-colors hover:bg-[var(--accent)]/25 disabled:cursor-not-allowed disabled:opacity-30"
+          className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-[13.5px] transition-colors disabled:cursor-not-allowed ${ODAK} ${
+            bos
+              ? "bg-white/[0.06] text-[var(--k-t2)]"
+              : degisti
+                ? "bg-[var(--accent)] font-medium text-[var(--background)] hover:bg-[var(--accent-light)] disabled:opacity-70"
+                : "bg-white/[0.06] text-[var(--k-t2)]"
+          }`}
         >
-          {kaydediliyor ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-          {bos ? "Önce profili çıkar" : degisti ? "Kaydet" : "Kaydedildi"}
+          {kaydediliyor ? <Loader2 size={14} className="motion-safe:animate-spin" aria-hidden /> : !bos && !degisti ? <Check size={14} aria-hidden /> : null}
+          {bos ? "Önce profilini oluştur" : degisti ? "Değişiklikleri kaydet" : "Kaydedildi"}
         </button>
       </div>
 
       {satir?.profil && !profilBosMu(satir.profil) && (
-        <div className="flex flex-wrap justify-center gap-2 pt-2">
-          <button
-            type="button"
-            onClick={yenidenPuanla}
-            disabled={yenideniliyor || !yenidenSayi || degisti}
-            title={degisti ? "Önce kaydet" : "Profil değiştiyse eski puanlar eski profile ait; bu düğme onları yeniletir"}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:opacity-40"
+        <details className="group">
+          <summary
+            className={`flex h-11 cursor-pointer list-none items-center justify-center gap-1.5 rounded-xl text-[13px] text-[var(--k-t2)] transition-colors hover:text-[var(--k-t1)] ${ODAK}`}
           >
-            {yenideniliyor ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-            Son 7 günü yeni profile göre yeniden puanla{yenidenSayi ? ` (${yenidenSayi})` : ""}
-          </button>
-          <button
-            type="button"
-            onClick={sifirla}
-            disabled={sifirlaniyor}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-white/30 transition-colors hover:bg-red-500/10 hover:text-red-200/80 disabled:opacity-40"
-          >
-            {sifirlaniyor ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
-            Profili sıfırla
-          </button>
-          <button
-            type="button"
-            onClick={ilanlariTemizle}
-            disabled={temizleniyor}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-white/30 transition-colors hover:bg-red-500/10 hover:text-red-200/80 disabled:opacity-40"
-          >
-            {temizleniyor ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-            Tüm ilanları temizle
-          </button>
-        </div>
+            Diğer işlemler
+            <ChevronDown size={14} aria-hidden className="transition-transform duration-150 group-open:rotate-180 motion-reduce:transition-none" />
+          </summary>
+          <div className="mt-1 space-y-1.5">
+            <IslemSatiri
+              onClick={yenidenPuanla}
+              disabled={yenideniliyor || !yenidenSayi || degisti}
+              title={degisti ? "Önce kaydet" : "Profil değiştiyse eski uyum sonuçları eski profile ait; bu düğme onları yeniden hesaplatır"}
+              yukleniyor={yenideniliyor}
+              Ikon={RefreshCw}
+              baslik={`Son 7 günün uyumunu yeniden hesapla${yenidenSayi ? ` (${yenidenSayi})` : ""}`}
+              aciklama="Profilini değiştirdiysen eski ilanları yeni profile göre yeniden sıralar."
+            />
+            <IslemSatiri
+              onClick={sifirla}
+              disabled={sifirlaniyor}
+              yukleniyor={sifirlaniyor}
+              Ikon={RotateCcw}
+              yikici
+              baslik="Profili sıfırla"
+              aciklama="Anlattığın metin, profil ve şehirler silinir; ilanlar kalır."
+            />
+            <IslemSatiri
+              onClick={ilanlariTemizle}
+              disabled={temizleniyor}
+              yukleniyor={temizleniyor}
+              Ikon={Trash2}
+              ikonSinifi="text-rose-300/80"
+              yikici
+              baslik="Tüm ilanları temizle"
+              aciklama="İlanlar, uyum sonuçları ve geri bildirimler silinir; profil kalır."
+            />
+          </div>
+        </details>
       )}
     </div>
+  );
+}
+
+/** Full-width row button inside "Diğer işlemler": icon + title + one-line explanation */
+function IslemSatiri({
+  onClick,
+  disabled,
+  title,
+  yukleniyor,
+  Ikon,
+  baslik,
+  aciklama,
+  yikici = false,
+  ikonSinifi = "text-[var(--k-t2)]",
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  title?: string;
+  yukleniyor: boolean;
+  Ikon: typeof Trash2;
+  baslik: string;
+  aciklama: string;
+  yikici?: boolean;
+  ikonSinifi?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`flex min-h-12 w-full items-center gap-3 rounded-xl bg-white/[0.03] px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        yikici ? "enabled:hover:bg-rose-300/[0.10]" : "enabled:hover:bg-white/[0.06]"
+      } ${ODAK}`}
+    >
+      {yukleniyor ? (
+        <Loader2 size={16} aria-hidden className={`flex-shrink-0 motion-safe:animate-spin ${ikonSinifi}`} />
+      ) : (
+        <Ikon size={16} aria-hidden className={`flex-shrink-0 ${ikonSinifi}`} />
+      )}
+      <span className="min-w-0">
+        <span className="block text-[13.5px] text-[var(--k-t1)]">{baslik}</span>
+        <span className="block text-[11.5px] leading-4 text-[var(--k-t2)]">{aciklama}</span>
+      </span>
+    </button>
   );
 }
 
 /**
  * Etiket girdisi: Enter ya da virgül ekler, × siler, Backspace boş kutuda
  * sonuncuyu siler. Şehirler için; ablam tek tek yazsın, liste görünsün.
+ * "Ekle" button: the same ekle(), for people who do not know Enter adds.
  */
 function EtiketGirdisi({ deger, onChange, placeholder }: { deger: string[]; onChange: (v: string[]) => void; placeholder?: string }) {
   const [yazilan, setYazilan] = useState("");
@@ -1511,36 +2095,57 @@ function EtiketGirdisi({ deger, onChange, placeholder }: { deger: string[]; onCh
     setYazilan("");
   };
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 focus-within:border-[var(--accent)]/40">
-      {deger.map((d) => (
-        <span key={d} className="flex items-center gap-1 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/10 py-1 pl-3 pr-1.5 text-[12.5px] text-[var(--accent-light)]">
-          {d}
-          <button type="button" onClick={() => onChange(deger.filter((x) => x !== d))} aria-label={`${d} kaldır`} className="rounded-full p-0.5 text-[var(--accent-light)]/60 transition-colors hover:bg-white/10 hover:text-white">
-            <X size={12} />
-          </button>
-        </span>
-      ))}
-      <input
-        value={yazilan}
-        onChange={(e) => setYazilan(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === ",") {
-            e.preventDefault();
-            ekle();
-          } else if (e.key === "Backspace" && !yazilan && deger.length) {
-            onChange(deger.slice(0, -1));
-          }
-        }}
-        onBlur={ekle}
-        placeholder={deger.length ? "" : placeholder}
-        className="min-w-[10ch] flex-1 bg-transparent px-1 py-0.5 text-[13.5px] text-white/90 placeholder-white/25 outline-none"
-      />
+    <div className="flex items-center gap-2">
+      <div className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-1.5 rounded-xl border border-white/[0.08] bg-[var(--surface)] px-2.5 py-1.5 transition-shadow focus-within:border-[var(--accent)]/40 focus-within:ring-2 focus-within:ring-[rgb(var(--accent-rgb)/0.6)]">
+        {deger.map((d) => (
+          <span key={d} className="flex items-center gap-1 rounded-full bg-[var(--accent)]/10 py-1 pl-3 pr-1 text-[12.5px] text-[var(--accent-light)]">
+            {d}
+            {/* 28x24 button; the hit area grows to 40x40 but only 4 px towards the label and
+                8 px elsewhere, so it stays inside the chip padding and the 6 px gaps (no overlap
+                with the input or the next row). */}
+            <button
+              type="button"
+              onClick={() => onChange(deger.filter((x) => x !== d))}
+              aria-label={`${d} kaldır`}
+              className={`relative grid h-6 w-7 place-items-center rounded-full text-[var(--accent-light)]/70 transition-colors after:absolute after:-inset-y-2 after:-left-1 after:-right-2 after:content-[''] hover:bg-white/10 hover:text-[var(--k-t1)] ${ODAK}`}
+            >
+              <X size={12} aria-hidden />
+            </button>
+          </span>
+        ))}
+        <input
+          value={yazilan}
+          onChange={(e) => setYazilan(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === ",") {
+              e.preventDefault();
+              ekle();
+            } else if (e.key === "Backspace" && !yazilan && deger.length) {
+              onChange(deger.slice(0, -1));
+            }
+          }}
+          onBlur={ekle}
+          aria-label={placeholder ?? "Ekle"}
+          placeholder={deger.length ? "" : placeholder}
+          className="min-w-[10ch] flex-1 bg-transparent px-1 py-1 text-[13.5px] text-[var(--k-t1)] placeholder-[var(--k-t3)] outline-none"
+        />
+      </div>
+      {yazilan.trim() && (
+        <button
+          type="button"
+          // Keep focus in the input so blur does not add first and remove this button mid-click
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={ekle}
+          className={`h-10 flex-shrink-0 rounded-xl bg-white/[0.08] px-3 text-[13px] text-[var(--k-t1)] transition-colors hover:bg-white/[0.12] ${ODAK}`}
+        >
+          Ekle
+        </button>
+      )}
     </div>
   );
 }
 
-const girdiSinifi =
-  "focus-ring w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-[13.5px] text-white/90 placeholder-white/25";
+const girdiSinifi = `min-h-11 w-full rounded-xl border border-white/[0.08] bg-[var(--surface)] px-3.5 py-2.5 text-[13.5px] text-[var(--k-t1)] placeholder-[var(--k-t3)] ${GIRDI_ODAK}`;
 
 /**
  * Alan başlığı + girdi. Varsayılan <label>: başlığa tıklayınca girdi odaklanır.
@@ -1552,8 +2157,8 @@ function Alan({ etiket, aciklama, children, sarmalama = true }: { etiket: string
   const Sarici = sarmalama ? "label" : "div";
   return (
     <Sarici className="block">
-      <span className="mb-1.5 block text-[11.5px] font-medium uppercase tracking-wider text-white/35">{etiket}</span>
-      {aciklama && <span className="mb-1.5 block text-[12px] text-white/30">{aciklama}</span>}
+      <span className={`block text-[13px] font-medium text-[var(--k-t1)] ${aciklama ? "mb-0.5" : "mb-1.5"}`}>{etiket}</span>
+      {aciklama && <span className="mb-1.5 block text-[12px] text-[var(--k-t3)]">{aciklama}</span>}
       {children}
     </Sarici>
   );

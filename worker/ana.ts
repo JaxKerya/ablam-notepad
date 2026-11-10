@@ -81,6 +81,11 @@ const KAYNAKLAR: KaynakTanimi[] = [
   {
     ad: "ilangov",
     etiket: "ilan.gov.tr",
+    // Disabled 10.11.2026: since 24.09.2026 AdsByFilter answers only the site's own
+    // UI (HTTP 403 otherwise; we do not fake its headers). Measured the same day:
+    // every eligible, in-city ad there was also on Kamu İlan, Kariyer Kapısı or
+    // Yerel Yönetimler, so it added nothing.
+    hazir: () => "devre dışı: API yalnızca site arayüzüne açık (24.09.2026'dan beri HTTP 403)",
     tara: (b) => ilangovTara({ sehirler: b.sehirler, bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
   },
   {
