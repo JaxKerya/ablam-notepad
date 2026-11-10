@@ -55,6 +55,12 @@ import {
 
 type Sekme = "eslesmeler" | "tumu" | "basvurular" | "profil";
 
+/** Embedded ad row -> Eslesme["ilan"]; a removed ad keeps its record but loses its dead link */
+function ilanNormalle(ham: unknown): Eslesme["ilan"] {
+  const ilan = (Array.isArray(ham) ? ham[0] : ham) as Eslesme["ilan"];
+  return ilan?.kaldirildi ? { ...ilan, url: null } : ilan;
+}
+
 interface Eslesme {
   ilan_id: string;
   puan: number;
@@ -79,6 +85,8 @@ interface Eslesme {
     url: string | null;
     kaynak: string;
     son_basvuru: string | null;
+    /** Set by the worker when the ad left its source (Careerjet: the link then 404s) */
+    kaldirildi?: string | null;
   };
 }
 
@@ -298,9 +306,11 @@ function KariyerUygulamasi() {
       supabase
         .from("kariyer_eslesmeler")
         .select(
-          "ilan_id, puan, gerekce, uyusan, uyusmayan, karar, geri_bildirim, geri_bildirim_notu, risk, uyarilar, basvuru_durumu, basvuru_ts, basvuru_hatirlatma, degerlendirildi, kariyer_ilanlar(baslik, sirket, sehir, url, kaynak, son_basvuru)"
+          "ilan_id, puan, gerekce, uyusan, uyusmayan, karar, geri_bildirim, geri_bildirim_notu, risk, uyarilar, basvuru_durumu, basvuru_ts, basvuru_hatirlatma, degerlendirildi, kariyer_ilanlar!inner(baslik, sirket, sehir, url, kaynak, son_basvuru, kaldirildi)"
         )
         .neq("karar", "ele")
+        // Ads that left their source are hidden like an expired deadline (the row stays)
+        .is("kariyer_ilanlar.kaldirildi", null)
         .order("degerlendirildi", { ascending: false })
         .limit(200),
       // ~3 gün: 8 kaynak × saatlik koşu. 60 satır 7 saat ediyordu; 8 saatte bir taranan
@@ -326,7 +336,7 @@ function KariyerUygulamasi() {
       (e.data ?? [])
         .map((r) => {
           const ham = r.kariyer_ilanlar as unknown;
-          const ilan = (Array.isArray(ham) ? ham[0] : ham) as Eslesme["ilan"];
+          const ilan = ilanNormalle(ham);
           return { ...(r as Omit<Eslesme, "ilan">), ilan };
         })
         // Son başvurusu geçen ilan listede durmasın — kayıt kalır, gösterilmez
@@ -349,14 +359,14 @@ function KariyerUygulamasi() {
     const { data } = await supabase
       .from("kariyer_eslesmeler")
       .select(
-        "ilan_id, puan, gerekce, uyusan, uyusmayan, karar, geri_bildirim, geri_bildirim_notu, risk, uyarilar, basvuru_durumu, basvuru_ts, basvuru_hatirlatma, degerlendirildi, kariyer_ilanlar(baslik, sirket, sehir, url, kaynak, son_basvuru)"
+        "ilan_id, puan, gerekce, uyusan, uyusmayan, karar, geri_bildirim, geri_bildirim_notu, risk, uyarilar, basvuru_durumu, basvuru_ts, basvuru_hatirlatma, degerlendirildi, kariyer_ilanlar(baslik, sirket, sehir, url, kaynak, son_basvuru, kaldirildi)"
       )
       .order("degerlendirildi", { ascending: false })
       .limit(300);
     setTumu(
       (data ?? []).map((r) => {
         const ham = r.kariyer_ilanlar as unknown;
-        const ilan = (Array.isArray(ham) ? ham[0] : ham) as Eslesme["ilan"];
+        const ilan = ilanNormalle(ham);
         return { ...(r as Omit<Eslesme, "ilan">), ilan };
       })
     );
@@ -366,7 +376,7 @@ function KariyerUygulamasi() {
     const { data } = await supabase
       .from("kariyer_eslesmeler")
       .select(
-        "ilan_id, puan, gerekce, uyusan, uyusmayan, karar, geri_bildirim, geri_bildirim_notu, risk, uyarilar, basvuru_durumu, basvuru_ts, basvuru_hatirlatma, degerlendirildi, kariyer_ilanlar(baslik, sirket, sehir, url, kaynak, son_basvuru)"
+        "ilan_id, puan, gerekce, uyusan, uyusmayan, karar, geri_bildirim, geri_bildirim_notu, risk, uyarilar, basvuru_durumu, basvuru_ts, basvuru_hatirlatma, degerlendirildi, kariyer_ilanlar(baslik, sirket, sehir, url, kaynak, son_basvuru, kaldirildi)"
       )
       .not("basvuru_durumu", "is", null)
       .order("basvuru_guncelleme", { ascending: false })
@@ -375,7 +385,7 @@ function KariyerUygulamasi() {
     setBasvurular(
       (data ?? []).map((r) => {
         const ham = r.kariyer_ilanlar as unknown;
-        const ilan = (Array.isArray(ham) ? ham[0] : ham) as Eslesme["ilan"];
+        const ilan = ilanNormalle(ham);
         return { ...(r as Omit<Eslesme, "ilan">), ilan };
       })
     );
@@ -680,6 +690,7 @@ function TumuEkrani({ liste, onGeri }: { liste: Eslesme[] | null; onGeri: () => 
       <div className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl bg-[var(--k-card)] ring-1 ring-[var(--k-hair)]">
         {liste.map((e) => {
           const gecti = (kalanGun(e.ilan?.son_basvuru) ?? 0) < 0;
+          const kalkti = !!e.ilan?.kaldirildi;
           const elendi = e.karar === "ele";
           return (
             <div key={e.ilan_id} className="flex items-start gap-3 px-3.5 py-2.5">
@@ -688,7 +699,7 @@ function TumuEkrani({ liste, onGeri }: { liste: Eslesme[] | null; onGeri: () => 
                 <span className="sr-only">Uyum {e.puan}/100</span>
               </span>
               <div className="min-w-0 flex-1">
-                <p className={`text-[13.5px] ${elendi || gecti ? "text-[var(--k-t3)]" : "text-[var(--k-t1)]"}`}>
+                <p className={`text-[13.5px] ${elendi || gecti || kalkti ? "text-[var(--k-t3)]" : "text-[var(--k-t1)]"}`}>
                   {e.ilan?.url ? (
                     <a href={e.ilan.url} target="_blank" rel="noopener noreferrer" className={`block truncate rounded-sm hover:text-[var(--accent-light)] ${ODAK}`}>
                       {e.ilan.baslik}
@@ -702,6 +713,7 @@ function TumuEkrani({ liste, onGeri }: { liste: Eslesme[] | null; onGeri: () => 
                   {[e.ilan?.sirket, e.ilan?.sehir, kaynakEtiketi(e.ilan?.kaynak ?? ""), tarihMetni(e.degerlendirildi)].filter(Boolean).join(" · ")}
                   {elendi && " · uymadı"}
                   {gecti && " · süresi geçti"}
+                  {kalkti && " · ilan kaldırıldı"}
                   {e.basvuru_durumu ? " · başvurdun" : e.geri_bildirim && ` · ${e.geri_bildirim === "ilgilendim" ? "ilgini çekti" : "uymaz dedin"}`}
                   {e.risk && (
                     <span className="text-rose-200/80">
@@ -1570,6 +1582,7 @@ function BasvurularEkrani({
             e.ilan?.sehir,
             kaynakEtiketi(e.ilan?.kaynak ?? ""),
             gun !== null ? `${gun === 0 ? "bugün" : `${gun} gün önce`} başvurdun` : null,
+            e.ilan?.kaldirildi ? "ilan sitede kaldırıldı" : null,
           ]
             .filter(Boolean)
             .join(" · ");

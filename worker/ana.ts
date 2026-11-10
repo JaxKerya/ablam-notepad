@@ -55,6 +55,14 @@ interface TaramaBaglami {
 interface KaynakSonucu {
   ilanlar: HamIlan[];
   gorulen: number;
+  /**
+   * Every ID the source reported in this scan, known ones included. Only set by
+   * sources whose scan covers their whole live pool for the profile (Careerjet);
+   * left undefined when the scan was partial (a term failed, a page was full).
+   */
+  tumKimlikler?: string[];
+  /** Terms this scan searched; stored ads found by another term are not judged */
+  arananlar?: string[];
 }
 
 interface KaynakTanimi {
@@ -201,6 +209,49 @@ async function bilinenKimlikleriOku(db: Db, kaynak: Kaynak): Promise<Set<string>
 }
 
 /**
+ * Stamps ads that are no longer in the source's complete result set as removed
+ * (kaldirildi) and clears the stamp on ones that came back. See
+ * db/kariyer-kaldirildi.sql for why absence means a dead link (Careerjet).
+ * Before that column exists the update fails; it is logged and skipped.
+ */
+async function kaybolanlariIsaretle(db: Db, kaynak: Kaynak, tumKimlikler: string[], arananlar?: string[]): Promise<void> {
+  // An empty complete scan is more likely an API hiccup than every ad vanishing
+  if (!tumKimlikler.length) return;
+  const gorulen = new Set(tumKimlikler);
+  const kapsam = arananlar ? new Set(arananlar) : null;
+  const { data, error } = await db
+    .from("kariyer_ilanlar")
+    .select("id, kaynak_id, kaldirildi, aranan:ham->>aranan")
+    .eq("kaynak", kaynak)
+    .not("kaynak_id", "is", null)
+    .limit(5000);
+  if (error) {
+    log(`kaldırılan ilan denetimi atlandı (${kaynak}): ${error.message}`);
+    return;
+  }
+  const satirlar = (data ?? []) as { id: string; kaynak_id: string; kaldirildi: string | null; aranan: string | null }[];
+  // A row whose term left the profile could still be live; it was not searched, so it is
+  // not judged. Rows stored before the term was recorded (aranan null) are judged.
+  const arandi = (r: (typeof satirlar)[number]) => !kapsam || !r.aranan || kapsam.has(r.aranan);
+  const kaybolan = satirlar.filter((r) => !r.kaldirildi && !gorulen.has(r.kaynak_id) && arandi(r)).map((r) => r.id);
+  const donen = satirlar.filter((r) => r.kaldirildi && gorulen.has(r.kaynak_id)).map((r) => r.id);
+  const yaz = async (idler: string[], deger: string | null) => {
+    for (let i = 0; i < idler.length; i += 100) {
+      const { error: e } = await db.from("kariyer_ilanlar").update({ kaldirildi: deger }).in("id", idler.slice(i, i + 100));
+      if (e) throw new Error(e.message);
+    }
+  };
+  try {
+    await yaz(kaybolan, new Date().toISOString());
+    await yaz(donen, null);
+  } catch (e) {
+    log(`kaldırılan ilan işaretlenemedi (${kaynak}): ${(e as Error).message}`);
+    return;
+  }
+  if (kaybolan.length || donen.length) log(`${kaynak}: ${kaybolan.length} ilan kaynakta kaldırılmış, ${donen.length} geri döndü`);
+}
+
+/**
  * Tek kaynağın koşusu: kariyer_taramalar satırı, tarama, değerlendirme, satırı
  * kapatma. Hata burada yakalanır — kaynak düşünce koşu değil, o kaynak düşer.
  */
@@ -227,6 +278,7 @@ async function kaynagiKos(db: Db, k: KaynakTanimi, profil: KariyerProfili, filtr
       log,
     });
     log(`${k.etiket}: ${sonuc.gorulen} görüldü, ${sonuc.ilanlar.length} yeni`);
+    if (sonuc.tumKimlikler) await kaybolanlariIsaretle(db, k.ad, sonuc.tumKimlikler, sonuc.arananlar);
 
     const ozet = await ilanlariDegerlendir(db, sonuc.ilanlar, profil, filtre, log);
     await kapat({

@@ -138,7 +138,9 @@ const sarmala = (icerik: string) =>
 async function bekleyenler(db: SupabaseClient, karar: "bildir" | "ozet"): Promise<EslesmeSatiri[]> {
   const { data, error } = await db
     .from("kariyer_eslesmeler")
-    .select("ilan_id, puan, gerekce, uyusan, uyusmayan, risk, uyarilar, kariyer_ilanlar(baslik, sirket, sehir, url, kaynak, son_basvuru)")
+    .select("ilan_id, puan, gerekce, uyusan, uyusmayan, risk, uyarilar, kariyer_ilanlar!inner(baslik, sirket, sehir, url, kaynak, son_basvuru)")
+    // A digest can wait up to a day; by then a Careerjet ad may be gone (dead link)
+    .is("kariyer_ilanlar.kaldirildi", null)
     .eq("karar", karar)
     .is("bildirildi", null)
     .order("puan", { ascending: false })

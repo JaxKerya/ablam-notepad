@@ -99,6 +99,9 @@ export async function careerjetTara(secenekler: CareerjetSecenekleri) {
   const toplanan = new Map<string, HamIlan>();
   const gorulen = new Set<string>();
   const hatalar: string[] = [];
+  // A term that fills the whole page may have more ads than we saw; then the
+  // seen set is not the full pool and must not be used to stamp removed ads.
+  let dolanSayfa = 0;
   // Şehir Careerjet'e verilmiyor: keywords + location birlikte gelince çok kelimeli
   // terimlerde API 0 döndürüyor ("büro personeli" TR geneli 44, Ankara 0 — 19.09.2026'da
   // ölçüldü; 33 sorgu × 0 sonuçla bir gece geçti). Türkiye geneli çekilip şehir elemesi
@@ -116,6 +119,7 @@ export async function careerjetTara(secenekler: CareerjetSecenekleri) {
       if (veri.type !== "JOBS" || !Array.isArray(veri.jobs)) {
         throw new Error(veri.message || "cevapta 'jobs' yok (API değişmiş olabilir)");
       }
+      if (veri.jobs.length >= 100) dolanSayfa++;
       for (const j of veri.jobs) {
         if (!j.title || !j.url) continue;
         const kimlik = careerjetKimlik(j);
@@ -132,7 +136,9 @@ export async function careerjetTara(secenekler: CareerjetSecenekleri) {
           maas: j.salary?.trim() || undefined,
           url: j.url,
           yayinTarihi: Number.isNaN(zaman) ? undefined : new Date(zaman).toISOString(),
-          ham: j,
+          // aranan: the term that found it; the removed-ad check only judges ads
+          // whose term is still searched (a dropped term's ads are not "gone")
+          ham: { ...j, aranan: terim },
         });
       }
     } catch (e) {
@@ -145,5 +151,14 @@ export async function careerjetTara(secenekler: CareerjetSecenekleri) {
   if (aramalar.length && hatalar.length === aramalar.length) {
     throw new Error(`her terim düştü — ${hatalar[0]}`);
   }
-  return { ilanlar: [...toplanan.values()], gorulen: gorulen.size };
+  if (dolanSayfa) log(`Careerjet: ${dolanSayfa} terim sayfayı doldurdu, kaldırılan ilan denetimi bu tur atlandı`);
+  // Measured 10.11.2026: an ad missing from these results has a dead (404) link,
+  // so a complete scan (no failed term, no full page) is the live pool.
+  const eksiksiz = !hatalar.length && !dolanSayfa;
+  return {
+    ilanlar: [...toplanan.values()],
+    gorulen: gorulen.size,
+    tumKimlikler: eksiksiz ? [...gorulen] : undefined,
+    arananlar: aramaTerimleri,
+  };
 }

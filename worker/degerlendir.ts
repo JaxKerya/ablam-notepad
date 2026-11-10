@@ -373,6 +373,8 @@ export async function yarimKalanlariTamamla(
     .from("kariyer_ilanlar")
     .select("id, kaynak, kaynak_id, baslik, sirket, sehir, aciklama, url, son_basvuru, kariyer_eslesmeler(ilan_id)")
     .is("kariyer_eslesmeler", null)
+    // An ad that already left its source is not worth a model call
+    .is("kaldirildi", null)
     .order("gorulme", { ascending: false })
     // 25 per run left a 937-ad backlog after the 10.11.2026 credit outage (~37 h to
     // clear). Most are dropped by the cheap gate; the daily cost cap still applies.
