@@ -250,6 +250,35 @@ export interface FiltreProfili {
   /** Boş = her yer. Birden fazla olabilir; ilan bunlardan birine uyarsa geçer. */
   sehirler: string[];
   uzaktan_olur: boolean;
+  /** Profile says associate degree (önlisans): jobs demanding only a bachelor's are dropped (egitimEngeli) */
+  onlisans?: boolean;
+}
+
+/** True when the profile text says the person holds an associate degree */
+export function onlisansProfiliMi(profil: Pick<KariyerProfili, "ozet" | "guclu">): boolean {
+  return /ön ?lisans|onlisans/i.test([profil.ozet, ...profil.guclu].join(" "));
+}
+
+// Associate degree, high school or their KPSS score types (P93 önlisans, P94 ortaöğretim):
+// if any of these appears, at least one post may accept her, so the model reads it.
+const ONLISANS_KABUL = /ön ?lisans|onlisans|p ?93\b|meslek yüksekokul|iki yıllık|2 yıllık|ortaöğretim|ortaogretim|\blise\b|lise mezun|p ?94\b|ilköğretim/;
+// Bachelor's-only signals. The lookbehinds keep "önlisans mezunu" from matching "lisans mezunu".
+const YALNIZ_LISANS =
+  /(?<!ön ?)(?<!ön)lisans (?:düzeyinde |programından |programlarından |bölümünden |bölümlerinden )?mezun|fakülte(?:si|lerin)?[^.\n]{0,40}mezun|dört yıllık|4 yıllık|kpss ?\(?b\)? ?p ?3\b|\bp ?3 puan|kpss p ?(?:[1-4][0-9])\b/;
+
+/**
+ * Mechanical education check for an associate-degree holder: the job is dropped
+ * only when its text asks for a bachelor's (or a bachelor-level KPSS score type)
+ * and nowhere mentions önlisans, high school or P93/P94. Mixed announcements
+ * (one post for önlisans, others for lisans) go to the model.
+ * Measured 10.11.2026 on 942 scored jobs: drops 31, none of the 16 the model
+ * scored 40+, highest dropped score 15 (already rejected by the model for the
+ * same reason).
+ */
+export function egitimEngeli(ilan: Pick<HamIlan, "baslik" | "aciklama">): string | null {
+  const metin = `${ilan.baslik}\n${ilan.aciklama ?? ""}`.toLocaleLowerCase("tr");
+  if (!YALNIZ_LISANS.test(metin) || ONLISANS_KABUL.test(metin)) return null;
+  return "ilan yalnızca lisans (dört yıllık) mezunu istiyor, önlisans geçmiyor";
 }
 
 /** Modelin "bunlar da uyabilir" dediği yakın işler — ablam tıklayıp ekler, eklemezse yok sayılır */
@@ -268,6 +297,10 @@ export interface ProfilOnerisi {
  * ilan bir daha görülmüyor.
  */
 export function sertFiltre(ilan: HamIlan, profil: FiltreProfili): string | null {
+  if (profil.onlisans) {
+    const engel = egitimEngeli(ilan);
+    if (engel) return engel;
+  }
   if (!profil.sehirler.length || !ilan.sehir) return null;
   // İl adı yoksa ("Sincan", "Üsküdar, Kuzguncuk") elenmez — model ilçeyi bilir.
   // İlk sürüm virgülden önceki parçayı il sanıp "Küçükçekmece, İstanbul"ı eliyordu.

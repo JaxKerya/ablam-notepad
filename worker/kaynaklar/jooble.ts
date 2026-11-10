@@ -53,9 +53,10 @@ export async function joobleTara(secenekler: JoobleSecenekleri) {
   const hatalar: string[] = [];
   const aramalar = (sehirler.length ? sehirler : [""]).flatMap((sehir) => aramaTerimleri.map((terim) => ({ terim, sehir })));
 
-  // Terim başına 3 sayfa (~20'şer): büyük şehirde ilk sayfa havuzun küçük bir kısmı.
-  // Sayfa yeni kimlik getirmiyorsa durulur — bilinenler tekrar tekrar çekilmesin.
-  const SAYFA_SINIRI = 3;
+  // Terim başına 1 sayfa (~20 ilan). 10.11.2026: 845 Jooble ilanından 400'ü
+  // puanlandı, hiçbiri 50'ye ulaşmadı; maliyetin en büyük payı buradaydı.
+  // JOOBLE_SAYFA ile artırılabilir. Sayfa yeni kimlik getirmiyorsa durulur.
+  const SAYFA_SINIRI = Number(process.env.JOOBLE_SAYFA) || 1;
   for (const { terim, sehir } of aramalar) {
     try {
       for (let sayfa = 1; sayfa <= SAYFA_SINIRI; sayfa++) {

@@ -20,7 +20,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "../lib/supabase-server";
-import { BOS_PROFIL, profilDogrula, sehirleriDogrula, type FiltreProfili, type HamIlan, type KariyerProfili, type Kaynak } from "../lib/kariyer";
+import { BOS_PROFIL, onlisansProfiliMi, profilDogrula, sehirleriDogrula, type FiltreProfili, type HamIlan, type KariyerProfili, type Kaynak } from "../lib/kariyer";
 import { iskurTara } from "./kaynaklar/iskur";
 import { ilangovTara } from "./kaynaklar/ilangov";
 import { kariyerKapisiTara } from "./kaynaklar/kariyerkapisi";
@@ -142,11 +142,13 @@ async function profiliOku(db: Db): Promise<Profil> {
     .eq("id", 1)
     .maybeSingle();
   if (error) throw new Error(`profil okunamadı: ${error.message}`);
+  const profil = data?.profil ? profilDogrula(data.profil) : BOS_PROFIL;
   return {
-    profil: data?.profil ? profilDogrula(data.profil) : BOS_PROFIL,
+    profil,
     filtre: {
       sehirler: sehirleriDogrula(data?.sehirler),
       uzaktan_olur: data?.uzaktan_olur ?? true,
+      onlisans: onlisansProfiliMi(profil),
     },
     bildirimEposta: data?.bildirim_eposta ?? null,
   };
