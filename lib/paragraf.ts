@@ -20,6 +20,7 @@ import {
   type DenetimGecisi,
   type DenetimKaydi,
 } from "@/lib/ders";
+import { onculDengele } from "@/lib/oncul";
 import { PARAGRAF_COZUCU, paragrafPrompt, SIK_SAYISI } from "@/lib/prompts";
 import type { createServerSupabaseClient } from "@/lib/supabase-server";
 
@@ -147,14 +148,24 @@ export async function paragrafSorulariUret(
       continue;
     }
     const tur = metin(u.tur);
+    // Yalnız şıkları öncül kombinasyonu olan sorular dengelenir (bkz. lib/oncul.ts).
+    // Numaralı cümle şıkları ("I.", "II ile IV") ve paragraf içi "(I)" işaretleri
+    // kapsam dışı: cümlelerin sırası paragrafın kendisi. Çözücüden ÖNCE: çözücü
+    // son hâlini çözsün, harfi anahtarla karşılaştırılabilsin.
+    const dengeli = onculDengele({
+      soru: `${paragraf}\n${soru}`,
+      secenekler: k.secenekler,
+      dogruIndeks: k.dogruIndeks,
+      aciklama: metin(u.aciklama) ? hukumOneksizAciklama(metin(u.aciklama)) : null,
+    });
     adaylar.push({
       kind: "coktan",
-      question: `${paragraf}\n${soru}`,
+      question: dengeli.soru,
       answer_key: null,
       key_points: [],
-      choices: k.secenekler,
-      correct_index: k.dogruIndeks,
-      explanation: metin(u.aciklama) ? hukumOneksizAciklama(metin(u.aciklama)) : null,
+      choices: dengeli.secenekler,
+      correct_index: dengeli.dogruIndeks,
+      explanation: dengeli.aciklama,
       topic: tur ? `Paragraf: ${tur}` : "Paragraf",
       start_seconds: 0,
     });

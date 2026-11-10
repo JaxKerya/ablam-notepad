@@ -190,8 +190,22 @@ export async function bildirimleriGonder(
     return liste.filter((e) => !gecmis.includes(e));
   };
 
+  // Sources still on trial (SESSIZ_KAYNAKLAR=kamuilan,yerelyonetim) are collected,
+  // scored and shown on the site, but never emailed: their matches are marked as
+  // notified without sending, so switching a source back on later does not flood
+  // the inbox with its backlog.
+  const sessiz = new Set((process.env.SESSIZ_KAYNAKLAR ?? "").split(",").map((k) => k.trim()).filter(Boolean));
+  const sessizleriAyikla = async (liste: EslesmeSatiri[]) => {
+    const atlanan = liste.filter((e) => sessiz.has(e.kariyer_ilanlar?.kaynak ?? ""));
+    if (atlanan.length) {
+      await isaretle(db, atlanan.map((e) => e.ilan_id));
+      log(`${atlanan.length} ilan deneme aşamasındaki kaynaktan, e-posta gönderilmedi`);
+    }
+    return liste.filter((e) => !atlanan.includes(e));
+  };
+
   // Güçlü eşleşmeler — hemen, tek e-postada
-  const guclu = await gecmisleriAyikla((await bekleyenler(db, "bildir")).filter((e) => e.kariyer_ilanlar));
+  const guclu = await gecmisleriAyikla(await sessizleriAyikla((await bekleyenler(db, "bildir")).filter((e) => e.kariyer_ilanlar)));
   if (guclu.length) {
     const konu =
       guclu.length === 1
@@ -210,7 +224,7 @@ export async function bildirimleriGonder(
   // Akşam özeti — 18'den sonra, bugün gitmediyse. İçinde iki bölüm olabilir:
   // bakmaya değer ilanlar ve başvuru takip hatırlatmaları; ikisi de boşsa gitmez.
   if (turkiyeSaati() >= OZET_SAATI && !(await bugunOzetGittiMi(db))) {
-    const ozet = await gecmisleriAyikla((await bekleyenler(db, "ozet")).filter((e) => e.kariyer_ilanlar));
+    const ozet = await gecmisleriAyikla(await sessizleriAyikla((await bekleyenler(db, "ozet")).filter((e) => e.kariyer_ilanlar)));
     const takip = await takipBekleyenler(db);
     if (ozet.length || takip.length) {
       const konu = ozet.length

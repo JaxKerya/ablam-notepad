@@ -140,6 +140,12 @@ SADECE geçerli JSON döndür, başka hiçbir şey yazma, kod bloğu işareti ku
  *    kalıplarını yasaklıyordu. Model bu yasağı üç yerde çiğnedi ve çıkan sorular
  *    İYİYDİ — "hangi ilkenin zayıfladığını gösterir" standart bir KPSS kalıbı.
  *    Yani bozuk olan çıktı değil kuralın kendisiydi; kaldırıldı.
+ *
+ * 3. ÖNCÜL DAĞILIMI. Eski kural "en az biri doğru, en az biri yanlış" diyordu; model
+ *    bunu hep iki doğru diye okudu: 674 üretilmiş sorunun %95'i iki doğrulu, gerçek
+ *    ÖSYM'de "I ve II" %38, üçü de doğru %23, tek doğru %28. Sayı hedefi burada, sıra
+ *    kodda: öncüllerin numarası ve şıklar lib/oncul.ts'te rastgele belirleniyor. Açıklama
+ *    numara yazmasın diye isteniyor; yazarsa oradaki eşleme yedek olarak çalışıyor.
  */
 export const coktanPrompt = (
   ustSinir: number,
@@ -199,8 +205,20 @@ Biçimi tam olarak şöyle:
 
 Öncüllerin kurulumu:
 - Üçü de KISA olsun (tek satır, en fazla 10-12 kelime) ve aynı dilbilgisi kalıbında yazılsın.
-- En az biri doğru, en az biri yanlış olsun — hepsi doğru ("I, II ve III") her seferinde
-  gelirse ablam öncülleri okumadan o şıkkı işaretlemeye başlar.
+- Doğru öncül SAYISI sorudan soruya değişsin, ÖSYM'nin dağılımını hedefle: soruların yaklaşık
+  %30'unda TEK öncül doğru, %50'sinde İKİ öncül doğru, %20'sinde ÜÇÜ DE doğru. Hep iki doğru
+  yazma; ölçüldü, öğrenci öncülleri okumadan "ikili şık" işaretleyip puan topluyordu.
+- Öncülleri İSTEDİĞİN SIRADA yaz, doğruları başa dizmeye çalışma: öncüllerin hangi numaraya
+  geleceğini ve şıkları sistem rastgele belirliyor. "dogru" alanı senin yazdığın sıraya göre
+  doğru şıkkı göstersin, gerisini sistem taşır.
+- "aciklama" öncüllere NUMARAYLA değil İÇERİĞİYLE gönderme yapsın, çünkü numaralar sonradan
+  değişiyor: "III. yargı yanlıştır" ya da "I ve II doğrudur" YAZMA; "Kapıkulu askerlerinin
+  kısıtlanması bu sürecin sonucu değildir" yaz. "İlk öncül", "şıklardan C" de yazma.
+  "II. Mahmut", "I. Dünya Savaşı" gibi adlarda numara elbette kalır.
+- Öncül Roma rakamıyla sıra alan bir sözle BAŞLAMASIN (TBMM, Meşrutiyet, Balkan Savaşları, Dünya
+  Savaşı, Meclis, Ordu, hükümdar adı): numara değişince "II. TBMM'nin ..." diye başka bir ad
+  okunur. Başka bir sözle başlat: "TBMM'nin egemenliği benimsemesi" değil "Ulusal egemenliğin
+  TBMM'de benimsenmesi". "Her ikisi" ya da "Bunun sonucunda" diye başka bir öncüle de yaslanma.
 - İyi bir yanlış öncül şudur: kendi başına DOĞRU bir bilgi ama sorulan şeyle ilgisi yok,
   ya da derste anlatılanın tersi. Bariz saçma öncül yazma.
 - Üç öncül yaz, dört değil.
@@ -397,7 +415,9 @@ KONTROL LİSTESİ (çoktan seçmeli madde yazım kuralları):
    bakımından türdeş olsun; kökteki bir kelimenin yalnızca doğru şıkta tekrar etmesi ve
    "her zaman / asla" gibi mutlak ifadelerin yalnızca çeldiricilerde bulunması ipucudur.
 5. KÖK — tek başına anlaşılır, tek soru sorar.
-6. Öncüllü (I, II, III) soruların şık düzenine dokunma.
+6. Öncüllü (I, II, III) soruların şık düzenine ve öncül numaralarına dokunma: öncüllerin yerini
+   ve şıkları sistem rastgele belirliyor, sıralamaya çalışma. Bu tür soruda "aciklama" yazarsan
+   öncüllere numarayla değil içeriğiyle gönderme yap ("III. yargı yanlıştır" yazma).
 
 SINIRLAR:
 - Doğru şıkkın ANLAMINI ve sorunun ölçtüğü bilgiyi değiştirme. Doğru şıkkın metnine yalnızca
@@ -446,12 +466,18 @@ veriliyor. "nerede" yalnızca şu dört değerden biri olabilir:
 - "sik"       : işaretli şıkkın METNİNDEKİ bilgi yanlış (ama doğru şık yine odur).
 - "aciklama"  : açıklamadaki bilgi yanlış.
 - "dogru_sik" : İŞARETLİ ŞIK SORUNUN CEVABI DEĞİL.
-- "kok"       : soru KÖKÜNDEKİ ya da ÖNCÜLLERDEKİ (I, II, III) bilgi yanlış. Bu soru
-                onarılmaz, elenir; "duzeltilmis" yazma.
+- "kok"       : soru KÖKÜNDEKİ bilgi yanlış ya da İŞARETLİ ŞIKKIN DOĞRU SAYDIĞI bir öncülün
+                bilgisi yanlış. Bu soru onarılmaz, elenir; "duzeltilmis" yazma.
+
+ÖNCÜLLÜ SORUDA (şıklar "Yalnız I", "I ve III" gibiyse) önce işaretli şıkka bak. Şıkta adı
+GEÇMEYEN öncül (işaretli "I ve III" ise II) BİLEREK YANLIŞ yazılmıştır, sorunun kendisi odur.
+Bu öncülün derste söylenenle çelişmesi, derste geçmemesi ya da gerçekte yanlış olması SORUN
+DEĞİLDİR; bildirme. Bildir yalnızca şu iki durumda: şıkta adı geçen öncül yanlışsa ("kok"),
+şıkta adı geçmeyen öncül aslında doğruysa ("dogru_sik").
 
 "sik" ve "aciklama" için o parçanın DÜZELTİLMİŞ tam hâlini de yaz: yalnızca hatalı
 bilgiyi düzelt, metnin geri kalanını olduğu gibi koru. Öncül metnini "duzeltilmis"
-alanına KOYMA — öncül hatası "kok"tur.
+alanına KOYMA — şıkta adı geçen öncülün hatası "kok"tur.
 
 "dogru_sik" bildirirken iki durumu AYIRMAN gerekir, çünkü sonuçları farklıdır:
 
@@ -487,7 +513,7 @@ ${DENETIM_ORTAK}
 {"sorunlular": [
   {"no": 1, "tur": "celiski", "nerede": "sik", "gerekce": "derste 1453 deniyor", "duzeltilmis": "..."},
   {"no": 4, "tur": "celiski", "nerede": "dogru_sik", "dogru": "C", "gerekce": "derste bu sonucu doğuran şey C şıkkı; işaretli B derste başka bir bağlamda geçiyor"},
-  {"no": 6, "tur": "celiski", "nerede": "kok", "gerekce": "II. öncül derste tersi söylenen bir yargı"}
+  {"no": 6, "tur": "celiski", "nerede": "kok", "gerekce": "işaretli şık I ve II; II. öncül derste tersi söylenen bir yargı"}
 ]}`;
 
 export const SORU_OLGU_DENETIMI = `Sen bir KPSS ders materyali olgu denetçisisin. Sana soru–cevap çiftleri
@@ -550,7 +576,14 @@ VARYANT NE DEMEK:
 - Çoktan seçmelide ÇELDİRİCİLER YENİDEN YAZILIR. Aynı şıkları farklı sırayla vermek
   varyant değildir.
 - KAYNAK ÖNCÜLLÜ İSE (şıkları "Yalnız I", "I ve II" gibiyse) varyant da öncüllü olur:
-  öncülleri yeniden yaz, şıklar yine yalnızca o kombinasyon ifadelerinden oluşsun.
+  öncülleri yeniden yaz, şıklar yine yalnızca o kombinasyon ifadelerinden oluşsun. Doğru
+  öncül sayısını kaynağın öncül ve açıklamasındaki bilgiyle değiştirebiliyorsan değiştir
+  (yaklaşık %30'unda tek öncül, %50'sinde iki öncül, %20'sinde üçü de doğru olsun); değiştirmek
+  YENİ BİLGİ gerektiriyorsa kaynağın sayısını koru, yukarıdaki kural önce gelir. Öncülleri
+  istediğin sırada yaz, doğruları başa dizme: öncüllerin numarasını ve şıkları sistem rastgele
+  belirliyor. Öncül "TBMM", "Meşrutiyet", "Dünya" ya da hükümdar adıyla BAŞLAMASIN, "Her ikisi"
+  diye başka öncüle yaslanmasın. "aciklama" öncüllere numarayla değil içeriğiyle gönderme
+  yapsın ("III. yargı yanlıştır" YAZMA); "II. Mahmut" gibi adlar kalır.
 
 ÇOKTAN SEÇMELİ KURALLARI:
 - HER SORUDA TAM ${sikSayisi} ŞIK olacak. Eksik ya da fazla şıklı soru kullanılmaz.
@@ -764,7 +797,10 @@ TEMEL KURALLAR:
   transkriptin kesin olarak söylediği bir şeye daralt.
 - Sorunun ölçtüğü konu aynı kalsın; öğrenci o bölümü çalıştı.
 - Soru ÖNCÜLLÜ ise (şıkları "Yalnız I", "I ve II" gibiyse) bu yapıyı BOZMA: öncülleri
-  koru ya da düzelt, şıklar yine yalnızca o kombinasyon ifadelerinden oluşsun.
+  koru ya da düzelt, şıklar yine yalnızca o kombinasyon ifadelerinden oluşsun. Öncüllerin
+  NUMARASINI DEĞİŞTİRME: öğrenci itirazını bu numaralarla yazdı, cevabı da onlarla okuyacak;
+  bu yüzden doğru öncül sayısını dengelemeye de çalışma. Açıklamada öncüllere numarayla değil
+  içeriğiyle gönderme yap: sonraki tekrarlarda numaralar değişiyor.
 - Soru kökünde cevabın tanımını verme; soruyu kolaylaştırma.
 ${
   tur === "coktan"

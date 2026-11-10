@@ -13,7 +13,12 @@ import { rootCertificates } from "node:tls";
 import { Agent, fetch as undiciFetch, type RequestInit as UndiciRequestInit } from "undici";
 
 const ARA_SERTIFIKA = readFileSync(new URL("../sertifikalar/geotrust-tls-rsa-ca-g1.pem", import.meta.url), "utf8");
-const dagitici = new Agent({ connect: { ca: [...rootCertificates, ARA_SERTIFIKA] } });
+// Same problem on webdosya.csb.gov.tr (Yerel Yönetimler attachments): the server
+// omits "SSL2BUY EMEA RSA Organization Validation Secure Server CA". Taken from the
+// certificate's own AIA URL (crt.sectigo.com); chains to Sectigo Public Server
+// Authentication Root R46, which Node already trusts. Expires 2034-07-30.
+const SSL2BUY_ARA = readFileSync(new URL("../sertifikalar/ssl2buy-emea-rsa-ov.pem", import.meta.url), "utf8");
+const dagitici = new Agent({ connect: { ca: [...rootCertificates, ARA_SERTIFIKA, SSL2BUY_ARA] } });
 
 /** Gerçek bir tarayıcı gibi görünen istek başlıkları — bazı siteler boş UA'yı reddediyor */
 const TARAYICI_UA =

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { onculluSiklarMi, siklariKaristir } from "@/lib/ders";
 import { dersProfili, hataCevabi, hepsiniCek, kapiKontrol } from "@/lib/ders-server";
+import { onculDengele, OSYM_KATEGORISI } from "@/lib/oncul";
 import type { Profil } from "@/lib/profil";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import {
@@ -270,15 +271,25 @@ export async function POST(request: Request) {
       .eq("session_id", oturumId);
 
     // Kopya kuralları /api/ders/tekrar ile aynı: şıklar karışıyor (harf ezberi
-    // olmasın), öncüllü sorular karışmıyor (okunamaz olur), işaret taşınmıyor.
+    // olmasın), öncüllü soruda şıklar sınav sırasında kalıp öncüllerin yeri
+    // yeniden dağılıyor (lib/oncul.ts; gerçek ÖSYM soruları hariç), işaret taşınmıyor.
     const { data: eklenen, error: kopyaHatasi } = await supabase
       .from("ders_questions")
       .insert(
         sirali.map((s, i) => {
           const secenekler = Array.isArray(s.choices) ? (s.choices as string[]) : null;
+          const kopyalanacak =
+            secenekler?.length && typeof s.correct_index === "number"
+              ? { secenekler, dogruIndeks: s.correct_index }
+              : null;
+          const oncullu = !!kopyalanacak && onculluSiklarMi(kopyalanacak.secenekler);
+          const dengeli =
+            oncullu && kopyalanacak && kategori !== OSYM_KATEGORISI
+              ? onculDengele({ soru: s.question, ...kopyalanacak, aciklama: s.explanation }, { ucIkiliKoru: true })
+              : null;
           const karisik =
-            secenekler?.length && typeof s.correct_index === "number" && !onculluSiklarMi(secenekler)
-              ? siklariKaristir(secenekler, s.correct_index)
+            kopyalanacak && !oncullu
+              ? siklariKaristir(kopyalanacak.secenekler, kopyalanacak.dogruIndeks)
               : null;
           return {
             session_id: oturumId,
@@ -286,12 +297,12 @@ export async function POST(request: Request) {
             video_id: s.video_id,
             position: (mevcut ?? 0) + i,
             kind: s.kind,
-            question: s.question,
+            question: dengeli?.soru ?? s.question,
             answer_key: s.answer_key,
             key_points: (s.key_points as string[] | null) ?? [],
-            choices: karisik?.secenekler ?? s.choices,
-            correct_index: karisik?.dogruIndeks ?? s.correct_index,
-            explanation: s.explanation,
+            choices: dengeli?.secenekler ?? karisik?.secenekler ?? s.choices,
+            correct_index: dengeli?.dogruIndeks ?? karisik?.dogruIndeks ?? s.correct_index,
+            explanation: dengeli ? dengeli.aciklama : s.explanation,
             topic: s.topic,
             start_seconds: s.start_seconds ?? 0,
             flagged: false,

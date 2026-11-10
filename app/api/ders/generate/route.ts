@@ -18,6 +18,7 @@ import {
   PARAGRAF_EK_ADET,
   PARAGRAF_VIDEO,
   paragrafKonusuVarMi,
+  oncullariSirala,
   sikSetiniDogrula,
   soruKirp,
   type DenetimAdimi,
@@ -28,6 +29,7 @@ import {
   type Segment,
 } from "@/lib/ders";
 import { gunlukLimitAsildiMi, hataCevabi, kapiKontrol } from "@/lib/ders-server";
+import { onculDengele } from "@/lib/oncul";
 import { paragrafSorulariUret, paragrafVideosunuHazirla } from "@/lib/paragraf";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { damgaBelirle, kelimeDizini, transkriptMetni } from "@/lib/youtube";
@@ -344,6 +346,18 @@ function tekBulguyuUygula<
     const sikMetni = (j: number) => `${HARF[j]}) ${(s.choices ?? [])[j] ?? ""}`;
 
     if (b.tur === "yok") {
+      // Derste geçmeyen söz yalnızca açıklamadaysa soru sağlam: açıklama düşer, soru
+      // kalır. Eskiden açıklamadaki tek bir söz bütün soruyu eliyordu.
+      if (b.nerede === "aciklama") {
+        kaydet(ozet, katman, s.question, {
+          islem: "aciklama-dusuruldu",
+          eski: gerekceKirp(s.explanation ?? ""),
+          gerekce,
+        });
+        s.explanation = null;
+        ozet.duzeltilen++;
+        return true;
+      }
       ozet.elenen++;
       kaydet(ozet, katman, s.question, {
         islem: "elendi", sebep: "derste yok", gerekce, tamMetin: tamSoruMetni(s),
@@ -432,6 +446,12 @@ function tekBulguyuUygula<
     if (b.nerede === "sik") {
       const secenekler = s.choices ?? [];
       const dogruIndeks = s.correct_index ?? 0;
+      // Öncüllü soruda şık bir kombinasyondur, serbest metin yazılırsa soru öncüllü
+      // olmaktan çıkar ve okunamaz. Öncül hatası zaten "kok" sayılıyor.
+      if (onculluSiklarMi(secenekler) && !onculluSiklarMi([b.duzeltilmis])) {
+        kaydet(ozet, katman, s.question, { islem: "bulgu-atlandi", sebep: "öncüllü şıkka serbest metin", gerekce });
+        return true;
+      }
       const duzeltilmisSade = sadelestir(b.duzeltilmis);
       const carpisma = secenekler.some(
         (o, j) => j !== dogruIndeks && sadelestir(o) === duzeltilmisSade
@@ -442,6 +462,39 @@ function tekBulguyuUygula<
           islem: "elendi", sebep: "şık çakışması", gerekce, tamMetin: tamSoruMetni(s),
         });
         return false;
+      }
+      // Öncüllü soruda başka bir kombinasyon yazmak ANAHTARI değiştirmektir: "dogru_sik"
+      // ile aynı sonuç, çünkü doğru kombinasyon listede yoksa denetim harf veremiyor.
+      // Açıklama eski kombinasyonu savunuyor, kalırsa yeni anahtarla çelişirdi.
+      if (onculluSiklarMi(secenekler) && duzeltilmisSade !== sadelestir(secenekler[dogruIndeks] ?? "")) {
+        if (anahtariDuzeltilen.has(s)) {
+          ozet.elenen++;
+          kaydet(ozet, katman, s.question, {
+            islem: "elendi",
+            sebep: "iki denetim anahtarda anlaşamadı",
+            gerekce,
+            tamMetin: tamSoruMetni(s),
+          });
+          return false;
+        }
+        kaydet(ozet, katman, s.question, {
+          islem: "anahtar",
+          eski: gerekceKirp(sikMetni(dogruIndeks)),
+          yeni: gerekceKirp(b.duzeltilmis),
+          gerekce,
+        });
+        s.choices = secenekler.map((o, j) => (j === dogruIndeks ? b.duzeltilmis as string : o));
+        anahtariDuzeltilen.add(s);
+        if (s.explanation) {
+          kaydet(ozet, katman, s.question, {
+            islem: "aciklama-dusuruldu",
+            eski: gerekceKirp(s.explanation),
+            gerekce: "anahtar değişti, eski şıkkı savunan açıklama düşürüldü",
+          });
+          s.explanation = null;
+        }
+        ozet.duzeltilen++;
+        return true;
       }
       kaydet(ozet, katman, s.question, {
         islem: "sik",
@@ -582,18 +635,28 @@ async function gelistirmeCalistir(
       continue;
     }
 
+    // Öncüllü soruyu bu adım yeniden yazmış olabilir: doğrular yine başa dizilmiş
+    // ya da şıklar elle seçilmiş olabilir. Dengeleme YENİDEN çalışıyor, anahtar
+    // korumasından SONRA: o karşılaştırma modelin gördüğü numaralarla yapılmalı.
+    // Denetimler bu son hâli görüyor; bundan sonra numara değişmiyor.
+    const dengeli = onculDengele({
+      soru: yeniSoru,
+      secenekler: k.secenekler,
+      dogruIndeks: k.dogruIndeks,
+      aciklama: metin(o.aciklama) ? hukumOneksizAciklama(metin(o.aciklama)) : eski.explanation,
+    });
     yeniListe[no - 1] = {
       ...eski,
-      question: yeniSoru,
-      choices: k.secenekler,
-      correct_index: k.dogruIndeks,
-      explanation: metin(o.aciklama) ? hukumOneksizAciklama(metin(o.aciklama)) : eski.explanation,
+      question: dengeli.soru,
+      choices: dengeli.secenekler,
+      correct_index: dengeli.dogruIndeks,
+      explanation: dengeli.aciklama,
     };
     uygulanan++;
     kaydet(ozet, "gelistirme", eski.question, {
       islem: "celdirici",
       eski: gerekceKirp((eski.choices ?? []).join(" | ")),
-      yeni: gerekceKirp(k.secenekler.join(" | ")),
+      yeni: gerekceKirp(dengeli.secenekler.join(" | ")),
       gerekce,
     });
   }
@@ -648,16 +711,22 @@ function coktanDogrula(ham: UretilenCoktan[], sure: number, dizin: Dizin) {
   // Kırpma yok — gerekçesi fonksiyonun başında.
   const sorular = gecerli
     .map((s) => {
-      // Doğru şıkkın konumu modele bırakılmıyor — bkz. siklariKaristir
-      const karisik = karisiklar.get(s)!;
+      // Doğru şıkkın konumu modele bırakılmıyor — bkz. siklariKaristir. Öncüllü
+      // soruda şıklar karışmadığı için aynı işi öncüllerin yeri görüyor (lib/oncul.ts);
+      // denetimlerden ÖNCE, onlar soruyu son numaralarıyla görsün diye.
+      const karisik = onculDengele({
+        soru: metin(s.soru),
+        ...karisiklar.get(s)!,
+        aciklama: metin(s.aciklama) ? hukumOneksizAciklama(metin(s.aciklama)) : null,
+      });
       return {
         kind: "coktan" as const,
-        question: metin(s.soru),
+        question: karisik.soru,
         answer_key: null,
         key_points: [] as string[],
         choices: karisik.secenekler,
         correct_index: karisik.dogruIndeks,
-        explanation: metin(s.aciklama) ? hukumOneksizAciklama(metin(s.aciklama)) : null,
+        explanation: karisik.aciklama,
         topic: metin(s.konu) || null,
         start_seconds: damgaBelirle(
           [metin(s.soru), karisik.secenekler.join(" "), metin(s.aciklama)].join(" "),
@@ -1014,6 +1083,15 @@ export async function POST(request: Request) {
       // Metin dersinde olgu denetimi yok: metin doğru kabul ediliyor (yukarıda metinDersi)
       const gecis2 = metinDersi ? null : await denetimCalistir("olgu", SORU_OLGU_DENETIMI, coktan.map(girdi));
       if (gecis2) coktan = coktanUygula(coktan, "olgu", gecis2.bulgular, ozet, anahtariDuzeltilen);
+
+      // Denetim doğru şıkkın metnini başka bir kombinasyonla değiştirmiş olabilir
+      // ("sik" bulgusu); dizilim sınav sırasına dönsün, anahtar şıkla birlikte taşınsın.
+      // "dogru_sik" bulgusu zaten yalnızca harfi değiştiriyor, dizilimi bozmuyor.
+      coktan = coktan.map((s) => {
+        if (!s.choices || s.correct_index === null || !onculluSiklarMi(s.choices)) return s;
+        const k = oncullariSirala(s.choices, s.correct_index);
+        return { ...s, choices: k.secenekler, correct_index: k.dogruIndeks };
+      });
 
       // Üst sınır kodda da: prompt'a güvenilmez, model taşarsa en baştakiler kalır
       coktan = coktan.slice(0, soruSiniri);

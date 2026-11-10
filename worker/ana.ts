@@ -24,6 +24,8 @@ import { BOS_PROFIL, profilDogrula, sehirleriDogrula, type FiltreProfili, type H
 import { iskurTara } from "./kaynaklar/iskur";
 import { ilangovTara } from "./kaynaklar/ilangov";
 import { kariyerKapisiTara } from "./kaynaklar/kariyerkapisi";
+import { kamuIlanTara } from "./kaynaklar/kamuilan";
+import { yerelYonetimTara } from "./kaynaklar/yerelyonetim";
 import { linkedinTara } from "./kaynaklar/linkedin";
 import { joobleHazir, joobleTara } from "./kaynaklar/jooble";
 import { careerjetHazir, careerjetTara } from "./kaynaklar/careerjet";
@@ -85,6 +87,20 @@ const KAYNAKLAR: KaynakTanimi[] = [
     ad: "kariyerkapisi",
     etiket: "Kariyer Kapısı",
     tara: (b) => kariyerKapisiTara({ sehirler: b.sehirler, bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
+  },
+  {
+    ad: "kamuilan",
+    etiket: "Kamu İlan",
+    // One page plus a PDF per new announcement; the list changes a few times a day
+    enAzAralikDk: Number(process.env.KAMUILAN_ARALIK_DK) || 180,
+    tara: (b) => kamuIlanTara({ bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
+  },
+  {
+    ad: "yerelyonetim",
+    etiket: "Yerel Yönetimler",
+    // List pages + detail + attachment per announcement in the profile's cities
+    enAzAralikDk: Number(process.env.YERELYONETIM_ARALIK_DK) || 180,
+    tara: (b) => yerelYonetimTara({ sehirler: b.sehirler, bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
   },
   {
     ad: "linkedin",

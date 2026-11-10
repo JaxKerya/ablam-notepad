@@ -97,17 +97,31 @@ export async function POST(request: Request) {
     // aynı bozuk soru bir sonraki pratikte yeni bir kopya olarak geri gelir.
     const hedefIdler = [soru.id, soru.kaynak_soru_id].filter(Boolean) as string[];
 
-    /** İtiraz kaydı — kolonlar yoksa özellik yine çalışsın diye hatası yutuluyor */
-    const kaydet = async (karar: string, gerekce: string) => {
+    /**
+     * İtiraz kaydı — kolonlar yoksa özellik yine çalışsın diye hatası yutuluyor.
+     *
+     * Öncüllü soruda her kopyanın numaraları kaynaktan farklı (lib/oncul.ts). Soru
+     * düzeltilmediyse ("II. öncül yanlış" gibi) metin yalnız itirazın geldiği satıra
+     * yazılıyor; kaynakta başka öncülü gösterirdi. Kaynağa yalnız karar gidiyor.
+     * Düzeltmede aynı içerik iki satıra yazıldığı için metin ikisine de gider.
+     */
+    const kaydet = async (karar: string, gerekce: string, icerikAyni = false) => {
+      const tamKayit = {
+        geri_bildirim: gerekcem || null,
+        geri_bildirim_karari: karar,
+        geri_bildirim_gerekce: gerekce || null,
+      };
       const { error } = await supabase
         .from("ders_questions")
-        .update({
-          geri_bildirim: gerekcem || null,
-          geri_bildirim_karari: karar,
-          geri_bildirim_gerekce: gerekce || null,
-        })
-        .in("id", hedefIdler);
+        .update(tamKayit)
+        .in("id", icerikAyni ? hedefIdler : [soru.id]);
       if (error) console.warn("[ders] itiraz kaydı yazılamadı:", error.message);
+      if (icerikAyni || !soru.kaynak_soru_id) return;
+      const { error: kaynakHatasi } = await supabase
+        .from("ders_questions")
+        .update({ geri_bildirim_karari: karar })
+        .eq("id", soru.kaynak_soru_id);
+      if (kaynakHatasi) console.warn("[ders] itiraz kaydı yazılamadı:", kaynakHatasi.message);
     };
 
     /** Soruyu havuzdan çıkarır ve varsa cevabını siler */
@@ -240,7 +254,7 @@ export async function POST(request: Request) {
       .in("id", hedefIdler);
     if (yazmaHatasi) throw new Error(`Soru güncellenemedi: ${yazmaHatasi.message}`);
 
-    await kaydet("hakli", gerekce);
+    await kaydet("hakli", gerekce, true);
     // Eski cevap eski soruya aitti; kalsaydı ablam düzeltilmiş soruyu
     // cevaplayamaz, kilitli ve yanlış bir sonuç görürdü.
     await supabase.from("ders_answers").delete().in("question_id", hedefIdler);
@@ -264,6 +278,14 @@ function icerikCikar(d: DuzeltmeYaniti, tur: "acik" | "coktan"): SoruIcerigi | n
   if (tur === "coktan") {
     // Şık kuralı üretimle AYNI kapıdan geçiyor: tam 5 şık, tekrar yok,
     // doğru indeks geçerli (lib/ders.ts sikSetiniDogrula).
+    //
+    // ÖNCÜLLÜ SORU BURADA DENGELENMİYOR (lib/oncul.ts), bilerek. Ablam itirazını
+    // ekrandaki numaralarla yazdı, denetimin gerekçesi de aynı numaralarla ona
+    // dönüyor ("II. öncül yanlıştı"). Düzeltilmiş soru başka numaralarla gelseydi o
+    // cümle yanlış öncülü gösterirdi. Düzeltme yönergesi numaraları korumayı istiyor.
+    // Dengeyi bozmuyor: kaynak soru önceden dengelendi, itiraz seyrek, ve bu sorudan
+    // alınan her yeni kopya zaten yeniden dağıtılıyor. Tutarlılık da sağlam: aynı
+    // içerik hem kopyaya hem kaynağa yazılıyor, eski cevaplar siliniyor.
     const k = sikSetiniDogrula(d.secenekler, d.dogru, SIK_SAYISI);
     if (!k) return null;
     const aciklama = metin(d.aciklama);

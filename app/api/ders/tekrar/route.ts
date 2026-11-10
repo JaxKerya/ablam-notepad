@@ -13,6 +13,7 @@ import {
   yeterinceFarkli,
 } from "@/lib/ders";
 import { dersProfili, hataCevabi, hepsiniCek, kapiKontrol } from "@/lib/ders-server";
+import { onculDengele, OSYM_KATEGORISI } from "@/lib/oncul";
 import { SIK_SAYISI, SORU_OLGU_DENETIMI, tekrarVaryantPrompt } from "@/lib/prompts";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
@@ -206,13 +207,21 @@ async function varyantUret(kaynaklar: KaynakSoru[]): Promise<Map<string, Varyant
       const k = sikSetiniDogrula(v.secenekler, v.dogru, SIK_SAYISI);
       if (!k) continue;
       const aciklama = metin(v.aciklama);
+      // Varyant modelin yeni yazdığı bir soru, ÖSYM kategorisinde bile: dengelenir.
+      // Olgu denetimi (varyantlariDenetle) bu son hâli görüyor.
+      const dengeli = onculDengele({
+        soru,
+        secenekler: k.secenekler,
+        dogruIndeks: k.dogruIndeks,
+        aciklama: aciklama ? hukumOneksizAciklama(aciklama) : null,
+      });
       sonuc.set(kaynak.id, {
-        question: soru,
+        question: dengeli.soru,
         answer_key: null,
         key_points: [],
-        choices: k.secenekler,
-        correct_index: k.dogruIndeks,
-        explanation: aciklama ? hukumOneksizAciklama(aciklama) : null,
+        choices: dengeli.secenekler,
+        correct_index: dengeli.dogruIndeks,
+        explanation: dengeli.aciklama,
       });
     } else {
       const anahtar = metin(v.anahtar);
@@ -651,16 +660,22 @@ export async function POST(request: Request) {
         // şey bilgi olmaktan çıkardı. Varyantın şıkları zaten üretim sırasında
         // karıştırıldığı için ona dokunulmuyor.
         const kaynakSecenekler = Array.isArray(s.choices) ? (s.choices as string[]) : null;
-        // ÖNCÜLLÜ SORULAR KARIŞTIRILMIYOR: "Yalnız I / I ve II / I, II ve III"
-        // dizisi sınavdaki sırasıyla okunuyor, karıştırılınca liste okunamaz
-        // hâle geliyor. Bu sorularda harf ezberi riski de düşük: cevap harfin
-        // kendisi değil, öncüllerin hangisinin doğru olduğu.
+        const kopyalanacak =
+          !v && kaynakSecenekler?.length && typeof s.correct_index === "number"
+            ? { secenekler: kaynakSecenekler, dogruIndeks: s.correct_index }
+            : null;
+        // ÖNCÜLLÜ SORUDA ŞIKLAR KARIŞTIRILMIYOR: "Yalnız I / I ve II / I, II ve III"
+        // dizisi sınavdaki sırasıyla okunuyor. Konumu ezberletmeyen şey öncüllerin
+        // yeri: her kopyada içerikler yeniden dağılıyor, "bu I ve II'ydi" tutmuyor
+        // (lib/oncul.ts). Gerçek ÖSYM soruları olduğu gibi kalıyor.
+        const oncullu = !!kopyalanacak && onculluSiklarMi(kopyalanacak.secenekler);
+        const dengeli =
+          oncullu && kopyalanacak && kategori !== OSYM_KATEGORISI
+            ? onculDengele({ soru: s.question, ...kopyalanacak, aciklama: s.explanation }, { ucIkiliKoru: true })
+            : null;
         const karisik =
-          !v &&
-          kaynakSecenekler?.length &&
-          typeof s.correct_index === "number" &&
-          !onculluSiklarMi(kaynakSecenekler)
-            ? siklariKaristir(kaynakSecenekler, s.correct_index)
+          kopyalanacak && !oncullu
+            ? siklariKaristir(kopyalanacak.secenekler, kopyalanacak.dogruIndeks)
             : null;
 
         return {
@@ -673,12 +688,12 @@ export async function POST(request: Request) {
         video_id: s.video_id,
         position: sonrakiPozisyon + i,
         kind: s.kind,
-        question: v?.question ?? s.question,
+        question: v?.question ?? dengeli?.soru ?? s.question,
         answer_key: v ? v.answer_key : s.answer_key,
         key_points: (v ? v.key_points : (s.key_points as string[] | null)) ?? [],
-        choices: v ? v.choices : (karisik?.secenekler ?? s.choices),
-        correct_index: v ? v.correct_index : (karisik?.dogruIndeks ?? s.correct_index),
-        explanation: v ? v.explanation : s.explanation,
+        choices: v ? v.choices : (dengeli?.secenekler ?? karisik?.secenekler ?? s.choices),
+        correct_index: v ? v.correct_index : (dengeli?.dogruIndeks ?? karisik?.dogruIndeks ?? s.correct_index),
+        explanation: v ? v.explanation : dengeli ? dengeli.aciklama : s.explanation,
         topic: s.topic,
         start_seconds: s.start_seconds ?? 0,
         // İşaret kopyaya taşınmıyor: ablam kaynağı işaretlemiş olabilir ama

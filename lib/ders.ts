@@ -970,8 +970,11 @@ export function yeterinceFarkli(varyant: string, kaynak: string, esik = 0.8): bo
  * Liste KAPALI tutuldu: model bunların dışında bir şey yazarsa soru öncüllü
  * sayılmıyor ve normal soru gibi karıştırılıyor. Yanlış tarafa düşmesi
  * zararsız; tersi (uydurma bir kombinasyonu "öncüllü" sanıp sıralamak) değil.
+ *
+ * Şıkların SIRASI sabit ama hangi kombinasyonun doğru olduğu sabit değil: öncül
+ * içerikleri ve çeldiriciler lib/oncul.ts'te rastgele dağıtılıyor.
  */
-const ONCUL_SIKLARI = [
+export const ONCUL_SIKLARI = [
   "yalnizi",
   "yalnizii",
   "yalniziii",
