@@ -172,11 +172,11 @@ tabloları oluşturur: `ders_videos` (video başına bir kez çekilen transkript
 ```
 AI_BASE_URL=https://openrouter.ai/api/v1
 AI_API_KEY=...
-AI_MODEL=openai/gpt-5.6-sol          # soru üretimi (Kariyer'de ilan puanlama AI_GRADE_MODEL)
-AI_REFINE_MODEL=                     # öz-denetim (boş = kapalı; bkz. aşağıda)
+AI_MODEL=anthropic/claude-opus-5.5          # soru üretimi (Kariyer'de ilan puanlama AI_GRADE_MODEL)
+AI_REFINE_MODEL=anthropic/claude-opus-5.5                     # öz-denetim (boş = kapalı; bkz. aşağıda)
 AI_EFFORT=                           # düşünme derinliği low|medium|high|xhigh (boş = varsayılan)
-AI_GRADE_MODEL=openai/gpt-5.6-sol    # Ders'te kullanılmıyor (açık uçlu kapatıldı); Kariyer ilan puanlama
-AI_AUDIT_MODEL=openai/gpt-5.6-luna   # cevap anahtarı denetimi (ucuz model yeter)
+AI_GRADE_MODEL=anthropic/claude-opus-5.5    # Ders'te kullanılmıyor (açık uçlu kapatıldı); Kariyer ilan puanlama
+AI_AUDIT_MODEL=openai/gpt-6-luna   # cevap anahtarı denetimi (ucuz model yeter)
 SUPADATA_API_KEY=...
 SITE_GATE_SECRET=rastgele-uzun-bir-metin
 YOUTUBE_API_KEY=...                  # video yayin tarihi (sıralama için)

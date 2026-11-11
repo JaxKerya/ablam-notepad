@@ -17,24 +17,26 @@
 // sol-pro "pro reasoning" sürümü: aynı istem üzerinde birden fazla dahili geçiş
 // yaptığı için 18 bin tokenlık transkript 62 bin token olarak faturalanıyor.
 
+import { anthropicAcikMi, anthropicChat, AnthropicYoluHatasi } from "./ai-anthropic";
+
 const BASE_URL = process.env.AI_BASE_URL;
 const API_KEY = process.env.AI_API_KEY;
 
 /** Uzun transkriptten soru üretimi */
-const URETIM_MODELI = process.env.AI_MODEL ?? "openai/gpt-6.1-sol";
+const URETIM_MODELI = process.env.AI_MODEL ?? "anthropic/claude-opus-5.5";
 
 /**
  * Cevap değerlendirme — küçük ama en sık tekrarlanan iş, hız burada daha çok önemli.
  * Üretimden ayrı tutuldu ki ileride biri değişirken diğeri sabit kalabilsin.
  */
-const DEGERLENDIRME_MODELI = process.env.AI_GRADE_MODEL ?? "openai/gpt-6.1-sol";
+const DEGERLENDIRME_MODELI = process.env.AI_GRADE_MODEL ?? "anthropic/claude-opus-5.5";
 
 /**
  * Cevap anahtarı denetimi — bkz. generate route'taki `denetle`. Ölçüm: kasten
  * bozulmuş bir anahtarı luna 2/2 yakaladı, yanlış alarm vermedi ve çağrı başına
  * $0.0007-0.0031'e mal oldu (aynı işi sol $0.0276'ya yapıyor).
  */
-const DENETIM_MODELI = process.env.AI_AUDIT_MODEL ?? "openai/gpt-5.6-luna";
+const DENETIM_MODELI = process.env.AI_AUDIT_MODEL ?? "openai/gpt-6-luna";
 
 /**
  * Öz-denetim (soru geliştirme) modeli. BOŞSA ADIM HİÇ ÇALIŞMAZ — bu bir
@@ -67,6 +69,14 @@ const ONELEME_MODELI = process.env.AI_ONELEME_MODEL?.trim() ?? "";
  * maliyetinin %56'sı düşünmeye gidiyor; `medium` bunun ilk düğmesi.
  */
 const EFFORT = process.env.AI_EFFORT?.trim() ?? "";
+/**
+ * Effort for every role when the model is a Claude model on the direct Anthropic
+ * route (low | medium | high | xhigh | max). Empty = the model's own default.
+ */
+const CLAUDE_EFFORT = process.env.AI_CLAUDE_EFFORT?.trim() ?? "";
+/** After a credit/key failure the Anthropic route is skipped until this time */
+let anthropicAraSonu = 0;
+const ANTHROPIC_ARA_MS = 30 * 60_000;
 export const gelistirmeAcikMi = () => GELISTIRME_MODELI.length > 0;
 
 /**
@@ -185,6 +195,12 @@ interface ChatSecenekleri {
   timeoutMs?: number;
   /** Hangi işin modeli kullanılsın — her rolün kendi env değişkeni var */
   rol?: "uretim" | "degerlendirme" | "denetim" | "gelistirme" | "profil" | "oneleme";
+  /**
+   * Effort for this call when a Claude model answers it on the direct Anthropic
+   * route (low | medium | high | xhigh | max). For calls with a tight deadline:
+   * Opus 5.5 at its default took 57 s for 10 review variants, 25 s at "low".
+   */
+  claudeEffort?: string;
 }
 
 async function chatOnce({
@@ -192,15 +208,51 @@ async function chatOnce({
   maxTokens = 8000,
   timeoutMs = 240_000,
   rol = "uretim",
+  claudeEffort,
 }: ChatSecenekleri): Promise<{ icerik: string; olcum: AiOlcum }> {
+  const model = rolModeli(rol);
+  const baslangic = Date.now();
+  /** Cost of a failed Anthropic attempt; added to the OpenRouter answer's cost below */
+  let yanmaUsd = 0;
+
+  // Claude models go straight to the Anthropic API when a key is set (the plan's
+  // API credit is only spent there). Any failure falls through to OpenRouter below.
+  if (model.startsWith("anthropic/") && anthropicAcikMi() && Date.now() >= anthropicAraSonu) {
+    try {
+      const a = await anthropicChat({
+        model,
+        mesajlar,
+        maxTokens,
+        timeoutMs,
+        effort: claudeEffort || CLAUDE_EFFORT || (rol === "uretim" || rol === "gelistirme" ? EFFORT : ""),
+      });
+      return {
+        icerik: a.icerik,
+        olcum: {
+          girdiToken: a.girdiToken,
+          ciktiToken: a.ciktiToken,
+          onbellekToken: a.onbellekToken,
+          maliyetUsd: a.maliyetUsd,
+          sn: (Date.now() - baslangic) / 1000,
+          model: a.model,
+        },
+      };
+    } catch (e) {
+      if (!(e instanceof AnthropicYoluHatasi)) throw e;
+      // No credit / rejected key: skip this route for a while instead of paying
+      // the failed round trip on every call.
+      if (e.kalici) anthropicAraSonu = Date.now() + ANTHROPIC_ARA_MS;
+      yanmaUsd = e.maliyetUsd;
+      console.warn(`[ai] ${e.message} - OpenRouter'a dönülüyor${e.kalici ? " (30 dk)" : ""}`);
+    }
+  }
+
   if (!BASE_URL || !API_KEY) {
     throw new AiHatasi("AI_BASE_URL ve AI_API_KEY ortam değişkenleri tanımlı değil.");
   }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const baslangic = Date.now();
-  const model = rolModeli(rol);
 
   try {
     const res = await fetch(`${BASE_URL}/chat/completions`, {
@@ -243,7 +295,7 @@ async function chatOnce({
         girdiToken: Number(kullanim.prompt_tokens) || 0,
         ciktiToken: Number(kullanim.completion_tokens) || 0,
         onbellekToken: Number(kullanim.prompt_tokens_details?.cached_tokens) || 0,
-        maliyetUsd: Number.isFinite(maliyet) ? maliyet : undefined,
+        maliyetUsd: Number.isFinite(maliyet) ? maliyet + yanmaUsd : yanmaUsd || undefined,
         sn: (Date.now() - baslangic) / 1000,
         model,
       },

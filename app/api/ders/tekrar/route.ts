@@ -18,7 +18,7 @@ import { SIK_SAYISI, SORU_OLGU_DENETIMI, tekrarVaryantPrompt } from "@/lib/promp
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * Kategori başına saklanan pratik oturumu sayısı. Ekranda yalnızca sonuncusu
@@ -184,6 +184,9 @@ async function varyantUret(kaynaklar: KaynakSoru[]): Promise<Map<string, Varyant
         { role: "user", content: liste },
       ],
       maxTokens: 32000,
+      // Rewording known questions needs little reasoning, and this route must answer
+      // within maxDuration; see ChatSecenekleri.claudeEffort for the measurement.
+      claudeEffort: "low",
     });
     ham = cevap.veri;
   } catch {
