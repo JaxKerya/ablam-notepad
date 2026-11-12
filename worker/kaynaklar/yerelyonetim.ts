@@ -10,13 +10,13 @@
 // and the kind ("…-memur-alim-ilani", "…-iptal-ilani"), so the city and
 // cancellation filters run before any detail request. The detail page has a
 // one-paragraph summary; the real announcement (post, KPSS score type and
-// minimum, requirements) is the attached DOCX or PDF.
+// minimum, requirements) is the attached DOCX, PDF or RTF.
 // robots.txt allows everything except /uploads/, /system/ and similar
 // (checked 10.11.2026); attachments live on webdosya.csb.gov.tr.
 
 import type { HamIlan } from "../../lib/kariyer";
 import { sadelestir } from "../../lib/kariyer";
-import { docxMetni, metniToparla, pdfMetni } from "./belge";
+import { docxMetni, metniToparla, pdfMetni, rtfMetni } from "./belge";
 import { getir, metneCevir, nazikBekle } from "./http";
 
 const SITE = "https://yerelyonetimler.csb.gov.tr";
@@ -84,7 +84,7 @@ async function detayOku(url: string): Promise<{ baslik: string; ozet: string; ek
   const html = await (await getir(url)).text();
   const baslik = metneCevir(html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] ?? "").replace(/\s+/g, " ").trim();
   const govde = html.match(/<h1[\s\S]*?(?=Duyurulara geri d)/)?.[0] ?? "";
-  const ekler = [...new Set([...govde.matchAll(/href="(https:\/\/webdosya\.csb\.gov\.tr\/[^"]+\.(?:docx|pdf))"/gi)].map((m) => m[1]))]
+  const ekler = [...new Set([...govde.matchAll(/href="(https:\/\/webdosya\.csb\.gov\.tr\/[^"]+\.(?:docx?|pdf|rtf))"/gi)].map((m) => m[1]))]
     // The site-wide footer links a generic council document; only this announcement's files
     .filter((e) => !/\/dokumanlar\//.test(e));
   return { baslik, ozet: metniToparla(metneCevir(govde)), ekler };
@@ -92,7 +92,48 @@ async function detayOku(url: string): Promise<{ baslik: string; ozet: string; ek
 
 async function ekMetni(url: string): Promise<string> {
   const veri = await (await getir(url, {}, 60_000)).arrayBuffer();
-  return /\.pdf$/i.test(url) ? pdfMetni(veri) : docxMetni(veri);
+  // By content, not by extension: Word also saves RTF under a .doc name
+  const bas = Buffer.from(veri.slice(0, 5)).toString("latin1");
+  if (bas.startsWith("%PDF")) return pdfMetni(veri);
+  if (bas.startsWith("PK")) return docxMetni(veri);
+  if (bas.startsWith("{\\rtf")) return rtfMetni(veri);
+  // Legacy binary .doc (OLE) has no parser here; the caller logs it
+  throw new Error(`desteklenmeyen ek biçimi (${url.match(/\.\w+$/)?.[0] ?? "?"})`);
+}
+
+/**
+ * Last day of the application window, "YYYY-MM-DD", or undefined.
+ * Announcements state it as "… 16/12/2026-18/12/2026 tarihleri arasında …";
+ * the sentence does not always say "başvurular" right before the dates
+ * (Gaziosmanpaşa: "belgelerini 07/12/2026-11/12/2026 tarihleri arasında"), so
+ * the word is only required nearby. Exam and objection dates use the same
+ * date format, hence the strict rules: a range followed by "tarihleri
+ * arasında", "başvur…" close to it, a sane window, and every such range
+ * agreeing on the end date. Anything else returns undefined and the scoring
+ * model's own reading stays in charge (measured 12.11.2026).
+ */
+export function sonBasvuruBul(metin: string, yayin?: Date | null): string | undefined {
+  const desen =
+    /(\d{1,2})[./](\d{1,2})[./](20\d{2})\s*(?:[-–—]|ile|ila|ve)?\s*(\d{1,2})[./](\d{1,2})[./](20\d{2})\s+tarihleri\s+aras[ıi]nda/gi;
+  const gun = (g: string, a: string, y: string) => {
+    const t = new Date(Date.UTC(Number(y), Number(a) - 1, Number(g)));
+    // Date.UTC rolls 31/02 over to March; such a date is a typo, not a deadline
+    return t.getUTCDate() === Number(g) && t.getUTCMonth() === Number(a) - 1 ? t : null;
+  };
+  const bitisler = new Set<string>();
+  for (const m of metin.matchAll(desen)) {
+    const cevre = metin.slice(Math.max(0, m.index - 250), m.index + m[0].length + 120);
+    if (!/başvur/i.test(cevre)) continue;
+    const bas = gun(m[1], m[2], m[3]);
+    const bit = gun(m[4], m[5], m[6]);
+    if (!bas || !bit) return undefined;
+    const sure = (bit.getTime() - bas.getTime()) / 86_400_000;
+    if (sure < 0 || sure > 45) return undefined;
+    // An application window far from the publication date is some other range
+    if (yayin && Math.abs(bit.getTime() - yayin.getTime()) > 120 * 86_400_000) return undefined;
+    bitisler.add(bit.toISOString().slice(0, 10));
+  }
+  return bitisler.size === 1 ? [...bitisler][0] : undefined;
 }
 
 export async function yerelYonetimTara(secenekler: YerelYonetimSecenekleri) {
@@ -120,11 +161,15 @@ export async function yerelYonetimTara(secenekler: YerelYonetimSecenekleri) {
     let baslik = "";
     let ozet = "";
     const ekMetinleri: string[] = [];
+    let ekVar = false;
+    let detayOkundu = false;
     try {
       await nazikBekle();
       const d = await detayOku(o.url);
       baslik = d.baslik;
       ozet = d.ozet;
+      detayOkundu = true;
+      ekVar = d.ekler.length > 0;
       for (const ek of d.ekler.slice(0, 2)) {
         await nazikBekle();
         const metin = await ekMetni(ek).catch((e) => {
@@ -135,6 +180,11 @@ export async function yerelYonetimTara(secenekler: YerelYonetimSecenekleri) {
       }
     } catch (e) {
       log(`Yerel Yönetimler: detay okunamadı (${o.id}): ${(e as Error).message}`);
+    }
+    // The summary alone never names the post or the education requirement, so
+    // such an announcement is scored blind; make that visible in the run log
+    if (detayOkundu && !ekMetinleri.length) {
+      log(`Yerel Yönetimler: ilan metni yok, yalnızca özet (${o.id}): ${ekVar ? "ek okunamadı" : "sayfada okunabilir ek yok"}`);
     }
     // Attachment first: if the model's input is cut, the summary goes, not the requirements
     const aciklama = [...ekMetinleri, ozet].filter(Boolean).join("\n\n").slice(0, 12_000);
@@ -150,6 +200,7 @@ export async function yerelYonetimTara(secenekler: YerelYonetimSecenekleri) {
       aciklama: aciklama || undefined,
       url: o.url,
       yayinTarihi: o.tarih?.toISOString(),
+      sonBasvuru: sonBasvuruBul(ekMetinleri.join("\n"), o.tarih),
       ham: { id: o.id, ekSayisi: ekMetinleri.length },
     });
   }

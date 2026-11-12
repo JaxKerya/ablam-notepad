@@ -122,7 +122,7 @@ interface KaynakDurumu {
   bayat: boolean;
 }
 
-const KAYNAK_ARALIK_SAAT: Record<string, number> = { iskur: 6, linkedin: 12, eleman: 3, kamuilan: 3, yerelyonetim: 3 };
+const KAYNAK_ARALIK_SAAT: Record<string, number> = { iskur: 6, linkedin: 12, eleman: 3, kamuilan: 3, yerelyonetim: 3, jooble: 3, adalet: 6, osym: 6, iskurkamu: 6 };
 
 function kaynakDurumlari(satirlar: Tarama[]): KaynakDurumu[] {
   const simdi = Date.now();

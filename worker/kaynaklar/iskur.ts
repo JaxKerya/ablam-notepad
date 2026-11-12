@@ -22,6 +22,17 @@ const ARAMA_SAYFASI = "https://esube.iskur.gov.tr/Istihdam/AcikIsIlanAra.aspx";
 const DETAY_SAYFASI = "https://esube.iskur.gov.tr/Istihdam/AcikIsIlanDetay.aspx";
 const SAYFA_SINIRI = 5; // terim başına en fazla kaç sonuç sayfası (3'tü; kapsam istendi)
 
+// The form's "İşyeri Türü" radio defaults to Özel Sektör, so public-sector
+// postings were never seen. Kamu is small enough to read whole with ONE search
+// and an empty term (13 ads on a single page, measured 12.11.2026), instead of
+// repeating every term against it. The page limit is only a runaway guard:
+// 20 pages x 15 rows = 300 ads, far above anything Kamu has shown.
+type IsyeriTuru = "Özel" | "Kamu";
+const KAMU_RADYOSU = 'input[name="ctl04$IsyeriTuruRadios"][value="kamuRadio"]';
+const KAMU_SAYFA_SINIRI = 20;
+/** Scorer-visible marker; also the whole description when the detail page could not be read. */
+const KAMU_ISARETI = "İşyeri türü: Kamu";
+
 export interface IskurSecenekleri {
   aramaTerimleri: string[];
   /** İŞKUR'un il listesindeki adlar (büyük harf, ör. "İSTANBUL"). Boşsa tüm iller. Her il ayrı arama. */
@@ -67,13 +78,23 @@ export async function iskurTara(secenekler: IskurSecenekleri): Promise<IskurSonu
   let detayAcilan = 0;
 
   /** Tek terimi (bir ilde) baştan sona tarar. goto geçici ağ hatasında bir kez yeniden denenir. */
-  async function terimTara(terim: string, il: string | null) {
-    log(`İŞKUR: "${terim}" aranıyor${il ? ` (${il})` : ""}`);
+  async function terimTara(terim: string, il: string | null, isyeriTuru: IsyeriTuru = "Özel") {
+    const kamu = isyeriTuru === "Kamu";
+    log(`İŞKUR: ${kamu ? "Kamu ilanları" : `"${terim}"`} aranıyor${il ? ` (${il})` : ""}`);
     await gotoDayanikli(sayfa, ARAMA_SAYFASI);
 
     const kutu = sayfa.locator('input[name="ctl04$ctlArananMetin2"]');
     await kutu.waitFor({ timeout: 30_000 });
     await kutu.fill(terim);
+
+    if (kamu) {
+      // The real input is hidden behind a styled label, hence force. If the
+      // radio is gone we must fail loudly: silently searching Özel with an
+      // empty term would tag private-sector ads as Kamu.
+      const radyo = sayfa.locator(KAMU_RADYOSU);
+      await radyo.check({ force: true, timeout: 15_000 });
+      if (!(await radyo.isChecked())) throw new Error("Kamu radyosu seçilemedi");
+    }
 
     if (il) {
       // select2 ile giydirilmiş bir <select>; asıl seçeneğe değerle ulaşıyoruz
@@ -91,10 +112,11 @@ export async function iskurTara(secenekler: IskurSecenekleri): Promise<IskurSonu
     ]);
 
     let oncekiIlkKimlik = "";
-    for (let sayfaNo = 1; sayfaNo <= SAYFA_SINIRI; sayfaNo++) {
+    const sayfaSiniri = kamu ? KAMU_SAYFA_SINIRI : SAYFA_SINIRI;
+    for (let sayfaNo = 1; sayfaNo <= sayfaSiniri; sayfaNo++) {
       const satirlar = await listeyiOku(sayfa);
       if (!satirlar.length) {
-        if (sayfaNo === 1) log(`İŞKUR: "${terim}" için sonuç yok`);
+        if (sayfaNo === 1) log(`İŞKUR: ${kamu ? "Kamu ilanları" : `"${terim}"`} için sonuç yok`);
         break;
       }
       // Son sayfada "Sonraki" tıklanınca sayfa değişmiyor ama düğme duruyor;
@@ -114,14 +136,20 @@ export async function iskurTara(secenekler: IskurSecenekleri): Promise<IskurSonu
           sonBasvuru: tarihCevir(s.sonBasvuru),
           ham: s,
         };
+        // The radio we searched with is authoritative; the row text is only a
+        // fallback for the Özel searches.
+        const kamuIlani = kamu || s.tur.startsWith("Kamu");
         if (detayAcilan < detaySiniri) {
-          const aciklama = await detayOku(sayfa, s.kimlik, s.tur.startsWith("Kamu") ? "Kamu" : "Özel").catch((e) => {
+          const aciklama = await detayOku(sayfa, s.kimlik, kamuIlani ? "Kamu" : "Özel").catch((e) => {
             log(`İŞKUR: ${s.kimlik} detayı okunamadı: ${(e as Error).message}`);
             return null;
           });
           detayAcilan++;
           if (aciklama) ilan.aciklama = aciklama;
         }
+        // Marker goes first so it survives any downstream truncation, and is
+        // set even without a detail text so the scorer always sees it.
+        if (kamuIlani) ilan.aciklama = ilan.aciklama ? `${KAMU_ISARETI}\n${ilan.aciklama}` : KAMU_ISARETI;
         toplanan.set(s.kimlik, ilan);
       }
 
@@ -132,16 +160,24 @@ export async function iskurTara(secenekler: IskurSecenekleri): Promise<IskurSonu
 
   try {
     // İŞKUR arama formu tek il alıyor; birden fazla şehir = terim x il arama.
-    const aramalar = (iller.length ? iller : [null]).flatMap((il) => aramaTerimleri.map((terim) => ({ terim, il })));
+    // Kamu searches run first: they are the ads the user wants most, and the
+    // detail budget (detaySiniri) is shared, so they must not be starved by
+    // the broader Özel terms.
+    const ilListesi = iller.length ? iller : [null];
+    const aramalar: { terim: string; il: string | null; isyeriTuru: IsyeriTuru }[] = [
+      ...ilListesi.map((il) => ({ terim: "", il, isyeriTuru: "Kamu" as const })),
+      ...ilListesi.flatMap((il) => aramaTerimleri.map((terim) => ({ terim, il, isyeriTuru: "Özel" as const }))),
+    ];
     const basarisiz: string[] = [];
-    for (const { terim, il } of aramalar) {
+    for (const { terim, il, isyeriTuru } of aramalar) {
+      const ad = isyeriTuru === "Kamu" ? "Kamu ilanları" : terim;
       try {
-        await terimTara(terim, il);
+        await terimTara(terim, il, isyeriTuru);
       } catch (e) {
         // Bir aramanın hatası diğerlerini götürmesin: ilk koşuda "memur"un
         // sonuçları toplanmışken sonraki terimin goto'su düşünce hepsi gitmişti.
-        basarisiz.push(il ? `${terim} (${il})` : terim);
-        log(`İŞKUR: "${terim}" taraması düştü: ${(e as Error).message.split("\n")[0]}`);
+        basarisiz.push(il ? `${ad} (${il})` : ad);
+        log(`İŞKUR: "${ad}" taraması düştü: ${(e as Error).message.split("\n")[0]}`);
       }
     }
     // Hepsi düştüyse bu gerçek bir kırılmadır; dışarıya hata olarak çık ki
@@ -263,7 +299,27 @@ function temizle(metin: string): string {
   if (tanim !== -1 && nitelik > tanim + 1 && satirlar[tanim + 1] === satirlar[nitelik + 1]) {
     satirlar.splice(nitelik, 2);
   }
-  return satirlar.join("\n").slice(0, 8000);
+  return ortadanKirp(satirlar.join("\n"));
+}
+
+// Kamu detail pages open with 4,000-12,000 characters of "Genel Hususlar"
+// boilerplate; the ad-specific part (ÖZEL ŞARTLAR, Meslek Bilgileri, Öğrenim
+// ve Kişisel Bilgiler) is at the very END. The old slice(0, 8000) cut exactly
+// that: two 13.9k pages lost their "Lisans" education table (measured
+// 12.11.2026), so neither the hard filter nor the scorer saw the requirement.
+// Over-long texts therefore lose their MIDDLE (exam procedure, document
+// lists), never their tail. The total stays under the 12,000 the scoring
+// prompt keeps (lib/kariyer-prompts.ts), with room for the Kamu marker line.
+const ACIKLAMA_SINIRI = 11_900;
+const KUYRUK_PAYI = 5_000;
+const KESINTI_ISARETI = "\n[…]\n";
+
+function ortadanKirp(metin: string): string {
+  if (metin.length <= ACIKLAMA_SINIRI) return metin;
+  // Start the tail on a line boundary so a table row is not split in half.
+  const kuyruk = metin.slice(-KUYRUK_PAYI).replace(/^[^\n]*\n/, "");
+  const bas = metin.slice(0, ACIKLAMA_SINIRI - KESINTI_ISARETI.length - kuyruk.length);
+  return bas + KESINTI_ISARETI + kuyruk;
 }
 
 /** "16.10.2026" -> "2026-10-16" */

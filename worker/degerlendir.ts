@@ -53,7 +53,13 @@ export const bosOzet = (): DegerlendirmeOzeti => ({
   yeni: 0, filtreElenen: 0, kapiElenen: 0, tavanBekleyen: 0, degerlendirilen: 0, bildir: 0, ozet: 0, maliyetUsd: 0, hatalar: [],
 });
 
-const GUNLUK_TAVAN_USD = Number(process.env.GUNLUK_MALIYET_USD) || 1;
+/** Sources that list public-sector hiring only; see the gate note in puanlaVeKaydet */
+const KAPISIZ_KAYNAKLAR = new Set<string>(["kamuilan", "yerelyonetim", "kariyerkapisi", "iskurkamu", "adalet", "osym"]);
+/** Below this many characters the ad text is a stub (title echo, search snippet, "metni okunamadı" note) */
+const KISA_ACIKLAMA = 300;
+const ACIKLAMASIZ_TAVAN = 70;
+
+const GUNLUK_TAVAN_USD =Number(process.env.GUNLUK_MALIYET_USD) || 1;
 
 /** Bugün (UTC) kaydedilmiş eşleşmelerin toplam model ücreti */
 async function bugunkuHarcama(db: SupabaseClient): Promise<number> {
@@ -214,7 +220,11 @@ async function puanlaVeKaydet(
     return;
   }
 
-  const kapi = await kapidanGecerMi(kapiSistem, ham);
+  // Public-sector sources skip the title gate: their titles carry little ("… Belediye
+  // Başkanlığı: 4 memur alacak") and the gate dropped eligible zabıta/memur intakes that
+  // the scorer rated 64-74 from another source (measured 12.11.2026). Volume is small and
+  // the education filter above already removed lisans-only ads.
+  const kapi = KAPISIZ_KAYNAKLAR.has(ham.kaynak) ? { gecti: true, maliyetUsd: 0, model: "" } : await kapidanGecerMi(kapiSistem, ham);
   ozet.maliyetUsd += kapi.maliyetUsd;
   baglam.kalanUsd -= kapi.maliyetUsd;
   if (!kapi.gecti) {
@@ -251,8 +261,10 @@ async function puanlaVeKaydet(
       throw new Error(`model puan vermedi (${JSON.stringify(veri).slice(0, 80)})`);
     }
     let puan = Math.max(0, Math.min(100, Math.round(veri.puan)));
-    // Açıklamasız ilanda tavan 80 — prompt'ta da yazıyor ama kural kodda dursun
-    if (!ham.aciklama && puan > 80) puan = 80;
+    // No (or almost no) ad text: cap below the notify threshold. A title-only "6 memur
+    // alacak" scored 74 while its full text asked for a bachelor's (12.11.2026); the cap
+    // was 80, which could have paged the user for such an ad. Also in the prompt.
+    if ((ham.aciklama?.length ?? 0) < KISA_ACIKLAMA && puan > ACIKLAMASIZ_TAVAN) puan = ACIKLAMASIZ_TAVAN;
     // Kırmızı bayrak puanı içine gizlenmez, tavan koyar: kritik ≤ 40, orta ≤ 74
     const risk = ILAN_GUVENILIRLIGI ? riskDogrula(veri.risk) : null;
     const uyarilar = ILAN_GUVENILIRLIGI ? dizi(veri.uyarilar).slice(0, 3) : [];
@@ -380,8 +392,11 @@ export async function yarimKalanlariTamamla(
     // clear). Most are dropped by the cheap gate; the daily cost cap still applies.
     .limit(YARIM_SINIRI);
   const eslesmesizler = (data ?? []).map((r) => ({ ilan: r, oncekiMaliyetUsd: 0 }));
-  const yenidenler = await yenidenPuanlanacaklar(db, Math.max(0, YARIM_SINIRI - eslesmesizler.length));
-  const liste = [...eslesmesizler, ...yenidenler];
+  // Re-scores go FIRST and have their own allowance: they are ads that already scored
+  // 25+, while the unscored backlog is mostly gate fodder. On 12.11.2026 a profile edit
+  // reset 1,218 gate rows and the shared limit left 301 flagged re-scores waiting ~8 h.
+  const yenidenler = await yenidenPuanlanacaklar(db, YARIM_SINIRI);
+  const liste = [...yenidenler, ...eslesmesizler];
   if (!liste.length) return ozet;
 
   const butce = await butceyiKur(db, log);

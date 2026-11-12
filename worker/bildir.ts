@@ -132,6 +132,9 @@ function ilanMetin(e: EslesmeSatiri): string {
     .join("\n");
 }
 
+/** Sources that carry public-sector hiring; listed first in the evening digest */
+const KAMU_KAYNAKLARI = new Set(["kamuilan", "yerelyonetim", "kariyerkapisi", "iskurkamu", "adalet", "osym"]);
+
 const sarmala = (icerik: string) =>
   `<div style="font-family:system-ui,sans-serif;max-width:560px">${icerik}</div>`;
 
@@ -227,6 +230,10 @@ export async function bildirimleriGonder(
   // bakmaya değer ilanlar ve başvuru takip hatırlatmaları; ikisi de boşsa gitmez.
   if (turkiyeSaati() >= OZET_SAATI && !(await bugunOzetGittiMi(db))) {
     const ozet = await gecmisleriAyikla(await sessizleriAyikla((await bekleyenler(db, "ozet")).filter((e) => e.kariyer_ilanlar)));
+    // Public-sector ads first (stable sort keeps the score order inside each group): the
+    // user wants memurluk above all, and they were buried among private office ads.
+    const kamuMu = (e: EslesmeSatiri) => (KAMU_KAYNAKLARI.has(e.kariyer_ilanlar?.kaynak ?? "") ? 1 : 0);
+    ozet.sort((a, b) => kamuMu(b) - kamuMu(a));
     const takip = await takipBekleyenler(db);
     if (ozet.length || takip.length) {
       const konu = ozet.length

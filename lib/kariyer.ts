@@ -32,7 +32,7 @@ export interface KariyerProfili {
 export const KARIYER_ACIK = process.env.NEXT_PUBLIC_KARIYER_ACIK !== "false";
 export const ONIZLEME_ANAHTARI = "kariyer-onizleme";
 
-export type Kaynak = "iskur" | "ilangov" | "kariyerkapisi" | "kamuilan" | "yerelyonetim" | "linkedin" | "jooble" | "careerjet" | "isbul" | "eleman" | "kariyer" | "indeed" | "eposta";
+export type Kaynak = "iskur" | "ilangov" | "kariyerkapisi" | "kamuilan" | "yerelyonetim" | "iskurkamu" | "adalet" | "osym" | "linkedin" | "jooble" | "careerjet" | "isbul" | "eleman" | "kariyer" | "indeed" | "eposta";
 export type Karar = "bildir" | "ozet" | "listele" | "ele";
 
 /** Arayüzde ve e-postada görünen kaynak adı */
@@ -42,6 +42,9 @@ export const KAYNAK_ETIKETI: Record<string, string> = {
   kariyerkapisi: "Kariyer Kapısı",
   kamuilan: "Kamu İlan",
   yerelyonetim: "Yerel Yönetimler",
+  iskurkamu: "İŞKUR Kamu İlanları",
+  adalet: "Adalet Bakanlığı",
+  osym: "ÖSYM",
   linkedin: "LinkedIn",
   jooble: "Jooble",
   careerjet: "Careerjet",
@@ -263,8 +266,10 @@ export function onlisansProfiliMi(profil: Pick<KariyerProfili, "ozet" | "guclu">
 // if any of these appears, at least one post may accept her, so the model reads it.
 const ONLISANS_KABUL = /ön ?lisans|onlisans|p ?93\b|meslek yüksekokul|iki yıllık|2 yıllık|ortaöğretim|ortaogretim|\blise\b|lise mezun|p ?94\b|ilköğretim/;
 // Bachelor's-only signals. The lookbehinds keep "önlisans mezunu" from matching "lisans mezunu".
+// "lisans düzeyinde eğitim veren" and the loose KPSS…P3 form (covers "KPSSP3" and "KPSS (B) … P3")
+// were added 12.11.2026: a 162-post sözleşmeli kütüphaneci ad (lisans only) slipped through.
 const YALNIZ_LISANS =
-  /(?<!ön ?)(?<!ön)lisans (?:düzeyinde |programından |programlarından |bölümünden |bölümlerinden )?mezun|fakülte(?:si|lerin)?[^.\n]{0,40}mezun|dört yıllık|4 yıllık|kpss ?\(?b\)? ?p ?3\b|\bp ?3 puan|kpss p ?(?:[1-4][0-9])\b/;
+  /(?<!ön ?)(?<!ön)lisans (?:düzeyinde |programından |programlarından |bölümünden |bölümlerinden )?mezun|fakülte(?:si|lerin)?[^.\n]{0,40}mezun|dört yıllık|4 yıllık|lisans düzeyinde eğitim veren|kpss[^.\n]{0,40}p ?3\b|\bp ?3 puan|kpss p ?(?:[1-4][0-9])\b/;
 
 /**
  * Mechanical education check for an associate-degree holder: the job is dropped

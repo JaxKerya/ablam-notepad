@@ -20,8 +20,46 @@ import { getir, metneCevir, nazikBekle, varliklariCoz } from "./http";
 
 const ARAMA = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search";
 const DETAY = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting";
-const SON_GUNLER = "r2592000"; // 30 gün — bilinenler zaten atlanıyor, geniş tutmak bedava
-const SAYFA_SINIRI = 4; // terim başına 4 x 10 kart (2'ydi; kapsam istendi, engellenme riski kabul)
+// 2-day window, paged until the result set runs out (SAYFA_SINIRI is only a
+// safety cap). Results come in relevance order and sortBy=DD is ignored by this
+// endpoint (measured 12.11.2026: identical first page with and without it), so a
+// fixed page count over a wide window keeps returning the same top cards: with a
+// 7-day window "sekreter" had 50+ cards and relevant ones sat on pages 3 and 5,
+// never read. The only reliable way to see every posting is a window small
+// enough to read to its end. Those 7-day pages carried roughly 8-10 postings per
+// day for the broadest term, so 2 days should be 2-3 pages there and 1 page for
+// narrow terms. The source runs every 8 hours, so each posting is still seen
+// about 6 times and a day-long outage or 429 loses nothing.
+const SON_GUNLER = "r172800";
+const SAYFA_SINIRI = 5;
+
+// LinkedIn carries private-sector office jobs only. Measured 12.11.2026 on live
+// first pages: terms about memurluk, kütüphane, adliye/katiplik and KPSS returned
+// 0 relevant cards out of 10 each (fuzzy matches such as CISO, DevOps, basketball
+// coach), and no public-sector posting at all. Those terms are skipped here
+// instead of hard-coding the profile's list, so a profile change keeps working:
+// any new term that is not about the public sector still goes through.
+// "arşiv memuru" is the one "memur" term that does match (document control,
+// records clerk), hence the lookbehind.
+const ATLANAN_TERIM =
+  /kütüphane|zabıt|icra|kat[iı][pb]|adliye|kpss|sözleşmeli|kamu|veri hazırlama|yazı işleri|(?<!arşiv )memur/;
+
+// Always searched, whatever the profile says. The last two were checked live on
+// 12.11.2026: both first pages were 10/10 office roles (Sekreter, Ofis Asistanı,
+// İdari Asistan, Tıbbi Sekreter...).
+const SABIT_TERIMLER = ["büro personeli", "hukuk sekreteri", "arşiv memuru", "sekreter", "ofis asistanı"];
+
+const kucuk = (s: string) => s.toLocaleLowerCase("tr").replace(/\s+/g, " ").trim();
+
+/** Profile terms that can match on LinkedIn, plus the fixed office terms; no duplicates. */
+export function linkedinTerimleri(aramaTerimleri: string[]): string[] {
+  const secilen = new Map<string, string>();
+  for (const terim of [...aramaTerimleri.filter((t) => !ATLANAN_TERIM.test(kucuk(t))), ...SABIT_TERIMLER]) {
+    const anahtar = kucuk(terim);
+    if (anahtar && !secilen.has(anahtar)) secilen.set(anahtar, terim);
+  }
+  return [...secilen.values()];
+}
 
 export interface LinkedinSecenekleri {
   aramaTerimleri: string[];
@@ -88,8 +126,10 @@ async function ara(terim: string, konum: string, baslangic: number): Promise<Kar
 }
 
 export async function linkedinTara(secenekler: LinkedinSecenekleri) {
-  const { aramaTerimleri, sehirler = [], bilinenKimlikler, detaySiniri = 60 } = secenekler;
+  const { sehirler = [], bilinenKimlikler, detaySiniri = 60 } = secenekler;
   const log = secenekler.log ?? (() => {});
+  const aramaTerimleri = linkedinTerimleri(secenekler.aramaTerimleri);
+  log(`LinkedIn terimleri (profilde ${secenekler.aramaTerimleri.length}, aranan ${aramaTerimleri.length}): ${aramaTerimleri.join(", ")}`);
   const konumlar = sehirler.length ? sehirler.map((s) => `${s}, Türkiye`) : ["Türkiye"];
   const aramalar = konumlar.flatMap((konum) => aramaTerimleri.map((terim) => ({ terim, konum })));
 
@@ -107,6 +147,9 @@ export async function linkedinTara(secenekler: LinkedinSecenekleri) {
         }
         for (const k of bulunan) kartlar.set(k.kimlik, k);
         if (bulunan.length < 10) break;
+        // A full last page means the window was not read to its end; say so
+        // instead of silently missing the rest.
+        if (sayfa === SAYFA_SINIRI - 1) log(`LinkedIn "${terim}" (${konum}): ${SAYFA_SINIRI} sayfa doldu, devamı okunmadı`);
         await nazikBekle();
       }
     } catch (e) {

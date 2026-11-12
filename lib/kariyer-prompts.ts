@@ -97,6 +97,11 @@ KURALLAR:
 - EMİN DEĞİLSEN İLGİLİ DE. Yalnızca açıkça başka bir meslek olduğunda ilgisiz de
   (aşçı, kurye, güvenlik, forklift operatörü, inşaat işçisi, garson, kasiyer, temizlik…).
 - "İstemedikleri" listesindeki bir işse ilgisiz de.
+- KAMU KURUMU ALIMI her zaman İLGİLİDİR: başlıkta memur, zabıta memuru, itfaiye eri,
+  sözleşmeli personel, "ilk defa atanmak üzere", "personel alımı" ya da bir belediye
+  başkanlığı / rektörlük / bakanlık / başkanlık / müdürlük alım ilanı geçiyorsa ilgili de;
+  şartları asıl değerlendirme okuyacak. Tek istisna: unvan açıkça başka bir meslekse
+  (öğretim üyesi/elemanı, doktor, hemşire, mühendis, avukat) ilgisiz de.
 
 SADECE geçerli JSON döndür:
 {"ilgili": true}`;
@@ -135,15 +140,27 @@ ${olumsuzOrnekler.map((o) => `- ${o}`).join("\n")}
 PUAN ÖLÇEĞİ — bu sayılar bildirim eşiklerine bağlı, dikkatli kullan:
 - 90-100: "Yapabildiği işler"den biri, şartlar uyuyor. Bugün başvurmalı.
 - 75-89 : Yakın pozisyon; küçük bir eksik ya da belirsizlik var ama başvurmaya değer.
-          BU EŞİĞİN ÜSTÜ KİŞİNİN TELEFONUNA ANINDA DÜŞER. Emin değilsen 74 ver.
+          BU EŞİĞİN ÜSTÜ KİŞİNİN TELEFONUNA ANINDA DÜŞER: ilanın TEMEL şartlarının (öğrenim
+          düzeyi, KPSS puan türü ve taban puanı, iş türü) uyduğunu ilan metninde GÖRDÜYSEN ver.
+          Temel şartlardan biri metinde yoksa ya da okunamıyorsa 74'ü geçme.
 - 50-74 : "Kabul edeceği işler"den biri, ya da alakalı ama eksikleri var. Akşam özetine girer.
 - 25-49 : Uzak bir ihtimal; yalnızca listede durur.
 - 0-24  : Alakasız, ya da kişinin "istemedikleri"nden biri.
 
 KURALLAR:
 - "İstemedikleri" listesindeki bir şey ilanda varsa 25'in üstüne çıkma, ne kadar uysa da.
-- İlanda AÇIKLAMA YOKSA (yalnızca başlık ve şehir varsa) temkinli ol: en fazla 80 ver ve
-  gerekçede "açıklama yok" de. Başlık uyuyor diye 95 verme.
+- KAMU ALIMI (memur, sözleşmeli personel, zabıt/icra katibi vb.): ilan kişinin öğrenim
+  düzeyine açıksa (önlisans / P93, ya da ortaöğretim-önlisans kabul eden kadro) ve KPSS taban
+  puanını kişi geçiyorsa bu "yapabildiği iş"tir, 75 ve üstü ver. Lisans (P3) isteyen kadro
+  kişiye kapalıdır; ilanda hem lisans hem önlisans kadrosu varsa önlisans kadrolarına göre puanla.
+- BİLİNMEYEN ŞART EKSİK DEĞİLDİR: ilanın istediği ama profilde hiç geçmeyen şartlar (ehliyet,
+  yaş, boy-kilo, KPSS puanının yılı, belirli bir bölüm adı, belge) için puanı 75'in altına
+  ÇEKME; gerekçede "başvurmadan önce şunu doğrula: …" diye yaz. Puanı yalnızca profil o şartı
+  AÇIKÇA sağlamıyorsa düşür (ör. ilan lisans istiyor, kişi önlisans; ilan 30 yaş sınırı
+  koymuş, profilde yaş 34 yazıyor). Profilde yazan bilgiyi (ehliyet, yaş, bölüm, puan yılı) kullan.
+- İlanda AÇIKLAMA YOKSA ya da metin okunamadıysa (yalnızca başlık ve şehir, ya da "metni
+  okunamadı" notu varsa) temkinli ol: en fazla 70 ver ve gerekçede "açıklama yok" de. Başlık
+  uyuyor diye yüksek puan verme — aynı başlıklı ilan lisans şartı taşıyor olabilir.
 - Deneyim şartı kişinin profilini açıkça aşıyorsa (ör. "5 yıl yöneticilik") puanı düşür.
 - Kişinin güçlü yanlarından biri ilanda özellikle aranıyorsa puanı yükselt ve gerekçede yaz.
 - Gerekçe TEK cümle, kişiye hitap ederek (sen dili), somut: neden uygun ya da değil.

@@ -26,6 +26,9 @@ import { ilangovTara } from "./kaynaklar/ilangov";
 import { kariyerKapisiTara } from "./kaynaklar/kariyerkapisi";
 import { kamuIlanTara } from "./kaynaklar/kamuilan";
 import { yerelYonetimTara } from "./kaynaklar/yerelyonetim";
+import { adaletTara } from "./kaynaklar/adalet";
+import { osymTara } from "./kaynaklar/osym";
+import { iskurKamuTara } from "./kaynaklar/iskurkamu";
 import { linkedinTara } from "./kaynaklar/linkedin";
 import { joobleHazir, joobleTara } from "./kaynaklar/jooble";
 import { careerjetHazir, careerjetTara } from "./kaynaklar/careerjet";
@@ -63,6 +66,8 @@ interface KaynakSonucu {
   tumKimlikler?: string[];
   /** Terms this scan searched; stored ads found by another term are not judged */
   arananlar?: string[];
+  /** Partial failure worth showing on the scan record (e.g. "8/12 terim düştü: HTTP 429") */
+  uyari?: string;
 }
 
 interface KaynakTanimi {
@@ -116,6 +121,29 @@ const KAYNAKLAR: KaynakTanimi[] = [
     tara: (b) => yerelYonetimTara({ sehirler: b.sehirler, bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
   },
   {
+    ad: "adalet",
+    etiket: "Adalet Bakanlığı",
+    // Zabıt/icra katibi intakes: 3-5 a year, one 450 KB list page per run
+    enAzAralikDk: Number(process.env.ADALET_ARALIK_DK) || 360,
+    tara: (b) => adaletTara({ bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
+  },
+  {
+    ad: "osym",
+    etiket: "ÖSYM",
+    // Watches for KPSS tercih/placement rounds: 2-3 a year, one list page per run
+    enAzAralikDk: Number(process.env.OSYM_ARALIK_DK) || 360,
+    tara: (b) => osymTara({ bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
+  },
+  {
+    ad: "iskurkamu",
+    etiket: "İŞKUR Kamu İlanları",
+    // İŞKUR's separate "Kamu Memur Alım İlanları" section, read with a real browser
+    // like the İŞKUR job search. One page per province with announcements, plus a
+    // PDF per new announcement (15 per run).
+    enAzAralikDk: Number(process.env.ISKURKAMU_ARALIK_DK) || 360,
+    tara: (b) => iskurKamuTara({ bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
+  },
+  {
     ad: "linkedin",
     etiket: "LinkedIn",
     enAzAralikDk: Number(process.env.LINKEDIN_ARALIK_DK) || 480,
@@ -125,6 +153,9 @@ const KAYNAKLAR: KaynakTanimi[] = [
     ad: "jooble",
     etiket: "Jooble",
     hazir: joobleHazir,
+    // The key has a daily quota: hourly scans (12 terms x 24) exhausted it and every
+    // term returned 429 for the rest of the day (12.11.2026).
+    enAzAralikDk: Number(process.env.JOOBLE_ARALIK_DK) || 180,
     tara: (b) => joobleTara({ aramaTerimleri: b.aramaTerimleri, sehirler: b.sehirler, bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
   },
   {
@@ -284,7 +315,7 @@ async function kaynagiKos(db: Db, k: KaynakTanimi, profil: KariyerProfili, filtr
     await kapat({
       bulunan: sonuc.gorulen,
       yeni: ozet.yeni,
-      hata: ozet.hatalar.length ? ozet.hatalar.slice(0, 5).join(" | ") : null,
+      hata: [sonuc.uyari, ...ozet.hatalar.slice(0, 5)].filter(Boolean).join(" | ") || null,
     });
     return ozet;
   } catch (e) {

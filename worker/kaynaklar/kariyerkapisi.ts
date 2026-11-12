@@ -137,7 +137,14 @@ export async function kariyerKapisiTara(secenekler: KariyerKapisiSecenekleri) {
       continue;
     }
     const gosterilecek = uyanlar.length || kontenjansiz.length ? [...uyanlar, ...kontenjansiz] : pozisyonlar;
-    const sehir = gosterilecek.map((p) => uyanSehir(p, sehirler)).find(Boolean) ?? undefined;
+    // With no city preference the ad's own spread is shown: before 12.11.2026 a post
+    // open in 67 provinces was stored as "ADANA" (the first one in the list).
+    const tumIller = [...new Set(gosterilecek.flatMap((p) => (p.kontenjanList ?? []).map((k) => k.il).filter(Boolean)))];
+    const sehir = sehirler.length
+      ? (gosterilecek.map((p) => uyanSehir(p, sehirler)).find(Boolean) ?? undefined)
+      : tumIller.length > 3
+        ? `Türkiye geneli (${tumIller.length} il)`
+        : tumIller.join(", ") || undefined;
 
     // Pozisyonlar ÖNCE: modele giden metin kesilirse genel şartlar kesilsin,
     // "büro personeli, KPSS P93, Ankara 2 kişi" satırı değil (denetim bulgusu)

@@ -30,8 +30,25 @@ export interface ElemanSecenekleri {
 
 const TABAN = "https://www.eleman.net";
 // Liste sayfası ucuz (tek istek, filtre yerel); detay yalnız eşleşen yeni kart için.
-// "memur" kategorisi 23 sayfa, tarihe göre sıralı: 6 sayfa ~240 ilan geriye bakar.
+// Tarihe göre sıralı: 6 sayfa ~240 ilan geriye bakar.
 const SAYFA_SINIRI = 6;
+// Resolved position slugs that are never crawled. Measured 12.11.2026:
+// - "kontrol" ("veri hazırlama kontrol işletmeni" resolves here): 3 pages, ~66
+//   cards, every one passing the slug filter is quality control / night watchman
+//   (kalite-kontrol-*, gece-kontrol-personeli-bekci).
+// - "memur" (kütüphane/arşiv/yazı işleri memuru resolve here): not a category but
+//   the whole country's listings (123-124 pages); 0 of 106 sampled cards carry
+//   "memur" in the slug. Eleman.net is private-sector, it has no civil-service ads.
+const YASAK_POZISYONLAR = new Set(["kontrol", "memur"]);
+// Fixed extra pages crawled regardless of term resolution: no search term
+// redirects to the /hukuk sector page. More than half of it is noise (call
+// centre, logistics, sales, cleaning) and slugs there rarely contain "hukuk", so
+// the usual "slug carries the position words" filter is replaced by "slug carries
+// ANY profile word" (measured 12.11.2026: 2 pages, ~34 cards).
+const SABIT_SAYFALAR: Record<string, string[]> = {
+  // "katib" covers the inflected form (icra-katibi), which "katip" does not prefix
+  hukuk: ["hukuk", "avukat", "katip", "katib", "sekreter", "icra", "arsiv", "buro"],
+};
 const BASLIKLAR = {
   accept: "text/html,application/xhtml+xml",
   "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
@@ -94,7 +111,7 @@ function maasMetni(jp: JobPosting): string | undefined {
  * kategoriler ise gerçek. Slug eşleşmesi ikisini de doğru işliyor: "büro memuru"
  * kartı "memur" taşır, "bulaşık personeli" taşımaz.
  */
-function kartlar(html: string, pozisyonKelimeleri: string[]): { url: string; id: string }[] {
+function kartlar(html: string, pozisyonKelimeleri: string[], herhangiBiri = false): { url: string; id: string }[] {
   const gorulen = new Set<string>();
   const sonuc: { url: string; id: string }[] = [];
   for (const m of html.matchAll(/href="(https:\/\/www\.eleman\.net\/is-ilani\/([a-z0-9-]+)-i(\d+))"/g)) {
@@ -103,7 +120,9 @@ function kartlar(html: string, pozisyonKelimeleri: string[]): { url: string; id:
     gorulen.add(id);
     const parcalar = slug.split("-");
     // "memur" -> "memuru"/"memurlari" da sayılır (önek eşleşmesi); "on-muhasebe" -> ikisi de aranır
-    if (!pozisyonKelimeleri.every((k) => parcalar.some((p) => p.startsWith(k)))) continue;
+    const tasir = (k: string) => parcalar.some((p) => p.startsWith(k));
+    // herhangiBiri: sector pages (SABIT_SAYFALAR) match on any profile word instead
+    if (!(herhangiBiri ? pozisyonKelimeleri.some(tasir) : pozisyonKelimeleri.every(tasir))) continue;
     sonuc.push({ url, id });
   }
   return sonuc;
@@ -118,6 +137,7 @@ export async function elemanTara(secenekler: ElemanSecenekleri) {
   // (/is-ilanlari/buro-personeli). Checked 10.11.2026.
   const pozisyonSayfalari = new Set<string>();
   const cozulemeyen = new Set<string>();
+  const yasakli = new Set<string>();
   for (const sehir of sehirler.length ? sehirler : [null]) {
     const il = sehir ? ilSlug(sehir) : null;
     for (const terim of aramaTerimleri) {
@@ -127,7 +147,8 @@ export async function elemanTara(secenekler: ElemanSecenekleri) {
         const son = new URL(cevap.url);
         const parcalar = son.pathname.split("/").filter(Boolean); // ["is-ilanlari", il?, pozisyon?]
         const pozisyonSayfasi = il ? parcalar.length >= 3 && parcalar[1] === il : parcalar.length === 2 && parcalar[0] === "is-ilanlari";
-        if (pozisyonSayfasi) pozisyonSayfalari.add(`${son.origin}${son.pathname}`);
+        if (pozisyonSayfasi && YASAK_POZISYONLAR.has(parcalar[parcalar.length - 1])) yasakli.add(terim);
+        else if (pozisyonSayfasi) pozisyonSayfalari.add(`${son.origin}${son.pathname}`);
         else cozulemeyen.add(terim);
       } catch (e) {
         log(`Eleman.net "${terim}" (${sehir ?? "tüm iller"}) çözülemedi: ${(e as Error).message}`);
@@ -136,6 +157,10 @@ export async function elemanTara(secenekler: ElemanSecenekleri) {
     }
   }
   if (cozulemeyen.size) log(`Eleman.net sözlüğünde yok, atlandı: ${[...cozulemeyen].join(", ")}`);
+  if (yasakli.size) log(`Eleman.net gürültü sayfasına çıkıyor, atlandı: ${[...yasakli].join(", ")}`);
+  // Sector pages are added nationwide only; the per-province URL shape of a
+  // sector page was not measured, and the profile has no city restriction.
+  if (!sehirler.length) for (const p of Object.keys(SABIT_SAYFALAR)) pozisyonSayfalari.add(`${TABAN}/is-ilanlari/${p}`);
   if (!pozisyonSayfalari.size) return { ilanlar: [], gorulen: 0 };
 
   // 2) Pozisyon sayfalarını gez, yeni ilanların detayını çek
@@ -148,7 +173,8 @@ export async function elemanTara(secenekler: ElemanSecenekleri) {
         const cevap = await getir(sy === 1 ? sayfaUrl : `${sayfaUrl}?sy=${sy}`, { headers: BASLIKLAR });
         const html = await cevap.text();
         const pozisyon = sayfaUrl.split("/").pop() ?? "";
-        const liste = kartlar(html, pozisyon.split("-").filter((k) => k.length >= 3));
+        const sabit = SABIT_SAYFALAR[pozisyon];
+        const liste = sabit ? kartlar(html, sabit, true) : kartlar(html, pozisyon.split("-").filter((k) => k.length >= 3));
         // Sayfa sayısı 2. sayfadan itibaren başlıkta ("[23 Sayfadan 2. Sayfa]"); ilk
         // sayfada yok, orada "?sy=2" bağlantısının varlığına bakılıyor
         const sonSayfa = Number(/\[(\d+) Sayfadan/.exec(html)?.[1] ?? (html.includes(`?sy=${sy + 1}`) ? sy + 1 : sy));
