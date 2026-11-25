@@ -36,6 +36,7 @@ import { isbulTara } from "./kaynaklar/isbul";
 import { elemanTara } from "./kaynaklar/eleman";
 import { bosOzet, ilanlariDegerlendir, yarimKalanlariTamamla, type DegerlendirmeOzeti } from "./degerlendir";
 import { bildirimleriGonder, kirilmaUyarisi } from "./bildir";
+import { kpssDuyurulariniIsle } from "./kpss/yukle";
 
 const log = (m: string) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
 
@@ -94,11 +95,9 @@ const KAYNAKLAR: KaynakTanimi[] = [
   {
     ad: "ilangov",
     etiket: "ilan.gov.tr",
-    // Disabled 10.11.2026: since 24.09.2026 AdsByFilter answers only the site's own
-    // UI (HTTP 403 otherwise; we do not fake its headers). Measured the same day:
-    // every eligible, in-city ad there was also on Kamu İlan, Kariyer Kapısı or
-    // Yerel Yönetimler, so it added nothing.
-    hazir: () => "devre dışı: API yalnızca site arayüzüne açık (24.09.2026'dan beri HTTP 403)",
+    // The list service answers only the site's own pages since 24.09.2026, so the
+    // adapter reads them in a real browser (see ilangov.ts). Re-enabled 14.11.2026.
+    enAzAralikDk: Number(process.env.ILANGOV_ARALIK_DK) || 360,
     tara: (b) => ilangovTara({ sehirler: b.sehirler, bilinenKimlikler: b.bilinenKimlikler, log: b.log }),
   },
   {
@@ -309,6 +308,9 @@ async function kaynagiKos(db: Db, k: KaynakTanimi, profil: KariyerProfili, filtr
       log,
     });
     log(`${k.etiket}: ${sonuc.gorulen} görüldü, ${sonuc.ilanlar.length} yeni`);
+    // A new "KPSS-<year>/<n> … Tercih Kılavuzu ve Tablolar" announcement: load its tables for the
+    // Tercih Rehberi page. Catches and logs its own failures, so the scan goes on either way.
+    if (k.ad === "osym") await kpssDuyurulariniIsle(db, sonuc.ilanlar, log);
     if (sonuc.tumKimlikler) await kaybolanlariIsaretle(db, k.ad, sonuc.tumKimlikler, sonuc.arananlar);
 
     const ozet = await ilanlariDegerlendir(db, sonuc.ilanlar, profil, filtre, log);

@@ -54,7 +54,7 @@ export const bosOzet = (): DegerlendirmeOzeti => ({
 });
 
 /** Sources that list public-sector hiring only; see the gate note in puanlaVeKaydet */
-const KAPISIZ_KAYNAKLAR = new Set<string>(["kamuilan", "yerelyonetim", "kariyerkapisi", "iskurkamu", "adalet", "osym"]);
+const KAPISIZ_KAYNAKLAR = new Set<string>(["ilangov", "kamuilan", "yerelyonetim", "kariyerkapisi", "iskurkamu", "adalet", "osym"]);
 /** Below this many characters the ad text is a stub (title echo, search snippet, "metni okunamadı" note) */
 const KISA_ACIKLAMA = 300;
 const ACIKLAMASIZ_TAVAN = 70;

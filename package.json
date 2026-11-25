@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "kariyer:tara": "tsx --env-file=.env.local worker/ana.ts",
-    "kariyer:dongu": "tsx --env-file=.env.local worker/ana.ts --dongu"
+    "kariyer:dongu": "tsx --env-file=.env.local worker/ana.ts --dongu",
+    "kpss:tercih": "tsx --env-file=.env.local worker/kpss/yukle.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",

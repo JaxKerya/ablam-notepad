@@ -10,13 +10,14 @@ import {
   ChevronDown,
   ChevronRight,
   CircleCheck,
+  CircleCheckBig,
   ExternalLink,
+  ListChecks,
   Loader2,
   Plus,
   RefreshCw,
   RotateCcw,
   Send,
-  CircleCheckBig,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
@@ -122,7 +123,7 @@ interface KaynakDurumu {
   bayat: boolean;
 }
 
-const KAYNAK_ARALIK_SAAT: Record<string, number> = { iskur: 6, linkedin: 12, eleman: 3, kamuilan: 3, yerelyonetim: 3, jooble: 3, adalet: 6, osym: 6, iskurkamu: 6 };
+const KAYNAK_ARALIK_SAAT: Record<string, number> = { iskur: 6, ilangov: 6, linkedin: 12, eleman: 3, kamuilan: 3, yerelyonetim: 3, jooble: 3, adalet: 6, osym: 6, iskurkamu: 6 };
 
 function kaynakDurumlari(satirlar: Tarama[]): KaynakDurumu[] {
   const simdi = Date.now();
@@ -554,6 +555,21 @@ function KariyerUygulamasi() {
             );
           })}
         </nav>
+
+        {/* KPSS preference guide lives on its own page; a full-width row under the tabs so it is seen from every tab */}
+        <Link
+          href="/kariyer/tercih"
+          className={`glass group mb-4 flex items-center gap-3 rounded-2xl px-4 py-3 ring-1 ring-[var(--k-hair)] transition-colors hover:bg-white/[0.04] ${ODAK}`}
+        >
+          <span className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full bg-[var(--accent)]/14 text-[var(--accent-light)]">
+            <ListChecks size={17} aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-medium leading-5 text-[var(--k-t1)]">KPSS Tercih Rehberi</span>
+            <span className="block text-[12.5px] leading-[18px] text-[var(--k-t2)]">Tercih kılavuzundaki kadrolardan sana açık olanlar</span>
+          </span>
+          <ChevronRight size={16} aria-hidden className="flex-shrink-0 text-[var(--k-t2)] transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+        </Link>
 
         {profilBos && (
           <p id="kariyer-kapali-ipucu" className="-mt-1 mb-3 text-center text-[12.5px] leading-[18px] text-[var(--k-t2)]">

@@ -75,7 +75,9 @@ export interface Dublaj {
   updated_at: string;
 }
 
-export const DUBLAJ_DIL_ADI: Record<string, string> = { ko: "Korece" };
+export const DUBLAJ_DIL_ADI: Record<string, string> = { ko: "Korece", az: "Kadın sesi" };
+// Studio adds these by itself (second voice of the same Turkish script, uploaded by the PC Studio automation): no "hazırla" button
+export const OTOMATIK_DUBLAJ: string[] = ["az"];
 
 /** Yeni bölüm yayına girince stüdyonun açtığı Shorts sayısı (gece config [shorts] adet ile aynı) */
 export const SHORTS_ADET = 2;
@@ -272,7 +274,7 @@ export const DURUM_BILGISI: Record<Durum, { etiket: string; ton: "bekle" | "cali
  * yayına yetişmesi için en geç yayından ONERI_URETIM_PAYI_SAAT önce. gece/worker.py ile aynı sayılar.
  */
 export const ONERI_SAAT = 24;
-export const ONERI_URETIM_PAYI_SAAT = 8;
+export const ONERI_URETIM_PAYI_SAAT = 72; // 2026-11-16: 8 → 72 (YouTube may process the second-voice audio track for over a day)
 export function oneriBaslangici(b: Pick<Bolum, "created_at" | "yayin_zamani">): Date {
   const bas = new Date(b.created_at).getTime() + ONERI_SAAT * 3_600_000;
   const sinir = b.yayin_zamani ? new Date(b.yayin_zamani).getTime() - ONERI_URETIM_PAYI_SAAT * 3_600_000 : Infinity;
@@ -314,7 +316,7 @@ export function planliMi(b: Pick<Bolum, "durum" | "yayin_zamani">): boolean {
 }
 
 /** Haftalık yayın düzeni: günler (0 = Pazar … 6 = Cumartesi) ve saat. Takvim boş günleri buna göre gösterir. */
-export const YAYIN_GUNLERI = [0, 4]; // pazar, perşembe (2026-10-12: haftada 2 bölüm)
+export const YAYIN_GUNLERI = [2, 4, 0]; // salı, perşembe, pazar (2026-11-15: haftada 3 bölüm)
 export const YAYIN_SAATI = 20;
 /** Önerilen boş gün en az bu kadar saat sonra olsun (90 dk'lık bölüm ~1,5 saatte üretiliyor; sıra ve pay) */
 export const URETIM_PAYI_SAAT = 6;

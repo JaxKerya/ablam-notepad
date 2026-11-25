@@ -133,7 +133,7 @@ function ilanMetin(e: EslesmeSatiri): string {
 }
 
 /** Sources that carry public-sector hiring; listed first in the evening digest */
-const KAMU_KAYNAKLARI = new Set(["kamuilan", "yerelyonetim", "kariyerkapisi", "iskurkamu", "adalet", "osym"]);
+const KAMU_KAYNAKLARI = new Set(["ilangov", "kamuilan", "yerelyonetim", "kariyerkapisi", "iskurkamu", "adalet", "osym"]);
 
 const sarmala = (icerik: string) =>
   `<div style="font-family:system-ui,sans-serif;max-width:560px">${icerik}</div>`;

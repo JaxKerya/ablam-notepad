@@ -55,6 +55,7 @@ import {
   type Shorts,
   oneriBaslangici,
   DUBLAJ_DIL_ADI,
+  OTOMATIK_DUBLAJ,
   type Dublaj,
   tarihBicimle,
   yerelTarihGirdisi,
@@ -1785,7 +1786,7 @@ function DublajPaneli({
   onYama: (id: string, yama: Partial<Dublaj>, mesaj?: string) => Promise<void>;
   onUret: (bolum: Bolum, dil: string) => Promise<void>;
 }) {
-  const eksik = Object.keys(DUBLAJ_DIL_ADI).filter((k) => !dublajlar.some((d) => d.dil === k));
+  const eksik = Object.keys(DUBLAJ_DIL_ADI).filter((k) => !OTOMATIK_DUBLAJ.includes(k) && !dublajlar.some((d) => d.dil === k));
   return (
     <section className="glass rounded-xl border border-[var(--border)] p-4">
       <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/35">
@@ -1838,7 +1839,13 @@ function DublajKarti({ d, onYama }: { d: Dublaj; onYama: (id: string, yama: Part
         </p>
         {d.baslik && <p className="text-[13px] font-medium leading-snug text-white/85">{d.baslik}</p>}
         {d.onizleme_url && <audio src={d.onizleme_url} controls preload="none" className="w-full max-w-[360px]" />}
-        {d.durum === "hazir" && (
+        {d.durum === "hazir" && OTOMATIK_DUBLAJ.includes(d.dil) && (
+          <p className="text-[12px] leading-relaxed text-white/45">
+            Bilgisayardaki Studio otomasyonu bu sesi videoya <span className="text-white/70">Azerbaycan dili</span> ses parçası olarak
+            ekleyecek. Olmazsa: YouTube Studio → Diller → bu video → Azerbaycan dili → Ses → Ekle (dosya Drive klasöründe).
+          </p>
+        )}
+        {d.durum === "hazir" && !OTOMATIK_DUBLAJ.includes(d.dil) && (
           <p className="text-[12px] leading-relaxed text-white/45">
             YouTube Studio → Altyazılar → bu video → {ad}: <span className="text-white/70">Ses</span> ve{" "}
             <span className="text-white/70">Küçük resim</span> için &quot;Ekle&quot;. Dosyalar Drive klasöründe.
