@@ -22,7 +22,7 @@
 
 import type { HamIlan } from "../../lib/kariyer";
 import { sadelestir } from "../../lib/kariyer";
-import type { Page } from "playwright";
+import type { Page } from "playwright-core";
 import { metneCevir, nazikBekle } from "./http";
 import { tarayiciAc } from "./iskur";
 
